@@ -29,6 +29,7 @@ export interface AppModel {
   supportsPDF?: boolean
   // Reasoning support
   reasoningType?: 'effort' | 'max_tokens' | null  // null = no reasoning support
+  isThinking?: boolean
 }
 
 export async function fetchOpenRouterModels(): Promise<AppModel[]> {

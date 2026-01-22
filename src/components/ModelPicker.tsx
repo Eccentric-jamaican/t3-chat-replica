@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { fetchOpenRouterModels, type AppModel } from '../lib/openrouter'
 import { motion } from 'framer-motion'
-import { ChevronDown, Search, Star, Sparkles, Brain, Eye, CircleCheck, ChevronRight, Plus, FileText } from 'lucide-react'
+import { ChevronDown, Search, Star, Sparkles, Brain, Eye, CircleCheck, Plus, FileText } from 'lucide-react'
 import { clsx, type ClassValue } from 'clsx'
 import { twMerge } from 'tailwind-merge'
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover'
@@ -265,7 +265,6 @@ export const ModelPicker = ({ selectedModelId, onSelect }: ModelPickerProps) => 
   }
 
   const [models, setModels] = useState<Model[]>(FALLBACK_MODELS)
-  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     let mounted = true
@@ -276,18 +275,15 @@ export const ModelPicker = ({ selectedModelId, onSelect }: ModelPickerProps) => 
       // Cache valid for 24 hours
       if (cached && cacheTime && Date.now() - parseInt(cacheTime) < 86400000) {
         setModels(JSON.parse(cached))
-        setLoading(false)
         return
       }
 
-      setLoading(true)
       const fetched = await fetchOpenRouterModels()
       if (mounted && fetched.length > 0) {
         setModels(fetched)
         localStorage.setItem('t3-models-cache', JSON.stringify(fetched))
         localStorage.setItem('t3-models-cache-time', Date.now().toString())
       }
-      if (mounted) setLoading(false)
     }
     load()
     return () => { mounted = false }
