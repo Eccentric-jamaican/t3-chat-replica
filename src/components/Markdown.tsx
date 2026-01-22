@@ -130,8 +130,8 @@ const MarkdownTable = ({ ...props }: any) => {
   };
 
   return (
-    <div className="my-4 border border-white/10 rounded-lg overflow-hidden">
-      <div className="flex items-center justify-end gap-2 px-3 py-2 bg-white/5 border-b border-white/10">
+    <div className="my-4 border border-white/10 rounded-lg overflow-hidden flex flex-col max-w-full">
+      <div className="flex items-center justify-end gap-2 px-3 py-2 bg-white/5 border-b border-white/10 shrink-0">
         <TooltipIconButton
           onClick={handleDownload}
           label="Download table"
@@ -148,7 +148,7 @@ const MarkdownTable = ({ ...props }: any) => {
           {copied ? <Check size={14} /> : <Copy size={14} />}
         </TooltipIconButton>
       </div>
-      <div className="overflow-x-auto">
+      <div className="overflow-x-auto w-full scrollbar-hide">
         <table ref={tableRef} className="min-w-full divide-y divide-white/10" {...props} />
       </div>
     </div>

@@ -237,7 +237,7 @@ function ChatPage() {
             <LandingHero onSelectPrompt={(text) => chatInputRef.current?.setContentAndSend(text)} />
           </div>
         ) : (
-          <div className="max-w-5xl w-full flex-1 overflow-y-auto pt-16 md:pt-20 pb-40 scrollbar-hide">
+          <div className="max-w-5xl w-full flex-1 overflow-y-auto pt-20 md:pt-20 pb-40 scrollbar-hide">
             <TooltipProvider delayDuration={150}>
               {messages?.filter((msg: any) => !(msg.role === 'tool' && msg.name === 'search_web')).map((msg: any) => (
               <motion.div

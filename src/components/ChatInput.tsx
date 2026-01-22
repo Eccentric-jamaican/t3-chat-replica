@@ -239,7 +239,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({ existing
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="mb-3 md:mb-5 flex items-center justify-between gap-4 px-4 md:px-5 py-2 md:py-3 bg-[rgb(254,235,231)] border border-[rgb(238,225,237)] rounded-2xl text-[12px] md:text-[13.5px] text-[rgb(80,24,84)] font-medium shadow-sm"
+              className="mb-2 md:mb-5 flex items-center justify-between gap-2 md:gap-4 px-4 md:px-5 py-1.5 md:py-3 bg-[rgb(254,235,231)] border border-[rgb(238,225,237)] rounded-2xl text-[12px] md:text-[13.5px] text-[rgb(80,24,84)] font-medium shadow-sm"
             >
               <div className="flex-1 text-center">
                 You only have 9 message credits left. <button className="underline font-bold">Sign in to get a higher limit (it's free!)</button>
@@ -279,7 +279,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({ existing
           {/* Flex Column: Textarea + Bottom Row */}
           <div className="flex flex-col">
             {/* Attachments Preview */}
-            <div className="px-3 md:px-5 pt-3 md:pt-4 flex gap-2 md:gap-3 flex-wrap">
+            <div className="px-3 md:px-5 pt-2 md:pt-4 flex gap-2 md:gap-3 flex-wrap">
               {attachments.map((att, i) => (
                 <div key={i} className="relative group w-16 h-16 md:w-20 md:h-20 rounded-xl overflow-hidden border border-white/10 shadow-sm bg-black/5">
                   {att.type.startsWith('image/') ? (
@@ -318,7 +318,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({ existing
                 }
               }}
               placeholder="Type your message here..."
-              className="w-full bg-transparent px-3 md:px-5 pt-3 md:pt-4 pb-1 md:pb-2 text-foreground placeholder-foreground/35 outline-none resize-none min-h-[44px] md:min-h-[48px] max-h-[400px] overflow-y-auto text-[14px] md:text-[15.5px] leading-relaxed"
+              className="w-full bg-transparent px-3 md:px-5 pt-2 md:pt-4 pb-1 md:pb-2 text-foreground placeholder-foreground/35 outline-none resize-none min-h-[44px] md:min-h-[48px] max-h-[160px] md:max-h-[400px] overflow-y-auto text-[14px] md:text-[15.5px] leading-relaxed"
             />
 
             {/* Bottom Action Row - Separate from textarea */}
@@ -419,7 +419,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({ existing
           </div>
         </div>
         
-        <p className="text-[11px] text-center mt-3.5 text-foreground/35 font-semibold tracking-tight">
+        <p className="text-[11px] text-center mt-2 md:mt-3.5 text-foreground/35 font-semibold tracking-tight">
           T3.chat can make mistakes. Check important info.
         </p>
       </div>
