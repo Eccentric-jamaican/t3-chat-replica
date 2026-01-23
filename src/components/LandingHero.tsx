@@ -22,7 +22,7 @@ export const LandingHero = ({ onSelectPrompt }: LandingHeroProps) => {
       transition={{ duration: 0.5, ease: [0.2, 0, 0, 1] }}
       className={cn(
         "max-w-3xl w-full space-y-8 md:space-y-12 text-center transition-all",
-        isMobile ? "-mt-12" : "-mt-32"
+        isMobile ? "-mt-24" : "-mt-32"
       )}
     >
       {/* T3 Precise Heading: 30px, 600 weight, 0.24px tracking */}

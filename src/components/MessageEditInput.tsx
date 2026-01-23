@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { ArrowUp, Paperclip, Globe, X } from 'lucide-react'
+import { ArrowUp, Paperclip, Globe, X, Brain } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { clsx, type ClassValue } from 'clsx'
 import { twMerge } from 'tailwind-merge'
@@ -7,6 +7,7 @@ import { useMutation, useAction } from "convex/react"
 import { api } from "../../convex/_generated/api"
 import { ModelPicker } from './ModelPicker'
 import { fetchOpenRouterModels, type AppModel } from '../lib/openrouter'
+import { useIsMobile } from '../hooks/useIsMobile'
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
@@ -35,6 +36,7 @@ export function MessageEditInput({
   onCancel,
   onSubmit
 }: MessageEditInputProps) {
+  const isMobile = useIsMobile()
   const [content, setContent] = useState(initialContent)
   const [isSubmitting, setIsSubmitting] = useState(false)
 
@@ -47,7 +49,12 @@ export function MessageEditInput({
   })
 
   const [searchEnabled, setSearchEnabled] = useState(false)
-  const [reasoningEffort, setReasoningEffort] = useState("low")
+  const [reasoningEffort, setReasoningEffort] = useState<string | null>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('t3_reasoning_effort')
+    }
+    return null
+  })
   const [models, setModels] = useState<AppModel[]>([])
 
   useEffect(() => {
@@ -55,13 +62,32 @@ export function MessageEditInput({
   }, [])
 
   const currentModel = models.find(m => m.id === selectedModelId)
-  const supportsTools = currentModel?.supportsTools
-  const supportsReasoning = currentModel?.isThinking
+  const reasoningType = currentModel?.reasoningType // 'effort' | 'max_tokens' | null
+  const supportsReasoning = reasoningType != null
 
   const toggleReasoning = () => {
-    const levels = ['low', 'medium', 'high']
-    const nextIndex = (levels.indexOf(reasoningEffort) + 1) % levels.length
-    setReasoningEffort(levels[nextIndex])
+    // Cycle through effort levels appropriate for the reasoning type
+    if (reasoningType === 'effort') {
+      const levels: (string | null)[] = [null, 'low', 'medium', 'high']
+      const currentIndex = levels.indexOf(reasoningEffort)
+      const nextIndex = (currentIndex + 1) % levels.length
+      const newEffort = levels[nextIndex]
+      setReasoningEffort(newEffort)
+      if (newEffort) {
+        localStorage.setItem('t3_reasoning_effort', newEffort)
+      } else {
+        localStorage.removeItem('t3_reasoning_effort')
+      }
+    } else if (reasoningType === 'max_tokens') {
+      // For max_tokens models, just toggle on/off with a sensible default
+      const newEffort = reasoningEffort ? null : 'medium'
+      setReasoningEffort(newEffort)
+      if (newEffort) {
+        localStorage.setItem('t3_reasoning_effort', newEffort)
+      } else {
+        localStorage.removeItem('t3_reasoning_effort')
+      }
+    }
   }
 
   const [attachments, setAttachments] = useState<{
@@ -158,7 +184,8 @@ export function MessageEditInput({
       await streamAnswer({
         threadId: threadId as any,
         modelId: selectedModelId,
-        reasoningEffort: supportsReasoning ? reasoningEffort : undefined,
+        reasoningEffort: supportsReasoning && reasoningEffort ? reasoningEffort : undefined,
+        reasoningType: supportsReasoning && reasoningEffort ? reasoningType : undefined,
         webSearch: searchEnabled
       })
 
@@ -181,7 +208,7 @@ export function MessageEditInput({
   }
 
   return (
-    <div className="w-full max-w-[768px]">
+    <div className={cn("w-full", isMobile ? "max-w-full" : "max-w-[768px]")}>
       <div className={cn(
         "relative rounded-2xl transition-all duration-300 border border-fuchsia-200/50 bg-white/80 backdrop-blur-sm overflow-hidden shadow-lg",
         "focus-within:ring-[4px] focus-within:ring-primary/10"
@@ -238,107 +265,117 @@ export function MessageEditInput({
           />
         </div>
 
-        {/* Bottom Action Row */}
-        <div className="flex items-center justify-between px-3 py-2 border-t border-black/5 bg-black/[0.02]">
-          <div className="flex items-center gap-2">
-            {/* Model Picker */}
-            <ModelPicker
-              selectedModelId={selectedModelId}
-              onSelect={setSelectedModelId}
-            />
+        {/* Bottom Action Row - Responsive layout */}
+        <div className={cn(
+          "border-t border-black/5 bg-black/[0.02]",
+          isMobile ? "px-2 py-2" : "px-3 py-2"
+        )}>
+          <div className={cn(
+            "flex items-center gap-1.5",
+            isMobile ? "flex-wrap" : "justify-between"
+          )}>
+            {/* Left side: Model picker and toggles */}
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {/* Model Picker */}
+              <ModelPicker
+                selectedModelId={selectedModelId}
+                onSelect={setSelectedModelId}
+              />
 
-            {/* Reasoning Toggle */}
-            {supportsReasoning && (
-              <button
-                onClick={toggleReasoning}
-                className={cn(
-                  "flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[12px] font-semibold transition-all",
-                  "bg-black/5 text-foreground/60 hover:bg-black/10"
-                )}
-              >
-                <div className="w-3.5 h-3.5 border-2 border-t3-berry rounded-full flex items-center justify-center">
-                  <div className={cn("bg-t3-berry rounded-full transition-all duration-300",
-                    reasoningEffort === 'low' && "w-1 h-1",
-                    reasoningEffort === 'medium' && "w-1.5 h-1.5",
-                    reasoningEffort === 'high' && "w-2 h-2"
-                  )} />
-                </div>
-                <span className="capitalize">{reasoningEffort}</span>
-              </button>
-            )}
+              {/* Reasoning Toggle */}
+              {supportsReasoning && (
+                <button
+                  onClick={toggleReasoning}
+                  className={cn(
+                    "flex items-center gap-1 px-2 py-1.5 rounded-lg text-[11px] font-semibold transition-all",
+                    !reasoningEffort && "bg-black/5 text-foreground/40 hover:bg-black/10",
+                    reasoningEffort === 'low' && "bg-fuchsia-100/30 text-fuchsia-600/80",
+                    reasoningEffort === 'medium' && "bg-fuchsia-100/60 text-fuchsia-800/80",
+                    reasoningEffort === 'high' && "bg-fuchsia-600/80 text-white"
+                  )}
+                >
+                  <Brain size={isMobile ? 12 : 14} className={reasoningEffort ? "fill-current" : ""} />
+                  <span className="capitalize">{reasoningEffort || 'Off'}</span>
+                </button>
+              )}
 
-            {/* Search Toggle */}
-            {supportsTools && (
+              {/* Search Toggle - Always visible */}
               <button
                 onClick={() => setSearchEnabled(!searchEnabled)}
                 className={cn(
-                  "flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[12px] font-semibold transition-all",
+                  "flex items-center gap-1 px-2 py-1.5 rounded-lg text-[11px] font-semibold transition-all",
                   searchEnabled
-                    ? "bg-[#e8f5f1] text-[#00a67e] border border-[#00a67e]/20"
-                    : "bg-black/5 text-foreground/60 hover:bg-black/10"
+                    ? "bg-blue-500/10 text-blue-600 border border-blue-500/20"
+                    : "bg-black/5 text-foreground/40 hover:bg-black/10"
                 )}
               >
-                <Globe size={14} />
-                <span>Search</span>
+                <Globe size={isMobile ? 12 : 14} />
+                {!isMobile && <span>Search</span>}
               </button>
-            )}
 
-            {/* Attachment Button */}
-            <input
-              ref={fileInputRef}
-              type="file"
-              multiple
-              accept="image/*,application/pdf"
-              onChange={handleFileSelect}
-              className="hidden"
-            />
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              disabled={uploading}
-              className="p-2 rounded-lg hover:bg-black/5 text-foreground/50 hover:text-foreground/70 transition-colors disabled:opacity-50"
-            >
-              {uploading ? (
-                <div className="w-4 h-4 border-2 border-foreground/20 border-t-foreground/60 rounded-full animate-spin" />
-              ) : (
-                <Paperclip size={16} />
-              )}
-            </button>
-          </div>
+              {/* Attachment Button */}
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                accept="image/*,application/pdf"
+                onChange={handleFileSelect}
+                className="hidden"
+              />
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploading}
+                className="p-1.5 rounded-lg hover:bg-black/5 text-foreground/40 hover:text-foreground/60 transition-colors disabled:opacity-50"
+              >
+                {uploading ? (
+                  <div className="w-4 h-4 border-2 border-foreground/20 border-t-foreground/60 rounded-full animate-spin" />
+                ) : (
+                  <Paperclip size={isMobile ? 14 : 16} />
+                )}
+              </button>
+            </div>
 
-          <div className="flex items-center gap-2">
-            {/* Cancel Button */}
-            <button
-              onClick={onCancel}
-              className="px-3 py-1.5 text-[12px] font-medium text-foreground/60 hover:text-foreground/80 transition-colors"
-            >
-              Cancel
-            </button>
+            {/* Right side: Cancel and Submit */}
+            <div className={cn(
+              "flex items-center gap-1.5",
+              isMobile && "ml-auto"
+            )}>
+              {/* Cancel Button */}
+              <button
+                onClick={onCancel}
+                className="px-2 py-1.5 text-[11px] font-medium text-foreground/50 hover:text-foreground/70 transition-colors"
+              >
+                Cancel
+              </button>
 
-            {/* Submit Button */}
-            <button
-              onClick={handleSubmit}
-              disabled={!content.trim() || isSubmitting}
-              className={cn(
-                "w-8 h-8 rounded-lg flex items-center justify-center transition-all",
-                content.trim() && !isSubmitting
-                  ? "bg-t3-berry text-white shadow-sm hover:bg-t3-berry-deep"
-                  : "bg-black/10 text-foreground/30 cursor-not-allowed"
-              )}
-            >
-              {isSubmitting ? (
-                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-              ) : (
-                <ArrowUp size={16} strokeWidth={2.5} />
-              )}
-            </button>
+              {/* Submit Button */}
+              <button
+                onClick={handleSubmit}
+                disabled={!content.trim() || isSubmitting}
+                className={cn(
+                  "w-7 h-7 rounded-lg flex items-center justify-center transition-all",
+                  content.trim() && !isSubmitting
+                    ? "bg-t3-berry text-white shadow-sm hover:bg-t3-berry-deep"
+                    : "bg-black/10 text-foreground/30 cursor-not-allowed"
+                )}
+              >
+                {isSubmitting ? (
+                  <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                ) : (
+                  <ArrowUp size={14} strokeWidth={2.5} />
+                )}
+              </button>
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Keyboard hint */}
-      <div className="text-[11px] text-foreground/40 mt-2 text-center">
-        Press <kbd className="px-1.5 py-0.5 bg-black/5 rounded text-[10px] font-mono">Enter</kbd> to submit, <kbd className="px-1.5 py-0.5 bg-black/5 rounded text-[10px] font-mono">Esc</kbd> to cancel
-      </div>
+      {/* Keyboard hint - hide on mobile */}
+      {!isMobile && (
+        <div className="text-[11px] text-foreground/40 mt-2 text-center">
+          Press <kbd className="px-1.5 py-0.5 bg-black/5 rounded text-[10px] font-mono">Enter</kbd> to submit, <kbd className="px-1.5 py-0.5 bg-black/5 rounded text-[10px] font-mono">Esc</kbd> to cancel
+        </div>
+      )}
     </div>
   )
 }

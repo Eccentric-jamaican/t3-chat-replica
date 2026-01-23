@@ -16,14 +16,16 @@ function cn(...inputs: ClassValue[]) {
 }
 
 export interface ChatInputProps {
-  existingThreadId?: string
+  existingThreadId?: string;
+  placeholder?: string;
+  className?: string;
 }
 
 export interface ChatInputHandle {
   setContentAndSend: (text: string) => void
 }
 
-export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({ existingThreadId }, ref) => {
+export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({ existingThreadId, placeholder, className }, ref) => {
   const navigate = useNavigate()
   const isMobile = useIsMobile()
   const [content, setContent] = useState('')
@@ -55,7 +57,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({ existing
   const currentModel = models.find(m => m.id === selectedModelId)
   const reasoningType = currentModel?.reasoningType // 'effort' | 'max_tokens' | null
   const supportsReasoning = reasoningType != null
-  const supportsTools = currentModel?.supportsTools
 
   const toggleReasoning = () => {
     // Cycle through effort levels appropriate for the reasoning type
@@ -212,6 +213,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({ existing
         threadId: currentThreadId as any,
         modelId: selectedModelId,
         reasoningEffort: supportsReasoning && reasoningEffort ? reasoningEffort : undefined,
+        reasoningType: supportsReasoning && reasoningEffort ? reasoningType : undefined,
         webSearch: searchEnabled,
         abortKey: getAbortKey(currentThreadId)
       })
@@ -227,8 +229,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({ existing
 
   return (
     <div className={cn(
-      "fixed bottom-0 right-0 px-2 pb-2 md:px-4 md:pb-6 pointer-events-none z-50 text-center transition-all duration-300",
-      isMobile ? "left-0" : "left-[240px]"
+      "w-full px-2 pb-1 md:px-4 md:pb-2 pointer-events-none z-50 text-center transition-all duration-300",
+      className
     )}>
       <div className="max-w-[768px] mx-auto pointer-events-auto w-full">
         
@@ -258,7 +260,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({ existing
         {/* The Input Container - Flex Column Layout like Original */}
         <div className={cn(
           "relative rounded-2xl transition-all duration-300 border-reflect input-glow overflow-hidden",
-          "focus-within:ring-[6px] focus-within:ring-primary/10 transition-shadow duration-500"
+          "focus-within:ring-[6px] focus-within:ring-primary/10 transition-shadow duration-500",
+          isMobile && "bg-background/70 backdrop-blur-sm border border-black/5"
         )}>
           {/* Top-Right Toggle Pill (Reasoning/Expert) - Hidden on mobile to save space, or moved */}
           {!isMobile && (
@@ -317,7 +320,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({ existing
                   handleSend()
                 }
               }}
-              placeholder="Type your message here..."
+              placeholder={placeholder || "Type your message here..."}
               className="w-full bg-transparent px-3 md:px-5 pt-2 md:pt-4 pb-1 md:pb-2 text-foreground placeholder-foreground/35 outline-none resize-none min-h-[44px] md:min-h-[48px] max-h-[160px] md:max-h-[400px] overflow-y-auto text-[14px] md:text-[15.5px] leading-relaxed"
             />
 
@@ -364,18 +367,17 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({ existing
                   </button>
                 )}
 
-                {supportsTools && (
-                  <button 
-                    onClick={() => setSearchEnabled(!searchEnabled)}
-                    className={cn(
-                      "glass-pill transition-all cursor-pointer !px-2 md:!px-3",
-                      searchEnabled ? "bg-blue-500/10 text-blue-600 border-blue-500/20 opacity-100" : "opacity-60 hover:opacity-100"
-                    )}
-                  >
-                    <Globe size={isMobile ? 14 : 15} className={cn(searchEnabled && "text-blue-600")} />
-                    <span className="hidden sm:inline">Search</span>
-                  </button>
-                )}
+                {/* Always show search button - backend handles tool availability */}
+                <button
+                  onClick={() => setSearchEnabled(!searchEnabled)}
+                  className={cn(
+                    "glass-pill transition-all cursor-pointer !px-2 md:!px-3",
+                    searchEnabled ? "bg-blue-500/10 text-blue-600 border-blue-500/20 opacity-100" : "opacity-60 hover:opacity-100"
+                  )}
+                >
+                  <Globe size={isMobile ? 14 : 15} className={cn(searchEnabled && "text-blue-600")} />
+                  <span className="hidden sm:inline">Search</span>
+                </button>
 
                 <button 
                   className="glass-pill opacity-30 hover:opacity-60 !px-2"
@@ -419,7 +421,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({ existing
           </div>
         </div>
         
-        <p className="text-[11px] text-center mt-2 md:mt-3.5 text-foreground/35 font-semibold tracking-tight">
+        <p className="text-[11px] text-center mt-1 md:mt-1.5 text-foreground/35 font-semibold tracking-tight">
           T3.chat can make mistakes. Check important info.
         </p>
       </div>

@@ -17,6 +17,7 @@ export default defineSchema({
     content: v.string(),
     modelId: v.optional(v.string()), // Track which model generated this message
     status: v.optional(v.union(v.literal("streaming"), v.literal("completed"), v.literal("error"), v.literal("aborted"))),
+    reasoningContent: v.optional(v.string()), // Store reasoning tokens from thinking models
     attachments: v.optional(v.array(v.object({
       storageId: v.id("_storage"),
       type: v.string(), // e.g., "image/png"

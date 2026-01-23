@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
-import { RotateCcw, GitBranch, Star, Sparkles, ChevronRight } from 'lucide-react'
+import { RotateCcw, GitBranch, Star, Sparkles, ChevronRight, ChevronDown } from 'lucide-react'
 import { fetchOpenRouterModels, type AppModel } from '../lib/openrouter'
+import { useIsMobile } from '../hooks/useIsMobile'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -106,6 +107,8 @@ interface MessageActionMenuProps {
 }
 
 export function MessageActionMenu({ type, onAction, children }: MessageActionMenuProps) {
+  const isMobile = useIsMobile()
+  const [expandedGroup, setExpandedGroup] = useState<string | null>(null)
   const [models, setModels] = useState<AppModel[]>([])
   const [favorites] = useState<string[]>(() => {
     if (typeof window !== 'undefined') {
@@ -174,12 +177,12 @@ export function MessageActionMenu({ type, onAction, children }: MessageActionMen
       </Tooltip>
 
       <DropdownMenuContent 
-        side="bottom"
-        align="start" 
+        side={isMobile ? "bottom" : "right"}
+        align={isMobile ? "end" : "start"} 
         sideOffset={12} 
-        alignOffset={-4}
-        collisionPadding={40}
-        className="min-w-[220px] max-h-[400px] overflow-y-auto scrollbar-hide z-[150]"
+        alignOffset={isMobile ? 0 : -4}
+        collisionPadding={isMobile ? 10 : 40}
+        className="min-w-[220px] max-h-[400px] overflow-y-auto scrollbar-hide z-[250]"
       >
         {/* Primary action */}
         <DropdownMenuItem onClick={() => onAction()} className="gap-2">
@@ -196,39 +199,96 @@ export function MessageActionMenu({ type, onAction, children }: MessageActionMen
 
         {/* Favorites submenu */}
         {favoriteModels.length > 0 && (
-          <DropdownMenuSub>
-            <DropdownMenuSubTrigger className="gap-2">
-              <Star size={14} className="fill-current" />
-              <span className="flex-1">Favorites</span>
-              <ChevronRight size={14} className="opacity-50" />
-            </DropdownMenuSubTrigger>
-            <DropdownMenuSubContent className="max-h-[300px] overflow-y-auto scrollbar-hide">
-              {favoriteModels.map(model => (
-                <DropdownMenuItem key={model.id} onClick={() => onAction(model.id)} className="gap-2">
-                  <ProviderIcon provider={model.provider} />
-                  <span>{model.name}</span>
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuSubContent>
-          </DropdownMenuSub>
+          isMobile ? (
+            // Mobile: Accordion Style
+            <>
+              <div 
+                onClick={(e) => { e.preventDefault(); e.stopPropagation(); setExpandedGroup(expandedGroup === 'favorites' ? null : 'favorites'); }}
+                className="flex items-center gap-2 px-2 py-2 rounded-sm hover:bg-black/5 cursor-pointer text-sm outline-none"
+              >
+                <Star size={14} className="fill-current text-t3-berry" />
+                <span className="flex-1 font-medium">Favorites</span>
+                <ChevronDown size={14} className={`opacity-50 transition-transform ${expandedGroup === 'favorites' ? 'rotate-180' : ''}`} />
+              </div>
+              {expandedGroup === 'favorites' && (
+                <div className="pl-2 border-l-2 border-fuchsia-100 ml-3.5 my-1 space-y-0.5 animate-in slide-in-from-top-1 duration-200">
+                  {favoriteModels.map(model => (
+                    <div 
+                      key={model.id} 
+                      onClick={(e) => { e.stopPropagation(); onAction(model.id); }}
+                      className="flex items-center gap-2 px-2 py-1.5 rounded-sm hover:bg-black/5 cursor-pointer text-[13px]"
+                    >
+                      <ProviderIcon provider={model.provider} />
+                      <span className="truncate">{model.name}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          ) : (
+            // Desktop: Submenu Style
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger className="gap-2">
+                <Star size={14} className="fill-current" />
+                <span className="flex-1">Favorites</span>
+                <ChevronRight size={14} className="opacity-50" />
+              </DropdownMenuSubTrigger>
+              <DropdownMenuSubContent className="max-h-[300px] overflow-y-auto z-[250]">
+                {favoriteModels.map(model => (
+                  <DropdownMenuItem key={model.id} onClick={() => onAction(model.id)} className="gap-2">
+                    <ProviderIcon provider={model.provider} />
+                    <span>{model.name}</span>
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
+          )
         )}
 
         {/* Provider submenus */}
         {sortedProviders.map(provider => (
-          <DropdownMenuSub key={provider.id}>
-            <DropdownMenuSubTrigger className="gap-2">
-              <ProviderIcon provider={provider.id} />
-              <span className="flex-1">{provider.name}</span>
-              <ChevronRight size={14} className="opacity-50" />
-            </DropdownMenuSubTrigger>
-            <DropdownMenuSubContent className="max-h-[300px] overflow-y-auto">
-              {modelsByProvider[provider.id].map(model => (
-                <DropdownMenuItem key={model.id} onClick={() => onAction(model.id)} className="gap-2">
-                  <span>{model.name}</span>
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuSubContent>
-          </DropdownMenuSub>
+          isMobile ? (
+             // Mobile: Accordion Style
+             <div key={provider.id}>
+              <div 
+                onClick={(e) => { e.preventDefault(); e.stopPropagation(); setExpandedGroup(expandedGroup === provider.id ? null : provider.id); }}
+                className="flex items-center gap-2 px-2 py-2 rounded-sm hover:bg-black/5 cursor-pointer text-sm outline-none"
+              >
+                <ProviderIcon provider={provider.id} />
+                <span className="flex-1 font-medium">{provider.name}</span>
+                <ChevronDown size={14} className={`opacity-50 transition-transform ${expandedGroup === provider.id ? 'rotate-180' : ''}`} />
+              </div>
+              {expandedGroup === provider.id && (
+                <div className="pl-2 border-l-2 border-fuchsia-100 ml-3.5 my-1 space-y-0.5 animate-in slide-in-from-top-1 duration-200">
+                  {modelsByProvider[provider.id].map(model => (
+                    <div 
+                      key={model.id} 
+                      onClick={(e) => { e.stopPropagation(); onAction(model.id); }}
+                      className="flex items-center gap-2 px-2 py-1.5 rounded-sm hover:bg-black/5 cursor-pointer text-[13px]"
+                    >
+                      <span className="truncate">{model.name}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : (
+            // Desktop: Submenu Style
+            <DropdownMenuSub key={provider.id}>
+              <DropdownMenuSubTrigger className="gap-2">
+                <ProviderIcon provider={provider.id} />
+                <span className="flex-1">{provider.name}</span>
+                <ChevronRight size={14} className="opacity-50" />
+              </DropdownMenuSubTrigger>
+              <DropdownMenuSubContent className="max-h-[300px] overflow-y-auto z-[250]">
+                {modelsByProvider[provider.id].map(model => (
+                  <DropdownMenuItem key={model.id} onClick={() => onAction(model.id)} className="gap-2">
+                    <span>{model.name}</span>
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
+          )
         ))}
       </DropdownMenuContent>
     </DropdownMenu>

@@ -38,11 +38,22 @@ function mergeToolCalls(acc: any[], defaults: any[]) {
   return acc;
 }
 
-export const streamAnswer = action({ 
-  args: { 
+// Helper to convert effort level to max_tokens for models that use that format
+function getMaxTokensForEffort(effort: string): number {
+  switch (effort) {
+    case 'low': return 1024;
+    case 'medium': return 4096;
+    case 'high': return 16384;
+    default: return 4096;
+  }
+}
+
+export const streamAnswer = action({
+  args: {
     threadId: v.id("threads"),
     modelId: v.optional(v.string()),
     reasoningEffort: v.optional(v.string()),
+    reasoningType: v.optional(v.union(v.literal("effort"), v.literal("max_tokens"))),
     webSearch: v.optional(v.boolean()),
     abortKey: v.optional(v.string())
   },
@@ -85,12 +96,12 @@ export const streamAnswer = action({
       const messages = await ctx.runQuery(api.messages.list, { threadId: args.threadId });
 
       // 3. Prepare OpenRouter Payload
-      // In cycle 1, exclude current message (it's empty). In subsequent cycles, include it (has tool calls).
+      // Exclude the current (empty/streaming) assistant message - it will receive the response
       const openRouterMessages = messages
         .filter((m: any) => {
+          // Always exclude the current message we're about to stream into
           if (m._id === currentMessageId) {
-            // Include current message only if it has tool calls (subsequent cycles)
-            return m.toolCalls && m.toolCalls.length > 0;
+            return false;
           }
           return true;
         })
@@ -138,8 +149,12 @@ export const streamAnswer = action({
           messages: openRouterMessages,
           tools: activeTools.length > 0 ? activeTools : undefined,
           tool_choice: activeTools.length > 0 && cycle === MAX_CYCLES ? "none" : undefined,
-          // Only include reasoning if explicitly provided - frontend controls when to send based on model support
-          ...(args.reasoningEffort ? { reasoning: { effort: args.reasoningEffort } } : {}),
+          // Include reasoning based on model type - effort vs max_tokens format
+          ...(args.reasoningEffort && args.reasoningType === 'effort'
+            ? { reasoning: { effort: args.reasoningEffort } }
+            : args.reasoningEffort && args.reasoningType === 'max_tokens'
+            ? { reasoning: { max_tokens: getMaxTokensForEffort(args.reasoningEffort) } }
+            : {}),
           stream: true,
         }),
       });
@@ -149,11 +164,13 @@ export const streamAnswer = action({
 
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
-      
+
       let accumulatedToolCalls: any[] = [];
+      let accumulatedReasoning = "";
+      let finishReason: string | null = null;
       let lastCheck = 0;
       const abortCheckIntervalMs = 100;
-      
+
       let isAborted = false;
       
       while (true) {
@@ -171,7 +188,12 @@ export const streamAnswer = action({
             try {
               const data = JSON.parse(dataStr);
               const delta = data.choices[0]?.delta;
-              // finish_reason currently unused
+              const chunkFinishReason = data.choices[0]?.finish_reason;
+
+              // Capture finish_reason when it arrives
+              if (chunkFinishReason) {
+                finishReason = chunkFinishReason;
+              }
 
               // Check for abort via localStorage flag (passed from client)
               // We check this frequently for immediate cancellation
@@ -198,6 +220,11 @@ export const streamAnswer = action({
                 }
               }
 
+              // Handle Reasoning tokens (OpenRouter sends these in delta.reasoning)
+              if (delta?.reasoning) {
+                accumulatedReasoning += delta.reasoning;
+              }
+
               // Handle Content
               if (delta?.content) {
                 try {
@@ -215,7 +242,7 @@ export const streamAnswer = action({
                   throw e;
                 }
               }
-              
+
               // Handle Tool Calls
               if (delta?.tool_calls) {
                 accumulatedToolCalls = mergeToolCalls(accumulatedToolCalls, delta.tool_calls);
@@ -233,22 +260,36 @@ export const streamAnswer = action({
       
       // 5. Post-Stream Processing
       if (!isAborted) {
-         await ctx.runMutation(api.messages.updateStatus, { messageId, status: "completed" });
+        await ctx.runMutation(api.messages.updateStatus, { messageId, status: "completed" });
+      }
+
+      // Save reasoning content if any was accumulated
+      if (accumulatedReasoning.trim()) {
+        await ctx.runMutation(api.messages.saveReasoningContent, {
+          messageId,
+          reasoningContent: accumulatedReasoning
+        });
+      }
+
+      // Log finish_reason for debugging (useful for detecting incomplete responses)
+      if (finishReason && finishReason !== 'stop' && finishReason !== 'tool_calls') {
+        console.log(`Stream finished with reason: ${finishReason}`);
       }
 
       if (accumulatedToolCalls.length > 0) {
-         // Save tool calls to message
+         // Save tool calls to message and mark as completed (this cycle is done)
          await ctx.runMutation(api.messages.saveToolCalls, {
             messageId,
             toolCalls: accumulatedToolCalls
          });
+         await ctx.runMutation(api.messages.updateStatus, { messageId, status: "completed" });
 
          // Execute Tools
          for (const tc of accumulatedToolCalls) {
             const name = tc.function.name;
             const argsStr = tc.function.arguments;
             let result = "Error executing tool";
-            
+
             try {
                const argsObj = JSON.parse(argsStr);
                if (name === "get_current_time") {
@@ -267,7 +308,7 @@ export const streamAnswer = action({
                         },
                         body: JSON.stringify({ q: q })
                      });
-                     
+
                      if (!res.ok) {
                         result = JSON.stringify({ error: res.statusText });
                      } else {
@@ -290,7 +331,15 @@ export const streamAnswer = action({
                name: name
             });
          }
-         
+
+         // Create a NEW assistant message for the follow-up response
+         // This is the correct pattern: tool_calls message -> tool results -> new assistant message
+         const followUpMessageId = await ctx.runMutation(api.messages.initializeAssistantMessage, {
+            threadId: args.threadId,
+            modelId: args.modelId,
+         });
+         currentMessageId = followUpMessageId;
+
          // Continue loop to let model interpret results
          shouldContinue = true;
       }

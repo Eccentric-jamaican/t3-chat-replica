@@ -7,6 +7,7 @@ export const list = query({
     const messages = await ctx.db
       .query("messages")
       .withIndex("by_thread", (q) => q.eq("threadId", args.threadId))
+      .order("asc")
       .collect();
 
     return Promise.all(messages.map(async (msg) => {
@@ -68,6 +69,16 @@ export const saveToolCalls = mutation({
   },
   handler: async (ctx, args) => {
     await ctx.db.patch(args.messageId, { toolCalls: args.toolCalls });
+  }
+});
+
+export const saveReasoningContent = mutation({
+  args: {
+    messageId: v.id("messages"),
+    reasoningContent: v.string()
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.messageId, { reasoningContent: args.reasoningContent });
   }
 });
 
@@ -186,6 +197,7 @@ export const deleteAfter = mutation({
     const messages = await ctx.db
       .query("messages")
       .withIndex("by_thread", (q) => q.eq("threadId", args.threadId))
+      .order("asc")
       .collect();
 
     // Find the index of the target message

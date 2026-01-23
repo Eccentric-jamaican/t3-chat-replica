@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, type MouseEvent } from 'react'
-import { PanelLeft, Plus, Search, MessageSquare, Settings, LogIn, Pin, Trash2, Edit3, Share2, ExternalLink, Sparkles, Download, ChevronRight, X } from 'lucide-react'
+import { PanelLeft, Plus, Search, MessageSquare, Settings, LogIn, Pin, Trash2, Edit3, Share2, ExternalLink, Sparkles, Download, ChevronRight, X, Compass, Bookmark, Package, Ticket, ArrowUp } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { clsx, type ClassValue } from 'clsx'
 import { twMerge } from 'tailwind-merge'
@@ -295,11 +295,26 @@ const formatTranscriptHtml = (entries: any[]) => (
   }).join('\n')
 )
 
-export const Sidebar = () => {
+interface SidebarProps {
+  isOpen?: boolean;
+  onToggle?: (open: boolean) => void;
+}
+
+export const Sidebar = ({ isOpen: externalOpen, onToggle }: SidebarProps) => {
   const navigate = useNavigate()
   const { threadId: activeThreadId } = useParams({ strict: false }) as any
   const isMobile = useIsMobile()
-  const [isOpen, setIsOpen] = useState(!isMobile) // Closed by default on mobile
+  const [internalOpen, setInternalOpen] = useState(!isMobile) // Closed by default on mobile
+  
+  const isOpen = externalOpen !== undefined ? externalOpen : internalOpen;
+  const setIsOpen = (open: boolean) => {
+    if (onToggle) {
+      onToggle(open);
+    } else {
+      setInternalOpen(open);
+    }
+  }
+
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editingTitle, setEditingTitle] = useState("")
   const [searchQuery, setSearchQuery] = useState("")
@@ -420,20 +435,39 @@ export const Sidebar = () => {
               <X size={18} />
             </button>
           )}
-          <div className="px-3 pt-14 mb-3 flex flex-col gap-1">
+          <div className="px-3 pt-14 mb-3 flex flex-col gap-1 shrink-0">
             <div className="px-3 py-1 mb-1">
                <span className="text-sm font-bold text-foreground/90 tracking-tight">T3.chat</span>
             </div>
             <button 
               onClick={handleNewChat}
-              className="w-full flex items-center justify-between px-4 py-2 bg-primary text-white rounded-lg hover:opacity-95 transition-opacity text-[13.5px] font-bold shadow-[0_2px_10px_rgba(162,59,103,0.3)]"
+              className="w-full flex items-center justify-between px-4 py-2 bg-primary text-white rounded-lg hover:opacity-95 transition-opacity text-[13.5px] font-bold shadow-[0_2px_10px_rgba(162,59,103,0.3)] mb-2"
             >
               <span>New Chat</span>
               <Plus size={14} />
             </button>
+
+            <div className="flex flex-col gap-0.5 mb-2">
+              <button className="w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all text-[13.5px] font-medium text-foreground/75 hover:bg-black/[0.03] hover:text-foreground group">
+                <Compass size={16} className="text-foreground/40 group-hover:text-foreground transition-colors" />
+                <span>Explore</span>
+              </button>
+              <button className="w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all text-[13.5px] font-medium text-foreground/75 hover:bg-black/[0.03] hover:text-foreground group">
+                <Bookmark size={16} className="text-foreground/40 group-hover:text-foreground transition-colors" />
+                <span>Saved items</span>
+              </button>
+              <button className="w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all text-[13.5px] font-medium text-foreground/75 hover:bg-black/[0.03] hover:text-foreground group">
+                <Package size={16} className="text-foreground/40 group-hover:text-foreground transition-colors" />
+                <span>My orders</span>
+              </button>
+              <button className="w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all text-[13.5px] font-medium text-foreground/75 hover:bg-black/[0.03] hover:text-foreground group">
+                <Ticket size={16} className="text-foreground/40 group-hover:text-foreground transition-colors" />
+                <span>My coupons</span>
+              </button>
+            </div>
           </div>
 
-          <div className="px-3 mb-2">
+          <div className="px-3 mb-2 shrink-0">
             <div className="relative flex items-center bg-black/5 rounded-lg px-3 group focus-within:ring-1 focus-within:ring-primary/20">
               <Search className="text-foreground/30 flex-shrink-0" size={14} />
               <input 
@@ -495,7 +529,7 @@ export const Sidebar = () => {
             ))}
           </div>
 
-          <div className="p-3 border-t border-border/10">
+          <div className="p-3 border-t border-border/10 shrink-0">
             <button className="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg hover:bg-black/5 transition-all text-foreground/60 text-[13.5px] font-bold">
               <LogIn size={16} className="opacity-70" />
               <span>Login</span>
@@ -504,8 +538,11 @@ export const Sidebar = () => {
         </div>
       </motion.aside>
 
-      {/* Settings Action (Fixed Top Right) */}
-      <div className="fixed top-4 right-4 z-[100] px-2 py-1.5 rounded-xl bg-background/70 backdrop-blur-sm border border-black/5 shadow-sm">
+      {/* Settings & Primary Actions (Fixed Top Right) */}
+      <div className="fixed top-4 right-4 z-[100] flex items-center gap-1.5 px-2 py-1.5 rounded-xl bg-background/70 backdrop-blur-sm border border-black/5 shadow-sm">
+        <button className="p-1.5 rounded-lg hover:bg-black/10 transition-colors text-foreground/50">
+          <ArrowUp size={18} />
+        </button>
         <button className="p-1.5 rounded-lg hover:bg-black/10 transition-colors text-foreground/50">
           <Settings size={18} />
         </button>

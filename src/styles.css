@@ -250,6 +250,11 @@
   transform: translateZ(0);
 }
 
+/* Streaming text animation */
+.animated-streaming-text {
+  position: relative;
+}
+
 /* Prevent scroll anchor jumps during streaming */
 .message-scroll-area {
   overflow-anchor: none;
