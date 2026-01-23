@@ -182,7 +182,7 @@ export function MessageActionMenu({ type, onAction, children }: MessageActionMen
         sideOffset={12} 
         alignOffset={isMobile ? 0 : -4}
         collisionPadding={isMobile ? 10 : 40}
-        className="min-w-[220px] max-h-[400px] overflow-y-auto scrollbar-hide z-[150]"
+        className="min-w-[220px] max-h-[400px] overflow-y-auto scrollbar-hide z-[250]"
       >
         {/* Primary action */}
         <DropdownMenuItem onClick={() => onAction()} className="gap-2">
@@ -233,7 +233,7 @@ export function MessageActionMenu({ type, onAction, children }: MessageActionMen
                 <span className="flex-1">Favorites</span>
                 <ChevronRight size={14} className="opacity-50" />
               </DropdownMenuSubTrigger>
-              <DropdownMenuSubContent className="max-h-[300px] overflow-y-auto scrollbar-hide">
+              <DropdownMenuSubContent className="max-h-[300px] overflow-y-auto z-[250]">
                 {favoriteModels.map(model => (
                   <DropdownMenuItem key={model.id} onClick={() => onAction(model.id)} className="gap-2">
                     <ProviderIcon provider={model.provider} />
@@ -280,7 +280,7 @@ export function MessageActionMenu({ type, onAction, children }: MessageActionMen
                 <span className="flex-1">{provider.name}</span>
                 <ChevronRight size={14} className="opacity-50" />
               </DropdownMenuSubTrigger>
-              <DropdownMenuSubContent className="max-h-[300px] overflow-y-auto">
+              <DropdownMenuSubContent className="max-h-[300px] overflow-y-auto z-[250]">
                 {modelsByProvider[provider.id].map(model => (
                   <DropdownMenuItem key={model.id} onClick={() => onAction(model.id)} className="gap-2">
                     <span>{model.name}</span>

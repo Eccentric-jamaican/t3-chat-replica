@@ -430,7 +430,7 @@ export const ModelPicker = ({ selectedModelId, onSelect }: ModelPickerProps) => 
         side="top"
         sideOffset={isMobile ? 8 : 12}
         className={cn(
-          "p-0 bg-transparent border-none shadow-none",
+          "p-0 bg-transparent border-none shadow-none z-[250]",
           isMobile ? "w-[calc(100vw-16px)]" : "w-[480px]"
         )}
       >
@@ -471,7 +471,7 @@ export const ModelPicker = ({ selectedModelId, onSelect }: ModelPickerProps) => 
                   )}
                 </button>
               </PopoverTrigger>
-              <PopoverContent align="end" side="bottom" sideOffset={8} className="w-[200px] p-1.5 bg-white shadow-xl border border-black/[0.08] rounded-xl">
+              <PopoverContent align="end" side="bottom" sideOffset={8} className="w-[200px] p-1.5 bg-white shadow-xl border border-black/[0.08] rounded-xl z-[250]">
                 <div className="space-y-0.5">
                   {[
                     { id: 'fast', label: 'Fast', icon: <Sparkles size={14} /> },
@@ -620,7 +620,7 @@ export const ModelPicker = ({ selectedModelId, onSelect }: ModelPickerProps) => 
                           side="right"
                           align="center"
                           sideOffset={15}
-                          className="w-[260px] p-4 bg-white shadow-2xl border border-black/[0.08] rounded-2xl z-[110]"
+                          className="w-[260px] p-4 bg-white shadow-2xl border border-black/[0.08] rounded-2xl z-[250]"
                         >
                           <div className="space-y-4">
                             <div>

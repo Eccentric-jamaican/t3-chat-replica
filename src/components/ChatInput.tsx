@@ -16,14 +16,16 @@ function cn(...inputs: ClassValue[]) {
 }
 
 export interface ChatInputProps {
-  existingThreadId?: string
+  existingThreadId?: string;
+  placeholder?: string;
+  className?: string;
 }
 
 export interface ChatInputHandle {
   setContentAndSend: (text: string) => void
 }
 
-export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({ existingThreadId }, ref) => {
+export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({ existingThreadId, placeholder, className }, ref) => {
   const navigate = useNavigate()
   const isMobile = useIsMobile()
   const [content, setContent] = useState('')
@@ -227,8 +229,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({ existing
 
   return (
     <div className={cn(
-      "fixed bottom-0 right-0 px-2 pb-2 md:px-4 md:pb-6 pointer-events-none z-50 text-center transition-all duration-300",
-      isMobile ? "left-0" : "left-[240px]"
+      "w-full px-2 pb-1 md:px-4 md:pb-2 pointer-events-none z-50 text-center transition-all duration-300",
+      className
     )}>
       <div className="max-w-[768px] mx-auto pointer-events-auto w-full">
         
@@ -318,7 +320,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({ existing
                   handleSend()
                 }
               }}
-              placeholder="Type your message here..."
+              placeholder={placeholder || "Type your message here..."}
               className="w-full bg-transparent px-3 md:px-5 pt-2 md:pt-4 pb-1 md:pb-2 text-foreground placeholder-foreground/35 outline-none resize-none min-h-[44px] md:min-h-[48px] max-h-[160px] md:max-h-[400px] overflow-y-auto text-[14px] md:text-[15.5px] leading-relaxed"
             />
 
@@ -419,7 +421,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({ existing
           </div>
         </div>
         
-        <p className="text-[11px] text-center mt-2 md:mt-3.5 text-foreground/35 font-semibold tracking-tight">
+        <p className="text-[11px] text-center mt-1 md:mt-1.5 text-foreground/35 font-semibold tracking-tight">
           T3.chat can make mistakes. Check important info.
         </p>
       </div>

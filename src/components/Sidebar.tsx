@@ -295,11 +295,26 @@ const formatTranscriptHtml = (entries: any[]) => (
   }).join('\n')
 )
 
-export const Sidebar = () => {
+interface SidebarProps {
+  isOpen?: boolean;
+  onToggle?: (open: boolean) => void;
+}
+
+export const Sidebar = ({ isOpen: externalOpen, onToggle }: SidebarProps) => {
   const navigate = useNavigate()
   const { threadId: activeThreadId } = useParams({ strict: false }) as any
   const isMobile = useIsMobile()
-  const [isOpen, setIsOpen] = useState(!isMobile) // Closed by default on mobile
+  const [internalOpen, setInternalOpen] = useState(!isMobile) // Closed by default on mobile
+  
+  const isOpen = externalOpen !== undefined ? externalOpen : internalOpen;
+  const setIsOpen = (open: boolean) => {
+    if (onToggle) {
+      onToggle(open);
+    } else {
+      setInternalOpen(open);
+    }
+  }
+
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editingTitle, setEditingTitle] = useState("")
   const [searchQuery, setSearchQuery] = useState("")
