@@ -2,7 +2,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { Sidebar } from '../components/Sidebar'
 import { ChatInput, type ChatInputHandle } from '../components/ChatInput'
 import { LandingHero } from '../components/LandingHero'
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useIsMobile } from '../hooks/useIsMobile'
 
 export const Route = createFileRoute('/')({ component: App })
@@ -11,6 +11,10 @@ function App() {
   const chatInputRef = useRef<ChatInputHandle>(null)
   const isMobile = useIsMobile()
   const [sidebarOpen, setSidebarOpen] = useState(!isMobile)
+
+  useEffect(() => {
+    setSidebarOpen(!isMobile)
+  }, [isMobile])
 
   return (
     <div className="flex h-dvh min-h-screen overflow-hidden bg-background relative">
@@ -25,7 +29,7 @@ function App() {
           <LandingHero onSelectPrompt={(text) => chatInputRef.current?.setContentAndSend(text)} />
         </main>
 
-        <div className="absolute bottom-0 left-0 z-[200] w-full p-2 md:p-4 pt-0">
+        <div className="absolute bottom-0 left-0 z-[50] w-full p-2 md:p-4 pt-0">
           <ChatInput ref={chatInputRef} />
         </div>
       </div>

@@ -72,23 +72,27 @@ export async function fetchOpenRouterModels(): Promise<AppModel[]> {
       // Use architecture for vision (image input)
       const hasVision = m.architecture?.input_modalities?.includes('image') || m.id.includes('vision')
       
-      // Use supported_parameters for tool calling, with fallback to known models
-      // Many models support tools but don't always have it in supported_parameters
-      const knownToolModels =
-        modelIdLower.includes('gpt-4') ||
-        modelIdLower.includes('gpt-3.5') ||
-        modelIdLower.includes('claude') ||
-        modelIdLower.includes('gemini') ||
-        modelIdLower.includes('llama-3') ||
-        modelIdLower.includes('mistral') ||
-        modelIdLower.includes('mixtral') ||
-        modelIdLower.includes('command-r') ||
-        modelIdLower.includes('deepseek')
-
-      const supportsTools = m.supported_parameters?.includes('tools') ||
-        knownToolModels ||
-        m.description?.toLowerCase().includes('function calling') ||
-        m.description?.toLowerCase().includes('tool use')
+      // Use supported_parameters for tool calling when explicitly declared,
+      // otherwise fall back to known model heuristics
+      let supportsTools: boolean
+      if (m.supported_parameters != null) {
+        supportsTools = m.supported_parameters.includes('tools')
+      } else {
+        const descLower = m.description?.toLowerCase() ?? ''
+        const knownToolModels =
+          modelIdLower.includes('gpt-4') ||
+          modelIdLower.includes('gpt-3.5') ||
+          modelIdLower.includes('claude') ||
+          modelIdLower.includes('gemini') ||
+          modelIdLower.includes('llama-3') ||
+          modelIdLower.includes('mistral') ||
+          modelIdLower.includes('mixtral') ||
+          modelIdLower.includes('command-r') ||
+          modelIdLower.includes('deepseek') ||
+          descLower.includes('function calling') ||
+          descLower.includes('tool use')
+        supportsTools = knownToolModels
+      }
       
       // Image Generation (output)
       const supportsImages = m.architecture?.output_modalities?.includes('image') || m.id.includes('flux') || m.id.includes('dall-e') || m.id.includes('stable-diffusion') || m.id.includes('ideogram')

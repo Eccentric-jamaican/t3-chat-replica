@@ -22,6 +22,8 @@ export function SelectionActionBar({ selectedCount, onClear, onAsk, onInquiry }:
             <div className="flex items-center gap-3">
               <button
                 onClick={onClear}
+                aria-label="Clear selection"
+                title="Clear selection"
                 className="p-1 hover:bg-white/10 rounded-md transition-colors"
               >
                 <X size={18} />

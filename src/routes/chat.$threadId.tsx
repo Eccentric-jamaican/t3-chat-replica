@@ -540,7 +540,7 @@ function ChatPage() {
                         
                         <MessageMetadata
                           modelName={msg.modelId ? getModelDisplayName(msg.modelId) : 'AI'}
-                          wordCount={msg.content?.split(/\s+/).length}
+                          wordCount={msg.content?.trim().split(/\s+/).filter(Boolean).length ?? 0}
                           toolCalls={msg.toolCalls?.length}
                         />
                       </>
@@ -565,9 +565,9 @@ function ChatPage() {
         {/* We hide the input when product selection is active to show the Floating Action Bar */}
         <div className={cn(
            "transition-all duration-300 ease-in-out",
-           isExpandedOpen 
-             ? "fixed bottom-0 left-0 w-full z-[550] px-2 md:px-4 pb-1 md:pb-2 pt-0" 
-             : "absolute bottom-0 left-0 z-[200] w-full px-2 md:px-4 pb-1 md:pb-2 pt-0",
+           isExpandedOpen
+             ? "fixed bottom-0 left-0 w-full z-[550] px-2 md:px-4 pb-1 md:pb-2 pt-0"
+             : "absolute bottom-0 left-0 z-[50] w-full px-2 md:px-4 pb-1 md:pb-2 pt-0",
            (selectedProductIds.length > 0) ? "translate-y-24 opacity-0 pointer-events-none" : "translate-y-0 opacity-100"
         )}>
           <ChatInput 

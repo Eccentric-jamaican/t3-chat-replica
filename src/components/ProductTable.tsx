@@ -60,7 +60,7 @@ export function ProductTable({ products, selectedIds, onToggleSelection, onProdu
                     {product.supplier.logo}
                   </div>
                   <span className="truncate max-w-[120px]">{product.supplier.name}</span>
-                  <span className="text-gray-300 text-[10px] shrink-0 font-medium">CN {product.supplier.years}yrs</span>
+                  <span className="text-gray-300 text-[10px] shrink-0 font-medium">{product.supplier.country} {product.supplier.years}yrs</span>
                 </div>
               </td>
               <td className="p-4">

@@ -1,7 +1,6 @@
 import { useNavigate } from "@tanstack/react-router";
 import { type Product } from "../data/mockProducts";
 import { motion } from "framer-motion";
-import { useIsMobile } from "../hooks/useIsMobile";
 
 interface ProductCardProps {
   product: Product;
@@ -9,7 +8,6 @@ interface ProductCardProps {
 
 export function ProductCard({ product }: ProductCardProps) {
   const navigate = useNavigate();
-  const isMobile = useIsMobile();
 
   const handleClick = () => {
     // Add productId to search params to open the drawer

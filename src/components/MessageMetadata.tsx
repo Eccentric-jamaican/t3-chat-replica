@@ -30,13 +30,24 @@ export const MessageMetadata = ({ modelName, toolCalls, wordCount }: { modelName
   const time = (tokens / 60).toFixed(1); // Rough estimate
 
   const toggleExpand = () => {
-    if (isMobile) setIsExpanded(!isExpanded);
+    if (isMobile) setIsExpanded(prev => !prev);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (isMobile && (e.key === 'Enter' || e.key === ' ')) {
+      e.preventDefault();
+      toggleExpand();
+    }
   };
 
   return (
     <div 
       className={`flex items-center gap-x-3 ml-0 md:ml-4 select-none group/meta mt-1 overflow-hidden transition-all duration-300 ${isMobile ? 'cursor-pointer' : ''}`}
-      onClick={toggleExpand}
+      onClick={isMobile ? toggleExpand : undefined}
+      onKeyDown={handleKeyDown}
+      role="button"
+      tabIndex={isMobile ? 0 : -1}
+      aria-expanded={isMobile ? isExpanded : undefined}
     >
        {/* Model Name */}
        <MetadataChip
