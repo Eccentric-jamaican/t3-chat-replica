@@ -394,21 +394,31 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({ existing
               <div>
                 <motion.button
                   whileTap={{ scale: 0.95 }}
-                  onClick={() => (isGenerating || isThreadStreaming) ? handleStop() : handleSend()}
+                  onClick={(e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    if (isGenerating || isThreadStreaming) {
+                      handleStop()
+                    } else {
+                      handleSend()
+                    }
+                  }}
                   disabled={!content.trim() && !isGenerating && !isThreadStreaming}
                   className={cn(
-                    "p-2 md:p-2.5 rounded-xl transition-all duration-300",
+                    // Critical: Maintain min 44x44px touch target for mobile
+                    "flex items-center justify-center rounded-xl transition-all duration-300 touch-manipulation z-20",
+                    "min-w-[44px] min-h-[44px] p-2 md:p-2.5",
                     content.trim() || isGenerating || isThreadStreaming
                       ? (isGenerating || isThreadStreaming)
                         ? "bg-red-500 text-white shadow-lg shadow-red-500/20"
-                        : "bg-t3-berry text-white shadow-lg shadow-t3-berry/20" 
+                        : "bg-t3-berry text-white shadow-lg shadow-t3-berry/20"
                       : "bg-black/5 text-black/40 cursor-not-allowed"
                   )}
                 >
                   {(isGenerating || isThreadStreaming) ? (
-                    <StopCircle size={isMobile ? 18 : 20} className="fill-current text-white" />
+                    <StopCircle size={isMobile ? 22 : 20} className="fill-current text-white" />
                   ) : (
-                    <ArrowUp size={isMobile ? 18 : 20} strokeWidth={2.5} />
+                    <ArrowUp size={isMobile ? 22 : 20} strokeWidth={2.5} />
                   )}
                 </motion.button>
               </div>

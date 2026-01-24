@@ -141,5 +141,35 @@ export const MOCK_PRODUCTS: Product[] = [
     },
     rating: 4.4,
     reviews: 156
+  },
+  {
+    id: "prod_silk_dress",
+    title: "Silk Slip Dress - Midnight Black",
+    priceRange: "$120.00 - $150.00",
+    moq: "1 Piece",
+    image: "https://images.unsplash.com/photo-1595777457583-95e059d581b8?auto=format&fit=crop&q=80&w=400",
+    supplier: { name: "Luxe Wear", logo: "L", years: 3, country: "FR" },
+    rating: 4.8,
+    reviews: 42
+  },
+  {
+    id: "prod_boots",
+    title: "Handcrafted Leather Chelsea Boots",
+    priceRange: "$180.00 - $210.00",
+    moq: "1 Pair",
+    image: "https://images.unsplash.com/photo-1542291026-7eec264c274d?auto=format&fit=crop&q=80&w=400",
+    supplier: { name: "SoleStyle", logo: "S", years: 7, country: "IT" },
+    rating: 4.9,
+    reviews: 89
+  },
+  {
+    id: "prod_linen_blouse",
+    title: "Pure Linen Summer Blouse",
+    priceRange: "$45.00 - $65.00",
+    moq: "2 Pieces",
+    image: "https://images.unsplash.com/photo-1554412930-c74f637c8a3c?auto=format&fit=crop&q=80&w=400",
+    supplier: { name: "EcoLuxe", logo: "E", years: 2, country: "ES" },
+    rating: 4.8,
+    reviews: 15
   }
 ];
