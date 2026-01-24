@@ -1,12 +1,13 @@
 import { motion } from "framer-motion";
 import { X, LayoutGrid, List } from "lucide-react";
 import { useState } from "react";
-import { MOCK_PRODUCTS } from "../../data/mockProducts";
+import { type Product } from "../../data/mockProducts";
 import { ProductCard } from "./ProductCard";
 import { ProductTable } from "./ProductTable";
 import { Checkbox } from "../ui/checkbox";
 
 interface ProductExpandedViewProps {
+  products: Product[];
   onClose: () => void;
   onProductClick: (id: string) => void;
   selectedIds: string[];
@@ -14,6 +15,7 @@ interface ProductExpandedViewProps {
 }
 
 export function ProductExpandedView({ 
+  products = [],
   onClose, 
   onProductClick, 
   selectedIds, 
@@ -60,7 +62,7 @@ export function ProductExpandedView({
         {view === "grid" ? (
           <div className="max-w-7xl mx-auto p-6">
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-              {MOCK_PRODUCTS.map((product) => (
+              {products.map((product) => (
                 <div key={product.id} className="relative">
                    <div
                      className="absolute top-4 left-4 z-10"
@@ -79,7 +81,7 @@ export function ProductExpandedView({
         ) : (
           <div className="max-w-7xl mx-auto py-6 px-4 sm:px-6">
             <ProductTable 
-              products={MOCK_PRODUCTS} 
+              products={products} 
               selectedIds={selectedIds}
               onToggleSelection={onToggleSelection}
               onProductClick={onProductClick}

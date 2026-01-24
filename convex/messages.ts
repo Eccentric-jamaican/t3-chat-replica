@@ -71,7 +71,9 @@ export const saveToolCalls = mutation({
     }))
   },
   handler: async (ctx, args) => {
-    await ctx.db.patch(args.messageId, { toolCalls: args.toolCalls });
+    const existing = await ctx.db.get(args.messageId);
+    const toolCalls = [...(existing?.toolCalls || []), ...args.toolCalls];
+    await ctx.db.patch(args.messageId, { toolCalls });
   }
 });
 
@@ -81,7 +83,30 @@ export const saveReasoningContent = mutation({
     reasoningContent: v.string()
   },
   handler: async (ctx, args) => {
-    await ctx.db.patch(args.messageId, { reasoningContent: args.reasoningContent });
+    const existing = await ctx.db.get(args.messageId);
+    const reasoningContent = (existing?.reasoningContent || "") + args.reasoningContent;
+    await ctx.db.patch(args.messageId, { reasoningContent });
+  }
+});
+
+export const saveProducts = mutation({
+  args: {
+    messageId: v.id("messages"),
+    products: v.array(v.object({
+      id: v.string(),
+      title: v.string(),
+      price: v.string(),
+      image: v.string(),
+      url: v.string(),
+      sellerName: v.optional(v.string()),
+      sellerFeedback: v.optional(v.string()),
+      condition: v.optional(v.string()),
+      rating: v.optional(v.number()),
+      reviews: v.optional(v.number()),
+    }))
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.messageId, { products: args.products });
   }
 });
 

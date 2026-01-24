@@ -32,9 +32,9 @@ export function ProductCard({ product }: ProductCardProps) {
 
         {/* Content */}
         <div className="flex flex-col gap-0.5 sm:gap-1">
-          {product.badge && (
+          {(product.badge || product.condition) && (
             <div className="w-fit rounded-md bg-[#e6f4f1] px-1.5 sm:px-2 py-0.5 text-[10px] sm:text-[11px] font-semibold text-[#008a6c]">
-              {product.badge}
+              {product.badge || product.condition}
             </div>
           )}
           
@@ -48,13 +48,18 @@ export function ProductCard({ product }: ProductCardProps) {
           
           <span className="text-[10px] sm:text-xs text-gray-500">{product.moq}</span>
 
-          {/* Supplier Meta */}
+          {/* Supplier/Seller Meta */}
           <div className="mt-1.5 sm:mt-2 flex items-center gap-1.5 border-t border-gray-100 pt-1.5 sm:pt-2 text-[10px] sm:text-xs text-gray-500">
              <div className="flex h-3.5 w-3.5 sm:h-4 sm:w-4 items-center justify-center rounded-sm bg-gray-200 text-[9px] sm:text-[10px] font-bold text-gray-600">
-               {product.supplier.logo}
+               {product.supplier?.logo || (product.sellerName?.charAt(0).toUpperCase() || 'E')}
              </div>
-             <span className="truncate">{product.supplier.name}</span>
-             <span className="shrink-0 text-gray-400 hidden sm:inline">{product.supplier.country} {product.supplier.years}yrs</span>
+             <span className="truncate">{product.supplier?.name || product.sellerName}</span>
+             {product.supplier && (
+                <span className="shrink-0 text-gray-400 hidden sm:inline">{product.supplier.country} {product.supplier.years}yrs</span>
+             )}
+             {product.sellerFeedback && (
+                <span className="shrink-0 text-t3-berry-deep font-semibold">{product.sellerFeedback} positive</span>
+             )}
           </div>
         </div>
       </div>

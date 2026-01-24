@@ -34,6 +34,18 @@ export default defineSchema({
     }))),
     toolCallId: v.optional(v.string()),
     name: v.optional(v.string()),
+    products: v.optional(v.array(v.object({
+      id: v.string(),
+      title: v.string(),
+      price: v.string(),
+      image: v.string(),
+      url: v.string(),
+      sellerName: v.optional(v.string()),
+      sellerFeedback: v.optional(v.string()),
+      condition: v.optional(v.string()),
+      rating: v.optional(v.number()),
+      reviews: v.optional(v.number()),
+    }))),
   }).index("by_thread", ["threadId"])
     .index("by_thread_status", ["threadId", "status"]),
 

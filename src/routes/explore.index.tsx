@@ -1,13 +1,41 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
-import { featuredCards, categories, shopSections, type ShopSection, type ShopItem } from '../data/explore'
-import { Search, ChevronRight, ArrowUpRight, Star } from 'lucide-react'
+import { featuredCards, categories, type ShopSection, type ShopItem } from '../data/explore'
+import { Search, ChevronRight, ArrowUpRight, Star, Loader2 } from 'lucide-react'
 import { motion } from 'framer-motion'
 import { useIsMobile } from '../hooks/useIsMobile'
+import { useAction } from 'convex/react'
+import { api } from '../../convex/_generated/api'
+import { useEffect, useState } from 'react'
 
 export const Route = createFileRoute('/explore/')({ component: ExplorePage })
 
 function ExplorePage() {
   const isMobile = useIsMobile()
+  const getExploreItems = useAction(api.explore.getExploreItems)
+  const [shopSections, setShopSections] = useState<ShopSection[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+
+  useEffect(() => {
+    const fetchSections = async () => {
+      try {
+        const [trending, newArrivals] = await Promise.all([
+          getExploreItems({ section: 'trending' }),
+          getExploreItems({ section: 'new' })
+        ])
+
+        setShopSections([
+          { id: 'trending', title: 'Trending Now', items: trending },
+          { id: 'new', title: 'New Arrivals', items: newArrivals }
+        ])
+      } catch (error) {
+        console.error('Failed to fetch explore items:', error)
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    fetchSections()
+  }, [getExploreItems])
 
   return (
     <>
@@ -129,41 +157,48 @@ function ExplorePage() {
         </section>
 
         {/* Shop App Style Sections */}
-        {shopSections.map((section: ShopSection) => (
-          <section key={section.id} className="space-y-6">
-            <div className="flex items-center gap-2 cursor-pointer group w-fit">
-              <h2 className="text-2xl font-bold text-foreground/90">{section.title}</h2>
-              <ChevronRight className="text-foreground/40 group-hover:text-foreground transition-colors" size={24} />
-            </div>
-            
-            <div className="flex gap-4 overflow-x-auto pb-6 scrollbar-hide -mx-4 px-4 md:mx-0 md:px-0 scroll-pl-4">
-              {section.items.map((item: ShopItem) => (
-                <Link 
-                  key={item.id} 
-                  to="." 
-                  search={{ productId: item.id }} 
-                  className="flex-none w-[160px] md:w-[220px] group cursor-pointer"
-                >
-                  <div className="relative aspect-square rounded-2xl overflow-hidden mb-3 bg-black/5">
-                    <img 
-                      src={item.image} 
-                      alt={item.title} 
-                      className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
-                    />
-                    <div className="absolute top-2 right-2 bg-white/90 backdrop-blur-sm px-1.5 py-0.5 rounded-md flex items-center gap-0.5 text-[10px] font-bold shadow-sm">
-                      <Star size={10} className="fill-yellow-400 text-yellow-400" />
-                      <span>{item.rating}</span>
+        {isLoading ? (
+          <div className="flex justify-center py-12">
+            <Loader2 className="w-8 h-8 animate-spin text-primary/50" />
+          </div>
+        ) : (
+          shopSections.map((section: ShopSection) => (
+            <section key={section.id} className="space-y-6">
+              <div className="flex items-center gap-2 cursor-pointer group w-fit">
+                <h2 className="text-2xl font-bold text-foreground/90">{section.title}</h2>
+                <ChevronRight className="text-foreground/40 group-hover:text-foreground transition-colors" size={24} />
+              </div>
+              
+              <div className="flex gap-4 overflow-x-auto pb-6 scrollbar-hide -mx-4 px-4 md:mx-0 md:px-0 scroll-pl-4">
+                {section.items.map((item: ShopItem) => (
+                  <Link 
+                    key={item.id} 
+                    to="." 
+                    search={{ productId: item.id }} 
+                    className="flex-none w-[160px] md:w-[220px] group cursor-pointer"
+                  >
+                    <div className="relative aspect-square rounded-2xl overflow-hidden mb-3 bg-black/5">
+                      <img 
+                        src={item.image} 
+                        alt={item.title} 
+                        className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+                      />
+                      <div className="absolute top-2 right-2 bg-white/90 backdrop-blur-sm px-1.5 py-0.5 rounded-md flex items-center gap-0.5 text-[10px] font-bold shadow-sm">
+                        <Star size={10} className="fill-yellow-400 text-yellow-400" />
+                        <span>{item.rating.toFixed(1)}</span>
+                      </div>
                     </div>
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-bold text-foreground/90 leading-tight group-hover:text-primary transition-colors">{item.title}</h3>
-                    <p className="text-xs text-foreground/50 mt-1">{item.brand}</p>
-                  </div>
-                </Link>
-              ))}
-            </div>
-          </section>
-        ))}
+                    <div>
+                      <h3 className="text-sm font-bold text-foreground/90 leading-tight group-hover:text-primary transition-colors line-clamp-2">{item.title}</h3>
+                      <p className="text-xs text-foreground/50 mt-1 truncate">{item.brand}</p>
+                      {item.price && <p className="text-sm font-semibold text-foreground/90 mt-1">{item.price}</p>}
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            </section>
+          ))
+        )}
       </main>
 
       <footer className="py-12 border-t border-black/5 text-center text-foreground/30 text-sm">

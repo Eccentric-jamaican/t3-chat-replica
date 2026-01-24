@@ -99,6 +99,8 @@ export interface ShopItem {
   image: string;
   brand: string;
   rating: number;
+  price?: string;
+  url?: string;
 }
 
 export interface ShopSection {

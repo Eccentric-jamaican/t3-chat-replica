@@ -2,17 +2,21 @@ export type Product = {
   id: string;
   title: string;
   priceRange: string;
-  moq: string;
   image: string;
+  url?: string;
+  moq?: string;
   badge?: string;
-  supplier: {
+  supplier?: {
     name: string;
     logo: string;
     years: number;
     country: string;
   };
-  rating: number;
-  reviews: number;
+  sellerName?: string;
+  sellerFeedback?: string;
+  condition?: string;
+  rating?: number;
+  reviews?: number;
 };
 
 export const MOCK_PRODUCTS: Product[] = [

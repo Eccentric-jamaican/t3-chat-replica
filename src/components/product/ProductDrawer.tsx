@@ -1,16 +1,24 @@
-import { useNavigate } from "@tanstack/react-router";
+import { useNavigate, useRouter, useLocation } from "@tanstack/react-router";
 import { motion } from "framer-motion";
-import { MOCK_PRODUCTS } from "../../data/mockProducts";
-import { X, MessageSquare, Send, Star } from "lucide-react";
-import { useEffect } from "react";
+import { type Product } from "../../data/mockProducts";
+import { X, MessageSquare, Star, ExternalLink, Loader2, Info } from "lucide-react";
+import { useEffect, useState } from "react";
+import { useAction } from "convex/react";
+import { api } from "../../../convex/_generated/api";
 
 interface ProductDrawerProps {
   productId: string;
+  initialData?: Product;
 }
 
-export function ProductDrawer({ productId }: ProductDrawerProps) {
+export function ProductDrawer({ productId, initialData }: ProductDrawerProps) {
   const navigate = useNavigate();
-  const product = MOCK_PRODUCTS.find((p) => p.id === productId);
+  const router = useRouter(); 
+  const location = useLocation(); // Hook to get the router's current location
+  const getItemDetails = useAction(api.chat.getItemDetails);
+  const [product, setProduct] = useState<Product | undefined>(initialData);
+  const [loading, setLoading] = useState(!initialData);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     // Prevent body scroll when drawer is open
@@ -20,12 +28,62 @@ export function ProductDrawer({ productId }: ProductDrawerProps) {
     };
   }, []);
 
-  if (!product) return null;
+  useEffect(() => {
+    // If we have valid initial data (like from the search bubble), use it
+    if (initialData) {
+      setProduct(initialData);
+      setLoading(false);
+      return;
+    }
+
+    // Otherwise fetch details from eBay via Convex (handles page refreshes)
+    const fetchDetails = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        const data = await getItemDetails({ itemId: productId });
+        
+        // Map eBay full item to our Product type
+        const mappedProduct: Product = {
+          id: data.itemId,
+          title: data.title,
+          priceRange: `${data.price?.currency} ${data.price?.value}`,
+          image: data.image?.imageUrl || data.additionalImages?.[0]?.imageUrl || "",
+          url: data.itemWebUrl,
+          sellerName: data.seller?.username,
+          sellerFeedback: data.seller?.feedbackPercentage ? `${data.seller.feedbackPercentage}%` : undefined,
+          condition: data.condition,
+          rating: data.product?.averageRating,
+          reviews: data.product?.reviewCount,
+        };
+        
+        setProduct(mappedProduct);
+      } catch (err) {
+        console.error("Failed to fetch product details:", err);
+        setError("We couldn't retrieve the details for this item right now.");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchDetails();
+  }, [productId, initialData, getItemDetails]);
 
   const handleClose = () => {
-    // Clear the productId search param to close the drawer
-    navigate({ to: ".", search: {} });
+    // Check if we can go back in history (if the drawer was opened via push)
+    if (window.history.length > 2) {
+      window.history.back();
+    } else {
+      // Fallback: stay on current location but remove param
+      navigate({
+        to: location.pathname,
+        search: (old: any) => ({ ...old, productId: undefined }),
+        replace: true
+      });
+    }
   };
+
+  if (!productId) return null;
 
   return (
     <div className="fixed inset-0 z-[600] flex justify-end isolate">
@@ -35,7 +93,7 @@ export function ProductDrawer({ productId }: ProductDrawerProps) {
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         onClick={handleClose}
-        className="absolute inset-0 bg-black/20 backdrop-blur-[2px]"
+        className="absolute inset-0 bg-black/40 backdrop-blur-[3px]"
       />
 
       {/* Drawer */}
@@ -59,99 +117,105 @@ export function ProductDrawer({ productId }: ProductDrawerProps) {
 
         {/* Scrollable Content */}
         <div className="flex-1 overflow-y-auto overflow-x-hidden">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 p-6 md:p-8">
-            {/* Left Column: Gallery */}
-            <div className="space-y-4">
-              <motion.div
-                layoutId={`image-${product.id}`}
-                className="aspect-square w-full overflow-hidden rounded-2xl bg-gray-50 border border-gray-100"
+          {loading ? (
+             <div className="flex flex-col items-center justify-center h-full gap-4 text-zinc-500">
+               <Loader2 className="animate-spin" size={32} />
+               <p className="text-sm font-medium">Fetching details from eBay...</p>
+             </div>
+          ) : error ? (
+            <div className="flex flex-col items-center justify-center h-full p-8 text-center gap-4">
+              <div className="bg-red-50 p-3 rounded-full text-red-500">
+                <Info size={32} />
+              </div>
+              <h3 className="text-lg font-bold text-zinc-900">Oops!</h3>
+              <p className="text-zinc-600 max-w-xs">{error}</p>
+              <button 
+                onClick={handleClose}
+                className="mt-4 px-6 py-2 bg-zinc-900 text-white rounded-full text-sm font-medium"
               >
-                <img
-                  src={product.image}
-                  alt={product.title}
-                  className="h-full w-full object-cover"
-                />
-              </motion.div>
-              <div className="grid grid-cols-4 gap-2">
-                 {/* Mock thumbnails */}
-                 {[...Array(3)].map((_, i) => (
-                   <div key={i} className="aspect-square rounded-lg bg-gray-100 border border-gray-200 overflow-hidden opacity-60"></div>
-                 ))}
+                Go back
+              </button>
+            </div>
+          ) : product ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 p-6 md:p-8">
+              {/* Left Column: Gallery */}
+              <div className="space-y-4">
+                <motion.div
+                  layoutId={`image-${product.id}`}
+                  className="aspect-square w-full overflow-hidden rounded-2xl bg-gray-50 border border-gray-100"
+                >
+                  <img
+                    src={product.image}
+                    alt={product.title}
+                    className="h-full w-full object-cover"
+                  />
+                </motion.div>
+                {product.url && (
+                    <a 
+                      href={product.url} 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className="flex items-center justify-center gap-2 w-full py-3 rounded-xl border border-zinc-200 text-sm font-semibold text-zinc-600 hover:bg-zinc-50 transition-colors"
+                    >
+                      <ExternalLink size={16} />
+                      View original listing on eBay
+                    </a>
+                )}
+              </div>
+
+              {/* Right Column: Info */}
+              <div className="space-y-8">
+                 {/* Header Info */}
+                 <div className="space-y-4">
+                   <h1 className="text-2xl font-bold text-gray-900 leading-tight">
+                     {product.title}
+                   </h1>
+                   
+                   <div className="flex items-center gap-4 text-sm">
+                     {product.rating ? (
+                        <div className="flex items-center gap-1 text-yellow-500 font-bold">
+                          <Star size={16} fill="currentColor" />
+                          <span className="font-medium text-gray-900">{product.rating.toFixed(1)}</span>
+                          <span className="text-gray-400 font-normal">({product.reviews} reviews)</span>
+                        </div>
+                     ) : (
+                        <div className="flex items-center gap-1 text-zinc-400">
+                          <Star size={16} />
+                          <span>No ratings yet</span>
+                        </div>
+                     )}
+                     <span className="text-gray-400">|</span>
+                     <span className="text-green-600 font-medium">Available</span>
+                   </div>
+
+                   <div className="rounded-xl bg-gray-50 p-4 border border-gray-100">
+                      <div className="text-xs text-gray-500 font-medium uppercase tracking-wider mb-1">Price</div>
+                      <div className="text-3xl font-bold text-gray-900">{product.priceRange}</div>
+                      <div className="text-sm text-zinc-500 mt-1 uppercase text-[10px] tracking-widest font-bold">Condition: {product.condition}</div>
+                   </div>
+                 </div>
+
+                 {/* Seller Info */}
+                 <div className="flex items-center gap-3 p-4 rounded-xl border border-zinc-100 bg-white shadow-sm">
+                    <div className="h-10 w-10 flex items-center justify-center rounded-lg bg-zinc-100 text-zinc-600 font-bold">
+                      {product.supplier?.logo || (product.sellerName?.charAt(0).toUpperCase() || 'E')}
+                    </div>
+                    <div>
+                      <div className="font-semibold text-gray-900 text-sm">{product.supplier?.name || product.sellerName}</div>
+                      <div className="flex items-center gap-2 text-xs text-gray-500">
+                        {product.supplier ? (
+                          <span>{product.supplier.years} years</span>
+                        ) : product.sellerFeedback ? (
+                          <span className="text-t3-berry-deep font-bold">{product.sellerFeedback} Positive</span>
+                        ) : null}
+                        <span>•</span>
+                        <span>Verified Seller</span>
+                      </div>
+                    </div>
+                 </div>
               </div>
             </div>
-
-            {/* Right Column: Info */}
-            <div className="space-y-8">
-               {/* Header Info */}
-               <div className="space-y-4">
-                 <h1 className="text-2xl font-bold text-gray-900 leading-tight">
-                   {product.title}
-                 </h1>
-                 
-                 <div className="flex items-center gap-4 text-sm">
-                   <div className="flex items-center gap-1 text-yellow-500">
-                     <Star size={16} fill="currentColor" />
-                     <span className="font-medium text-gray-900">{product.rating}</span>
-                   </div>
-                   <span className="text-gray-400">|</span>
-                   <span className="text-gray-500">{product.reviews} Reviews</span>
-                   <span className="text-gray-400">|</span>
-                   <span className="text-green-600 font-medium">In Stock</span>
-                 </div>
-
-                 <div className="rounded-xl bg-gray-50 p-4 border border-gray-100">
-                    <div className="text-xs text-gray-500 font-medium uppercase tracking-wider mb-1">Price Range</div>
-                    <div className="text-3xl font-bold text-gray-900">{product.priceRange}</div>
-                    <div className="text-sm text-gray-500 mt-1">Min. Order: {product.moq}</div>
-                 </div>
-               </div>
-
-               {/* Variations Mock */}
-               <div>
-                  <h3 className="text-sm font-semibold text-gray-900 mb-3">Variations</h3>
-                  <div className="flex flex-wrap gap-2">
-                    {["Small", "Medium", "Large"].map(opt => (
-                      <button key={opt} className="px-4 py-2 rounded-full border border-gray-200 text-sm font-medium text-gray-600 hover:border-gray-400 hover:text-gray-900">
-                        {opt}
-                      </button>
-                    ))}
-                  </div>
-               </div>
-
-               {/* Attributes Table */}
-               <div>
-                 <h3 className="text-sm font-semibold text-gray-900 mb-3">Key Attributes</h3>
-                 <div className="overflow-hidden rounded-lg border border-gray-200 text-sm">
-                   <div className="grid grid-cols-2 border-b border-gray-200 bg-gray-50">
-                     <div className="p-3 font-medium text-gray-500">Material</div>
-                     <div className="p-3 text-gray-900 border-l border-gray-200 bg-white">Eco-friendly blend</div>
-                   </div>
-                   <div className="grid grid-cols-2 border-b border-gray-200 bg-gray-50">
-                     <div className="p-3 font-medium text-gray-500">Style</div>
-                     <div className="p-3 text-gray-900 border-l border-gray-200 bg-white">Modern Industrial</div>
-                   </div>
-                   <div className="grid grid-cols-2 bg-gray-50">
-                     <div className="p-3 font-medium text-gray-500">Origin</div>
-                     <div className="p-3 text-gray-900 border-l border-gray-200 bg-white">{product.supplier.country}</div>
-                   </div>
-                 </div>
-               </div>
-
-               {/* Supplier Info */}
-               <div className="flex items-center gap-3 p-4 rounded-xl border border-gray-100 bg-white shadow-sm">
-                  <div className="h-10 w-10 flex items-center justify-center rounded-lg bg-indigo-50 text-indigo-600 font-bold">
-                    {product.supplier.logo}
-                  </div>
-                  <div>
-                    <div className="font-semibold text-gray-900 text-sm">{product.supplier.name}</div>
-                    <div className="flex items-center gap-2 text-xs text-gray-500">
-                      <span>{product.supplier.years} years</span>
-                      <span>Verified Supplier</span>
-                    </div>
-                  </div>
-               </div>
-            </div>
-          </div>
+          ) : null}
         </div>
 
         {/* Sticky Footer */}
@@ -159,11 +223,14 @@ export function ProductDrawer({ productId }: ProductDrawerProps) {
            <div className="flex gap-4 max-w-sm ml-auto">
              <button className="flex-1 flex items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-3 text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-colors">
                <MessageSquare size={18} />
-               Chat now
+               Ask AI
              </button>
-             <button className="flex-1 flex items-center justify-center gap-2 rounded-lg bg-[#a23b67] px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-pink-900/10 hover:bg-[#8e335a] transition-colors">
-               <Send size={18} />
-               Send inquiry
+             <button 
+                onClick={() => product?.url && window.open(product.url, '_blank')}
+                className="flex-1 flex items-center justify-center gap-2 rounded-lg bg-zinc-900 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-zinc-900/10 hover:bg-black transition-colors"
+             >
+               <ExternalLink size={18} />
+               Check on eBay
              </button>
            </div>
         </div>

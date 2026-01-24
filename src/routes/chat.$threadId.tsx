@@ -24,6 +24,7 @@ import { ProductDrawer } from '../components/product/ProductDrawer'
 import { ProductExpandedView } from '../components/product/ProductExpandedView'
 import { SelectionActionBar } from '../components/product/SelectionActionBar'
 import { v4 as uuidv4 } from 'uuid'
+import { type Product } from '../data/mockProducts'
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
@@ -91,6 +92,7 @@ function ChatPage() {
   const [sidebarOpen, setSidebarOpen] = useState(!isMobile)
   const [isExpandedOpen, setIsExpandedOpen] = useState(false)
   const [selectedProductIds, setSelectedProductIds] = useState<string[]>([])
+  const [expandedProducts, setExpandedProducts] = useState<Product[]>([])
   const chatInputRef = useRef<ChatInputHandle>(null)
 
   const handleOpenExpanded = () => {
@@ -296,7 +298,15 @@ function ChatPage() {
           ) : (
             <div className="max-w-5xl w-full flex-1 overflow-y-auto overflow-x-hidden pt-20 md:pt-20 pb-40 scrollbar-hide message-scroll-area">
               <TooltipProvider delayDuration={150}>
-                {messages?.filter((msg: any) => !(msg.role === 'tool' && msg.name === 'search_web')).map((msg: any) => (
+                {messages
+                  ?.filter((msg: any) => {
+                    // Hide ALL tool result messages from the main scroll (we display them inline in the assistant message)
+                    if (msg.role === 'tool') return false;
+                    // Hide empty aborted assistant messages
+                    if (msg.role === 'assistant' && msg.status === 'aborted' && !msg.content?.trim() && !msg.toolCalls?.length && !msg.products?.length) return false;
+                    return true;
+                  })
+                  .map((msg: any) => (
                 <motion.div
                   key={msg._id}
                   initial={{ opacity: 0, y: 10 }}
@@ -381,10 +391,18 @@ function ChatPage() {
                                          const toolMsg = messages.find((m: any) => m.role === 'tool' && m.toolCallId === tc.id);
                                          return <SearchToolResult key={i} isLoading={!toolMsg} result={toolMsg?.content} />
                                       }
+                                      const toolMsg = messages.find((m: any) => m.role === 'tool' && m.toolCallId === tc.id);
                                       return (
-                                      <div key={i} className="text-xs bg-black/5 p-2 rounded border border-black/5 flex items-center gap-2 font-mono text-foreground/70">
-                                        <div className="w-2 h-2 rounded-full bg-blue-400" />
-                                        Used tool: {tc.function.name}
+                                      <div key={i} className="text-xs bg-black/5 p-2 rounded border border-black/5 flex flex-col gap-1 font-mono text-foreground/70">
+                                        <div className="flex items-center gap-2">
+                                          <div className="w-2 h-2 rounded-full bg-blue-400" />
+                                          Used tool: {tc.function.name}
+                                        </div>
+                                        {toolMsg && (
+                                          <div className="pl-4 text-foreground/50 text-[11px] whitespace-pre-wrap line-clamp-2 italic">
+                                            {toolMsg.content}
+                                          </div>
+                                        )}
                                       </div>
                                     )})}
                                   </div>
@@ -397,9 +415,16 @@ function ChatPage() {
                                     />
                                   )}
 
-                                  {/* eBay Product Grid Demo Integration */}
-                                  {msg.role === "assistant" && msg.content?.toLowerCase().includes("crocs") && (
-                                    <ProductGrid onViewMore={handleOpenExpanded} />
+
+                                  {/* eBay Product Grid Integration */}
+                                  {msg.products && msg.products.length > 0 && (
+                                    <ProductGrid 
+                                      products={msg.products} 
+                                      onViewMore={() => {
+                                        setExpandedProducts(msg.products);
+                                        handleOpenExpanded();
+                                      }} 
+                                    />
                                   )}
 
                                   {msg.status === "streaming" && !msg.content.trim() && !msg.toolCalls && (
@@ -433,7 +458,8 @@ function ChatPage() {
                                 )}
                               </>
                             ) : msg.role === "tool" ? (
-                              msg.name === 'search_web' ? null : (
+                              // Hide search tool outputs (they're displayed in assistant message)
+                              (msg.name === 'search_web' || msg.name === 'search_ebay') ? null : (
                               <div className="text-xs bg-black/5 p-2 rounded border border-black/5 font-mono text-foreground/60 whitespace-pre-wrap max-h-32 overflow-y-auto">
                                  Tool Output ({msg.name}): {msg.content}
                               </div>
@@ -586,13 +612,19 @@ function ChatPage() {
 
       {/* Product Details Drawer - renders based on productId search param */}
       <AnimatePresence>
-        {productId && <ProductDrawer productId={productId} />}
+        {productId && (
+          <ProductDrawer 
+            productId={productId} 
+            initialData={expandedProducts?.find(p => p.id === productId)}
+          />
+        )}
       </AnimatePresence>
 
       {/* Expanded Product Picker View */}
       <AnimatePresence>
         {isExpandedOpen && (
           <ProductExpandedView 
+            products={expandedProducts}
             onClose={() => setIsExpandedOpen(false)}
             onProductClick={(id) => navigate({ to: ".", search: { productId: id } })}
             selectedIds={selectedProductIds}

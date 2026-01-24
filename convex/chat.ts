@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import { action } from "./_generated/server";
 import { api } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
+import { searchEbayItems, getEbayItemDetails as fetchEbayDetails } from "./ebay";
 
 const TOOLS = [
   {
@@ -20,6 +21,21 @@ const TOOLS = [
       parameters: {
         type: "object",
         properties: { query: { type: "string" } },
+        required: ["query"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "search_ebay",
+      description: "Search for real items on eBay to buy",
+      parameters: {
+        type: "object",
+        properties: { 
+          query: { type: "string", description: "The product search query" },
+          limit: { type: "number", description: "Number of results (max 10)", default: 6 }
+        },
         required: ["query"]
       }
     }
@@ -94,9 +110,15 @@ export const streamAnswer = action({
       // Fetch Context
       const messages = await ctx.runQuery(api.messages.list, { threadId: args.threadId });
 
-      // Prepare OpenRouter Payload - exclude the current streaming message
+      // Prepare OpenRouter Payload - include the current message if it has partial content/tool calls
       const openRouterMessages = messages
-        .filter((m: any) => m._id !== currentMessageId)
+        .filter((m: any) => {
+          if (m._id === currentMessageId) {
+            // Only include current message if it has actual content to show
+            return !!(m.content || m.toolCalls?.length || m.reasoningContent);
+          }
+          return true;
+        })
         .map((m: any) => {
           const msg: any = { role: m.role };
 
@@ -115,6 +137,7 @@ export const streamAnswer = action({
              msg.content = m.content;
           }
 
+
           // Tool related fields
           if (m.toolCalls) {
              msg.tool_calls = m.toolCalls;
@@ -122,6 +145,24 @@ export const streamAnswer = action({
           if (m.role === "tool") {
              msg.tool_call_id = m.toolCallId;
              msg.content = m.content;
+          }
+
+          // [NEW] Inject Product Context (Hidden from user, visible to AI)
+          if (m.products && m.products.length > 0) {
+             const productSummary = m.products.map((p: any, i: number) => 
+               `[${i+1}] ${p.title} (${p.price}) - ${p.condition || 'N/A'}`
+             ).join("\n");
+             
+             // Append to existing content (if any)
+             const contextBlock = `\n\n<product_context>\nThe user sees the following items in a grid:\n${productSummary}\n</product_context>`;
+             
+             if (Array.isArray(msg.content)) {
+                // If content is array (multimodal), append text block
+                msg.content.push({ type: "text", text: contextBlock }); 
+             } else {
+                // If content is string, just append
+                msg.content = (msg.content || "") + contextBlock;
+             }
           }
 
           return msg;
@@ -142,7 +183,7 @@ export const streamAnswer = action({
           model: args.modelId ?? "google/gemini-2.0-flash-exp:free",
           messages: openRouterMessages,
           tools: activeTools.length > 0 ? activeTools : undefined,
-          tool_choice: activeTools.length > 0 && cycle === MAX_CYCLES ? "none" : undefined,
+          // Note: tool_choice is not supported by all OpenRouter providers, so we omit it
           ...(args.reasoningEffort && args.reasoningType === 'effort'
             ? { reasoning: { effort: args.reasoningEffort } }
             : args.reasoningEffort && args.reasoningType === 'max_tokens'
@@ -221,9 +262,8 @@ export const streamAnswer = action({
       if (isAborted) {
         // Ensure the message is marked as aborted
         await ctx.runMutation(api.messages.updateStatus, { messageId: currentMessageId, status: "aborted" });
-      } else {
-        await ctx.runMutation(api.messages.updateStatus, { messageId: currentMessageId, status: "completed" });
       }
+      // Note: We don't mark as "completed" here anymore - we'll do it after checking for tool calls
 
       // Save reasoning content if any was accumulated
       if (accumulatedReasoning.trim()) {
@@ -245,62 +285,104 @@ export const streamAnswer = action({
             toolCalls: accumulatedToolCalls
          });
 
-         // Execute Tools
-         for (const tc of accumulatedToolCalls) {
+          // Execute Tools with Deduplication and Caching
+          const toolResultsCache = new Map<string, string>();
+
+          for (const tc of accumulatedToolCalls) {
             const name = tc.function.name;
             const argsStr = tc.function.arguments;
             let result = "Error executing tool";
 
-            try {
-               const argsObj = JSON.parse(argsStr);
-               if (name === "get_current_time") {
+            // Create a cache key based on tool name and arguments
+            const cacheKey = `${name}:${argsStr}`;
+            
+            if (toolResultsCache.has(cacheKey)) {
+               console.log(`[Cache Hit] Reusing result for tool: ${name} with query: ${argsStr}`);
+               result = toolResultsCache.get(cacheKey)!;
+            } else {
+              try {
+                const argsObj = JSON.parse(argsStr);
+                if (name === "get_current_time") {
                   result = new Date().toLocaleString();
-               } else if (name === "search_web") {
+                } else if (name === "search_web") {
                   const serperKey = process.env.SERPER_API_KEY;
                   if (!serperKey) {
-                     result = "Error: SERPER_API_KEY not configured in environment variables.";
+                    result = "Error: SERPER_API_KEY not configured in environment variables.";
                   } else {
-                     const res = await fetch("https://google.serper.dev/search", {
-                        method: "POST",
-                        headers: {
-                           "X-API-KEY": serperKey,
-                           "Content-Type": "application/json"
-                        },
-                        body: JSON.stringify({ q: argsObj.query })
-                     });
+                    const res = await fetch("https://google.serper.dev/search", {
+                      method: "POST",
+                      headers: {
+                        "X-API-KEY": serperKey,
+                        "Content-Type": "application/json"
+                      },
+                      body: JSON.stringify({ q: argsObj.query })
+                    });
 
-                     if (!res.ok) {
-                        result = JSON.stringify({ error: res.statusText });
-                     } else {
-                        const data = await res.json();
-                        result = JSON.stringify(data.organic?.slice(0, 5) || []);
-                     }
+                    if (!res.ok) {
+                      result = JSON.stringify({ error: res.statusText });
+                    } else {
+                      const data = await res.json();
+                      result = JSON.stringify(data.organic?.slice(0, 5) || []);
+                    }
                   }
-               }
-            } catch (err: any) {
-               result = `Error: ${err.message}`;
+                } else if (name === "search_ebay") {
+                  const items = await searchEbayItems(argsObj.query, argsObj.limit || 6);
+                  
+                  if (process.env.EBAY_ENV !== 'production') {
+                    console.log(`eBay found ${items.length} items for "${argsObj.query}"`);
+                  }
+
+                  result = `I found ${items.length} items on eBay. They have been displayed to the user.`;
+
+                  await ctx.runMutation(api.messages.saveProducts, {
+                    messageId: currentMessageId!,
+                    products: items
+                  });
+                }
+
+                // Cache the result for this specific turn
+                toolResultsCache.set(cacheKey, result);
+
+              } catch (err: any) {
+                result = `Error: ${err.message}`;
+              }
             }
 
             // Create Tool Result Message
             await ctx.runMutation(api.messages.send, {
-               threadId: args.threadId,
-               role: "tool",
-               content: result,
-               toolCallId: tc.id,
-               name: name
+              threadId: args.threadId,
+              role: "tool",
+              content: result,
+              toolCallId: tc.id,
+              name: name
             });
-         }
+          }
 
-         // Create a NEW assistant message for the follow-up response
-         currentMessageId = await ctx.runMutation(api.messages.initializeAssistantMessage, {
-            threadId: args.threadId,
-            modelId: args.modelId,
-         });
-
-         shouldContinue = true;
+          // Continue the loop to get the follow-up response
+          // The next iteration will append to the SAME assistant message
+          shouldContinue = true;
+      } else if (!isAborted) {
+          // No tool calls - mark the message as completed
+          await ctx.runMutation(api.messages.updateStatus, { messageId: currentMessageId, status: "completed" });
+          shouldContinue = false;
       }
+    }
+
+    // Final safety check: ensure message isn't left in streaming state
+    if (currentMessageId) {
+        const msg = await ctx.runQuery(api.messages.getStatus, { messageId: currentMessageId });
+        if (msg === 'streaming') {
+            await ctx.runMutation(api.messages.updateStatus, { messageId: currentMessageId, status: "completed" });
+        }
     }
 
     return currentMessageId;
   },
+});
+
+export const getItemDetails = action({
+  args: { itemId: v.string() },
+  handler: async (_ctx, args) => {
+    return await fetchEbayDetails(args.itemId);
+  }
 });

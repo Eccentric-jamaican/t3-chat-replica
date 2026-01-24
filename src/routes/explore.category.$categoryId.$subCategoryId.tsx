@@ -1,6 +1,9 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
-import { subcategoryDetails } from '../data/explore'
-import { Search, ChevronLeft, Star, SlidersHorizontal } from 'lucide-react'
+import { subcategoryDetails, type ShopItem } from '../data/explore'
+import { Search, ChevronLeft, Star, SlidersHorizontal, Loader2 } from 'lucide-react'
+import { useAction } from 'convex/react'
+import { api } from '../../convex/_generated/api'
+import { useEffect, useState } from 'react'
 
 export const Route = createFileRoute('/explore/category/$categoryId/$subCategoryId')({
   component: SubcategoryPage,
@@ -8,8 +11,28 @@ export const Route = createFileRoute('/explore/category/$categoryId/$subCategory
 
 function SubcategoryPage() {
   const { categoryId, subCategoryId } = Route.useParams()
-  
   const detail = subcategoryDetails[subCategoryId]
+  const getExploreItems = useAction(api.explore.getExploreItems)
+  const [items, setItems] = useState<ShopItem[]>(detail?.items || [])
+  const [isLoading, setIsLoading] = useState(true)
+
+  useEffect(() => {
+    if (!detail) return
+    const fetchData = async () => {
+      try {
+        const data = await getExploreItems({ 
+          categoryId, 
+          subCategoryId: detail.id // Use mapped ID or raw ID
+        })
+        setItems(data)
+      } catch (e) {
+        console.error(e)
+      } finally {
+        setIsLoading(false)
+      }
+    }
+    fetchData()
+  }, [detail, categoryId, getExploreItems])
 
   if (!detail) {
     return (
@@ -92,10 +115,14 @@ function SubcategoryPage() {
 
         {/* Items Grid */}
         <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 md:gap-8">
-          {detail.items.map((item) => (
+          {isLoading ? (
+             [...Array(4)].map((_, i) => (
+               <div key={i} className="aspect-[3/4] rounded-[24px] bg-black/5 animate-pulse" />
+             ))
+          ) : items.map((item) => (
             <Link 
               key={item.id} 
-              to="." 
+              to="."
               search={{ productId: item.id }} 
               className="group cursor-pointer"
             >
@@ -107,7 +134,7 @@ function SubcategoryPage() {
                 />
                 <div className="absolute top-4 right-4 bg-white/95 backdrop-blur-md px-2 py-1 rounded-full flex items-center gap-1 text-[10px] font-black shadow-lg">
                   <Star size={10} className="fill-yellow-400 text-yellow-400" />
-                  <span>{item.rating}</span>
+                  <span>{item.rating.toFixed(1)}</span>
                 </div>
                 <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-6">
                    <div className="w-full bg-white text-black py-2.5 rounded-xl font-bold text-xs shadow-xl transform translate-y-4 group-hover:translate-y-0 transition-transform text-center">
@@ -116,12 +143,13 @@ function SubcategoryPage() {
                 </div>
               </div>
               <div className="px-2 space-y-0.5 text-left">
-                <h3 className="text-sm font-bold text-foreground/90 leading-tight group-hover:text-primary transition-colors">
+                <h3 className="text-sm font-bold text-foreground/90 leading-tight group-hover:text-primary transition-colors line-clamp-2">
                   {item.title}
                 </h3>
-                <p className="text-[11px] text-foreground/40 font-bold uppercase tracking-wider">
+                <p className="text-[11px] text-foreground/40 font-bold uppercase tracking-wider truncate">
                   {item.brand}
                 </p>
+                {item.price && <p className="text-sm font-bold text-foreground/80 mt-1">{item.price}</p>}
               </div>
             </Link>
           ))}
