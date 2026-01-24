@@ -319,6 +319,7 @@ export const Sidebar = ({ isOpen: externalOpen, onToggle }: SidebarProps) => {
   const [editingTitle, setEditingTitle] = useState("")
   const [searchQuery, setSearchQuery] = useState("")
   const [sessionId] = useState(() => {
+    if (typeof window === 'undefined') return ""
     return localStorage.getItem('t3_session_id') || ""
   })
 
