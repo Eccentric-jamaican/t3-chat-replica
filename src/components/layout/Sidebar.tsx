@@ -305,7 +305,7 @@ export const Sidebar = ({ isOpen: externalOpen, onToggle }: SidebarProps) => {
   const location = useLocation()
   const { threadId: activeThreadId } = useParams({ strict: false }) as any
   const isMobile = useIsMobile()
-  const isNestedExplore = location.pathname.includes('/explore/category')
+  const isNestedExplore = location.pathname.includes('/explore/category') || location.pathname.includes('/explore/search')
   const [internalOpen, setInternalOpen] = useState(!isMobile) // Closed by default on mobile
   
   const isOpen = externalOpen !== undefined ? externalOpen : internalOpen;

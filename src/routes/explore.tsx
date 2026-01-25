@@ -5,6 +5,7 @@ import { useIsMobile } from '../hooks/useIsMobile'
 import { AnimatePresence } from 'framer-motion'
 import { ProductDrawer } from '../components/product/ProductDrawer'
 import { ScrollFloatingSearch } from '../components/ui/ScrollFloatingSearch'
+import { SearchOverlay } from '../components/ui/SearchOverlay'
 
 type ExploreSearchParams = {
   productId?: string
@@ -21,6 +22,7 @@ function ExploreLayout() {
   const isMobile = useIsMobile()
   const { productId } = Route.useSearch()
   const [sidebarOpen, setSidebarOpen] = useState(!isMobile)
+  const [searchOpen, setSearchOpen] = useState(false)
 
   useEffect(() => {
     setSidebarOpen(!isMobile)
@@ -43,8 +45,11 @@ function ExploreLayout() {
         {productId && <ProductDrawer productId={productId} />}
       </AnimatePresence>
       
-      {/* Floating Search (Mobile) */}
-      <ScrollFloatingSearch />
+      {/* Search Overlay */}
+      <SearchOverlay isOpen={searchOpen} onClose={() => setSearchOpen(false)} />
+
+      {/* Floating Search (Mobile) - Hidden when overlay is open to avoid overlap */}
+      {!searchOpen && <ScrollFloatingSearch onOpenSearch={() => setSearchOpen(true)} />}
     </div>
   )
 }

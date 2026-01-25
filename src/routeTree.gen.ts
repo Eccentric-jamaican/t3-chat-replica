@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as ExploreRouteImport } from './routes/explore'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ExploreIndexRouteImport } from './routes/explore.index'
+import { Route as ExploreSearchRouteImport } from './routes/explore.search'
 import { Route as ChatThreadIdRouteImport } from './routes/chat.$threadId'
 import { Route as ExploreCategoryCategoryIdRouteImport } from './routes/explore.category.$categoryId'
 import { Route as DemoStartServerFuncsRouteImport } from './routes/demo/start.server-funcs'
@@ -37,6 +38,11 @@ const IndexRoute = IndexRouteImport.update({
 const ExploreIndexRoute = ExploreIndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => ExploreRoute,
+} as any)
+const ExploreSearchRoute = ExploreSearchRouteImport.update({
+  id: '/search',
+  path: '/search',
   getParentRoute: () => ExploreRoute,
 } as any)
 const ChatThreadIdRoute = ChatThreadIdRouteImport.update({
@@ -102,6 +108,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/explore': typeof ExploreRouteWithChildren
   '/chat/$threadId': typeof ChatThreadIdRoute
+  '/explore/search': typeof ExploreSearchRoute
   '/explore/': typeof ExploreIndexRoute
   '/demo/api/names': typeof DemoApiNamesRoute
   '/demo/start/api-request': typeof DemoStartApiRequestRoute
@@ -117,6 +124,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/chat/$threadId': typeof ChatThreadIdRoute
+  '/explore/search': typeof ExploreSearchRoute
   '/explore': typeof ExploreIndexRoute
   '/demo/api/names': typeof DemoApiNamesRoute
   '/demo/start/api-request': typeof DemoStartApiRequestRoute
@@ -133,6 +141,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/explore': typeof ExploreRouteWithChildren
   '/chat/$threadId': typeof ChatThreadIdRoute
+  '/explore/search': typeof ExploreSearchRoute
   '/explore/': typeof ExploreIndexRoute
   '/demo/api/names': typeof DemoApiNamesRoute
   '/demo/start/api-request': typeof DemoStartApiRequestRoute
@@ -151,6 +160,7 @@ export interface FileRouteTypes {
     | '/'
     | '/explore'
     | '/chat/$threadId'
+    | '/explore/search'
     | '/explore/'
     | '/demo/api/names'
     | '/demo/start/api-request'
@@ -166,6 +176,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/chat/$threadId'
+    | '/explore/search'
     | '/explore'
     | '/demo/api/names'
     | '/demo/start/api-request'
@@ -181,6 +192,7 @@ export interface FileRouteTypes {
     | '/'
     | '/explore'
     | '/chat/$threadId'
+    | '/explore/search'
     | '/explore/'
     | '/demo/api/names'
     | '/demo/start/api-request'
@@ -228,6 +240,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/explore/'
       preLoaderRoute: typeof ExploreIndexRouteImport
+      parentRoute: typeof ExploreRoute
+    }
+    '/explore/search': {
+      id: '/explore/search'
+      path: '/search'
+      fullPath: '/explore/search'
+      preLoaderRoute: typeof ExploreSearchRouteImport
       parentRoute: typeof ExploreRoute
     }
     '/chat/$threadId': {
@@ -328,11 +347,13 @@ const ExploreCategoryCategoryIdRouteWithChildren =
   )
 
 interface ExploreRouteChildren {
+  ExploreSearchRoute: typeof ExploreSearchRoute
   ExploreIndexRoute: typeof ExploreIndexRoute
   ExploreCategoryCategoryIdRoute: typeof ExploreCategoryCategoryIdRouteWithChildren
 }
 
 const ExploreRouteChildren: ExploreRouteChildren = {
+  ExploreSearchRoute: ExploreSearchRoute,
   ExploreIndexRoute: ExploreIndexRoute,
   ExploreCategoryCategoryIdRoute: ExploreCategoryCategoryIdRouteWithChildren,
 }

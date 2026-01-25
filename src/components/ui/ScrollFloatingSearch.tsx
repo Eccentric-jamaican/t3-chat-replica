@@ -3,7 +3,11 @@ import { useEffect, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useIsMobile } from '../../hooks/useIsMobile'
 
-export function ScrollFloatingSearch() {
+interface ScrollFloatingSearchProps {
+  onOpenSearch: () => void
+}
+
+export function ScrollFloatingSearch({ onOpenSearch }: ScrollFloatingSearchProps) {
   const isMobile = useIsMobile()
   const [isVisible, setIsVisible] = useState(true)
 
@@ -46,9 +50,7 @@ export function ScrollFloatingSearch() {
             stiffness: 300
           }}
           className="fixed bottom-8 right-6 z-[100] p-5 rounded-full bg-primary text-white shadow-2xl hover:bg-primary/90 transition-all hover:scale-105 active:scale-95"
-          onClick={() => {
-            console.log("Search clicked") 
-          }}
+          onClick={onOpenSearch}
         >
           <Search size={24} />
         </motion.button>

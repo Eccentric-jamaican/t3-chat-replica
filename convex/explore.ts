@@ -7,9 +7,10 @@ export const getExploreItems = action({
     section: v.optional(v.string()), // "trending" | "new"
     categoryId: v.optional(v.string()),
     subCategoryId: v.optional(v.string()),
+    q: v.optional(v.string()),
   },
   handler: async (_ctx, args) => {
-    let query = "trending products";
+    let query = args.q || "trending products";
     
     // 1. Handle Navigation-based queries
     if (args.subCategoryId) {

@@ -6,21 +6,25 @@ interface ProductGridProps {
   onViewMore?: () => void;
   title?: string;
   subtitle?: string;
+  hideHeader?: boolean;
 }
 
 export function ProductGrid({ 
   products = [], 
   onViewMore, 
   title = "Recommended for you",
-  subtitle = "Based on your recent search activity"
+  subtitle = "Based on your recent search activity",
+  hideHeader = false
 }: ProductGridProps) {
 
   return (
     <div className="w-full max-w-7xl mx-auto px-2 sm:px-4 py-4 sm:py-8">
-      <div className="mb-4 sm:mb-6 px-2 sm:px-0">
-        <h2 className="text-lg sm:text-xl font-bold text-gray-900">{title}</h2>
-        <p className="text-xs sm:text-sm text-gray-500">{subtitle}</p>
-      </div>
+      {!hideHeader && (
+        <div className="mb-4 sm:mb-6 px-2 sm:px-0">
+          <h2 className="text-lg sm:text-xl font-bold text-gray-900">{title}</h2>
+          <p className="text-xs sm:text-sm text-gray-500">{subtitle}</p>
+        </div>
+      )}
       
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2 sm:gap-3">
         {products.map((product) => (
