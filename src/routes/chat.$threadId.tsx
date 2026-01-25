@@ -589,13 +589,16 @@ function ChatPage() {
 
         {/* ChatInput - Moved outside of main to control Z-Index layering over portals */}
         {/* We hide the input when product selection is active to show the Floating Action Bar */}
-        <div className={cn(
-           "transition-all duration-300 ease-in-out",
-           isExpandedOpen
-             ? "fixed bottom-0 left-0 w-full z-[550] px-2 md:px-4 pb-1 md:pb-2 pt-0"
-             : "absolute bottom-0 left-0 z-[50] w-full px-2 md:px-4 pb-1 md:pb-2 pt-0",
-           (selectedProductIds.length > 0) ? "translate-y-24 opacity-0 pointer-events-none" : "translate-y-0 opacity-100"
-        )}>
+        <div 
+          className={cn(
+            "transition-all duration-300 ease-in-out",
+            isExpandedOpen
+              ? "fixed bottom-0 left-0 w-full z-[550] px-2 md:px-4 pb-1 md:pb-2 pt-0"
+              : "absolute bottom-0 left-0 z-[50] w-full px-2 md:px-4 pb-1 md:pb-2 pt-0",
+            (selectedProductIds.length > 0) ? "translate-y-24 opacity-0 pointer-events-none" : "translate-y-0 opacity-100"
+          )}
+          style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + var(--visual-viewport-bottom, 0px) + 4px)' }}
+        >
           <ChatInput 
             existingThreadId={threadId} 
             ref={chatInputRef} 

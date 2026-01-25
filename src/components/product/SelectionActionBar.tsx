@@ -16,7 +16,8 @@ export function SelectionActionBar({ selectedCount, onClear, onAsk, onInquiry }:
           initial={{ y: 100, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
           exit={{ y: 100, opacity: 0 }}
-          className="fixed bottom-3 left-1/2 -translate-x-1/2 z-[700] w-[calc(100%-2rem)] max-w-xl"
+          className="fixed left-1/2 -translate-x-1/2 z-[700] w-[calc(100%-2rem)] max-w-xl"
+          style={{ bottom: 'calc(12px + var(--visual-viewport-bottom, 0px))' }}
         >
           <div className="bg-[#1a1a1a] text-white rounded-2xl shadow-2xl p-4 flex items-center justify-between gap-4 border border-white/10 backdrop-blur-xl">
             <div className="flex items-center gap-3">

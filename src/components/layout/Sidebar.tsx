@@ -497,7 +497,7 @@ export const Sidebar = ({ isOpen: externalOpen, onToggle }: SidebarProps) => {
             </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto px-1 scrollbar-hide">
+          <div className="flex-1 overflow-y-auto px-1 scrollbar-hide sidebar-scroll-area">
             {threads && threads.some(t => t.isPinned) && (
               <>
                 <div className="px-3 py-3 text-[10px] font-bold text-foreground/40 uppercase tracking-[0.05em] opacity-80">

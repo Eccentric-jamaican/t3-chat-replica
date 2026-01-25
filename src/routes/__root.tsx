@@ -12,7 +12,7 @@ export const Route = createRootRoute({
       },
       {
         name: 'viewport',
-        content: 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0, viewport-fit=cover',
+        content: 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0, viewport-fit=cover, titlebar-area=hidden, interactive-widget=resizes-content',
       },
       {
         title: 'T3.chat Replica',
@@ -82,8 +82,12 @@ import { useEffect } from 'react'
 import { Toaster } from 'sonner'
 import { ConvexProvider } from "convex/react"
 import { convex } from "../lib/convex"
+import { useVisualViewport } from '../hooks/useVisualViewport'
 
 function RootDocument({ children }: { children: React.ReactNode }) {
+  // Initialize virtual keyboard tracking
+  useVisualViewport()
+
   useEffect(() => {
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {

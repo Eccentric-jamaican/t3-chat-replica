@@ -112,7 +112,10 @@ export function SearchOverlay({ isOpen, onClose }: SearchOverlayProps) {
           </div>
 
           {/* Bottom Docked Input Field */}
-          <div className="p-6 pb-10 mt-auto border-t border-black/5 bg-background/50">
+          <div 
+            className="p-6 pb-10 mt-auto border-t border-black/5 bg-background/50"
+            style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + var(--visual-viewport-bottom, 0px) + 24px)' }}
+          >
             <form onSubmit={handleSearch} className="relative group">
               <div className="absolute left-5 top-1/2 -translate-y-1/2 text-foreground/30 pointer-events-none group-focus-within:text-primary transition-colors">
                 <Search size={20} />
