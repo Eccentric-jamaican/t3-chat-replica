@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useIsMobile } from '../hooks/useIsMobile'
 import { AnimatePresence } from 'framer-motion'
 import { ProductDrawer } from '../components/product/ProductDrawer'
+import { ScrollFloatingSearch } from '../components/ui/ScrollFloatingSearch'
 
 type ExploreSearchParams = {
   productId?: string
@@ -41,6 +42,9 @@ function ExploreLayout() {
       <AnimatePresence>
         {productId && <ProductDrawer productId={productId} />}
       </AnimatePresence>
+      
+      {/* Floating Search (Mobile) */}
+      <ScrollFloatingSearch />
     </div>
   )
 }

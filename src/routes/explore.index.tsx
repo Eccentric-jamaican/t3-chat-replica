@@ -40,7 +40,7 @@ function ExplorePage() {
   return (
     <>
       {/* Sticky Header with Search */}
-      <header className="sticky top-0 z-[60] px-4 py-3 flex items-center justify-center bg-background/40 backdrop-blur-xl border-b border-black/5">
+      <header className={`sticky top-0 z-[60] px-4 flex items-center justify-center transition-all ${isMobile ? 'bg-transparent backdrop-blur-none border-none py-1' : 'bg-background/40 backdrop-blur-xl border-b border-black/5 py-3'}`}>
         {!isMobile ? (
           <div className="max-w-2xl w-full relative group">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-foreground/30 group-focus-within:text-primary transition-colors" size={18} />
@@ -50,17 +50,10 @@ function ExplorePage() {
               className="w-full bg-black/5 border-none rounded-full py-2.5 pl-12 pr-4 text-[15px] focus:ring-2 focus:ring-primary/20 transition-all outline-none"
             />
           </div>
-        ) : (
-          <div className="flex items-center justify-between w-full">
-            <span className="text-lg font-bold text-foreground/80">Explore</span>
-            <button className="p-2 rounded-full bg-black/5 text-foreground/60">
-              <Search size={20} />
-            </button>
-          </div>
-        )}
+        ) : null}
       </header>
 
-      <main className="flex-1 max-w-6xl mx-auto w-full px-4 pt-8 md:pt-12 pb-24 space-y-12 md:space-y-16">
+      <main className={`flex-1 max-w-6xl mx-auto w-full px-4 pb-24 space-y-12 md:space-y-16 ${isMobile ? 'pt-16' : 'pt-12'}`}>
         {/* Hero Section */}
         <section className="text-center space-y-3 md:space-y-4">
           <h1 className="text-3xl md:text-6xl font-bold tracking-tight text-foreground/90">

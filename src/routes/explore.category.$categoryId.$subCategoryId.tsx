@@ -1,9 +1,10 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { subcategoryDetails, type ShopItem } from '../data/explore'
-import { Search, ChevronLeft, Star, SlidersHorizontal, Loader2 } from 'lucide-react'
+import { Search, ChevronLeft, Star } from 'lucide-react'
 import { useAction } from 'convex/react'
 import { api } from '../../convex/_generated/api'
 import { useEffect, useState } from 'react'
+import { useIsMobile } from '../hooks/useIsMobile'
 
 export const Route = createFileRoute('/explore/category/$categoryId/$subCategoryId')({
   component: SubcategoryPage,
@@ -11,6 +12,7 @@ export const Route = createFileRoute('/explore/category/$categoryId/$subCategory
 
 function SubcategoryPage() {
   const { categoryId, subCategoryId } = Route.useParams()
+  const isMobile = useIsMobile()
   const detail = subcategoryDetails[subCategoryId]
   const getExploreItems = useAction(api.explore.getExploreItems)
   const [items, setItems] = useState<ShopItem[]>(detail?.items || [])
@@ -48,20 +50,21 @@ function SubcategoryPage() {
   return (
     <>
       {/* Sticky Header */}
-      <header className="sticky top-0 z-[60] px-4 py-3 flex items-center justify-between bg-background/40 backdrop-blur-xl border-b border-black/5">
+      <header className={`sticky top-0 z-[60] px-4 flex items-center justify-between transition-all ${isMobile ? 'bg-transparent backdrop-blur-none border-none py-1 pl-32' : 'bg-background/40 backdrop-blur-xl border-b border-black/5 py-3'}`}>
         <div className="flex items-center gap-3">
+          {/* Desktop back button - mobile uses Sidebar toggle container */}
           <Link 
             to="/explore/category/$categoryId" 
             params={{ categoryId }}
-            className="p-2 rounded-full bg-black/5 text-foreground/60 hover:bg-black/10 transition-colors"
+            className="p-2 rounded-full bg-black/5 text-foreground/60 hover:bg-black/10 transition-colors hidden md:flex"
           >
             <ChevronLeft size={20} />
           </Link>
-          <div className="flex flex-col">
+          <div className="flex-col hidden md:flex">
             <span className="text-[10px] font-black uppercase tracking-widest text-foreground/30 leading-none">
               {detail.parentCategory}
             </span>
-            <span className="text-lg font-bold text-foreground/90 leading-tight">
+            <span className="text-sm md:text-lg font-bold text-foreground/90 leading-tight">
               {detail.name}
             </span>
           </div>
@@ -77,14 +80,11 @@ function SubcategoryPage() {
         </div>
 
         <div className="flex items-center gap-2">
-           <button className="p-2 rounded-full bg-black/5 text-foreground/60 hover:bg-black/10 transition-colors">
-              <SlidersHorizontal size={18} />
-            </button>
-           <div className="w-8 h-8 rounded-full bg-primary/10 border border-primary/20" />
+           <div className="w-8 h-8 rounded-full bg-primary/10 border border-primary/20 hidden md:block" />
         </div>
       </header>
 
-      <main className="flex-1 max-w-6xl mx-auto w-full px-4 pt-8 pb-24 space-y-10">
+      <main className={`flex-1 max-w-6xl mx-auto w-full px-4 pb-24 space-y-10 ${isMobile ? 'pt-16' : 'pt-8'}`}>
         {/* Banner */}
         <section className="relative h-[200px] rounded-[32px] overflow-hidden group shadow-lg shadow-black/5">
            <img 

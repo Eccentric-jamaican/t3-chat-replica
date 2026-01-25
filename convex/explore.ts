@@ -34,12 +34,12 @@ export const getExploreItems = action({
     // Reuse existing efficient eBay search helper
     const items = await searchEbayItems(query, 12);
 
-    return items.map(item => ({
+    return items.map((item: { id: string; title: string; image: string; sellerName?: string; price: string; url: string }) => ({
       id: item.id,
       title: item.title,
       image: item.image,
-      brand: item.sellerName || "eBay Seller", // Fallback as brand isn't always in summary
-      rating: (Math.random() * 1.5) + 3.5, // Mock rating for now as eBay summary doesn't always provide it
+      brand: item.sellerName || "eBay Seller",
+      rating: (Math.random() * 1.5) + 3.5,
       price: item.price,
       url: item.url
     }));

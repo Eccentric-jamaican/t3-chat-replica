@@ -1,11 +1,11 @@
 import { useState, useRef, useEffect, type MouseEvent } from 'react'
-import { PanelLeft, Plus, Search, MessageSquare, Settings, LogIn, Pin, Trash2, Edit3, Share2, ExternalLink, Sparkles, Download, ChevronRight, X, Compass, Bookmark, Package, Ticket, ArrowUp } from 'lucide-react'
+import { PanelLeft, Plus, Search, MessageSquare, Settings, LogIn, Pin, Trash2, Edit3, Share2, ExternalLink, Sparkles, Download, ChevronRight, X, Compass, Bookmark, Package, Ticket, ArrowUp, ChevronLeft } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { clsx, type ClassValue } from 'clsx'
 import { twMerge } from 'tailwind-merge'
 import { useQuery, useMutation } from "convex/react"
 import { api } from "../../../convex/_generated/api"
-import { useNavigate, useParams, Link } from "@tanstack/react-router"
+import { useNavigate, useParams, Link, useLocation } from "@tanstack/react-router"
 import { useIsMobile } from '../../hooks/useIsMobile'
 import { renderToStaticMarkup } from 'react-dom/server'
 import ReactMarkdown from 'react-markdown'
@@ -302,8 +302,10 @@ interface SidebarProps {
 
 export const Sidebar = ({ isOpen: externalOpen, onToggle }: SidebarProps) => {
   const navigate = useNavigate()
+  const location = useLocation()
   const { threadId: activeThreadId } = useParams({ strict: false }) as any
   const isMobile = useIsMobile()
+  const isNestedExplore = location.pathname.includes('/explore/category')
   const [internalOpen, setInternalOpen] = useState(!isMobile) // Closed by default on mobile
   
   const isOpen = externalOpen !== undefined ? externalOpen : internalOpen;
@@ -401,10 +403,21 @@ export const Sidebar = ({ isOpen: externalOpen, onToggle }: SidebarProps) => {
             animate={{ opacity: 1, x: 0 }}
             className="flex items-center gap-1"
           >
+            {/* Back button for nested explore pages */}
+            {isNestedExplore && isMobile && (
+              <button 
+                onClick={() => window.history.back()}
+                className="p-1.5 rounded-lg hover:bg-black/10 text-foreground/50 transition-colors"
+              >
+                <ChevronLeft size={18} />
+              </button>
+            )}
             <span className="text-sm font-bold text-foreground/80 ml-1 hidden md:inline">T3.chat</span>
-            <button className="p-1.5 rounded-lg hover:bg-black/10 text-foreground/50 transition-colors">
-              <Search size={18} />
-            </button>
+            {!isMobile && (
+              <button className="p-1.5 rounded-lg hover:bg-black/10 text-foreground/50 transition-colors">
+                <Search size={18} />
+              </button>
+            )}
             <button className="p-1.5 rounded-lg hover:bg-black/10 text-foreground/50 transition-colors" onClick={handleNewChat}>
               <Plus size={18} />
             </button>

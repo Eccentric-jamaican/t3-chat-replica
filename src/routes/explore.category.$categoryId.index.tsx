@@ -1,10 +1,11 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { categoryDetails, type ShopItem } from '../data/explore'
-import { Search, ChevronLeft, ArrowUpRight, Star, Loader2 } from 'lucide-react'
+import { Search, ChevronLeft, ArrowUpRight, Star } from 'lucide-react'
 import { motion } from 'framer-motion'
 import { useAction } from 'convex/react'
 import { api } from '../../convex/_generated/api'
 import { useEffect, useState } from 'react'
+import { useIsMobile } from '../hooks/useIsMobile'
 
 export const Route = createFileRoute('/explore/category/$categoryId/')({
   component: CategoryIndexPage,
@@ -46,10 +47,11 @@ function CategoryIndexPage() {
   return (
     <>
       {/* Sticky Header */}
-      <header className="sticky top-0 z-[60] px-4 py-3 flex items-center justify-between bg-background/40 backdrop-blur-xl border-b border-black/5">
+      <header className={`sticky top-0 z-[60] px-4 flex items-center justify-between transition-all ${useIsMobile() ? 'bg-transparent backdrop-blur-none border-none py-1 pl-32' : 'bg-background/40 backdrop-blur-xl border-b border-black/5 py-3'}`}>
+        {/* Desktop back button - mobile uses Sidebar toggle container */}
         <Link 
           to="/explore" 
-          className="p-2 rounded-full bg-black/5 text-foreground/60 hover:bg-black/10 transition-colors"
+          className="p-2 rounded-full bg-black/5 text-foreground/60 hover:bg-black/10 transition-colors hidden md:flex"
         >
           <ChevronLeft size={20} />
         </Link>
@@ -64,14 +66,11 @@ function CategoryIndexPage() {
         </div>
 
         <div className="flex items-center gap-2">
-           <button className="md:hidden p-2 rounded-full bg-black/5 text-foreground/60">
-              <Search size={20} />
-            </button>
-           <div className="w-8 h-8 rounded-full bg-primary/10 border border-primary/20" />
+           <div className="w-8 h-8 rounded-full bg-primary/10 border border-primary/20 hidden md:block" />
         </div>
       </header>
 
-      <main className="flex-1 max-w-6xl mx-auto w-full px-4 pt-8 md:pt-12 pb-24 space-y-12 md:space-y-16">
+      <main className={`flex-1 max-w-6xl mx-auto w-full px-4 pb-24 space-y-12 md:space-y-16 ${useIsMobile() ? 'pt-16' : 'pt-12'}`}>
         {/* Category Hero */}
         <section className="relative h-[300px] md:h-[400px] rounded-[40px] overflow-hidden group shadow-2xl shadow-black/5">
           <img 
