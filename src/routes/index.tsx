@@ -1,7 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { Sidebar } from '../components/Sidebar'
-import { ChatInput, type ChatInputHandle } from '../components/ChatInput'
-import { LandingHero } from '../components/LandingHero'
+import { Sidebar } from '../components/layout/Sidebar'
+import { ChatInput, type ChatInputHandle } from '../components/chat/ChatInput'
+import { LandingHero } from '../components/chat/LandingHero'
 import { useEffect, useRef, useState } from 'react'
 import { useIsMobile } from '../hooks/useIsMobile'
 

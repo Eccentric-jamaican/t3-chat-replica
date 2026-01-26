@@ -4,10 +4,10 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { clsx, type ClassValue } from 'clsx'
 import { twMerge } from 'tailwind-merge'
 import { useMutation, useAction } from "convex/react"
-import { api } from "../../convex/_generated/api"
+import { api } from "../../../convex/_generated/api"
 import { ModelPicker } from './ModelPicker'
-import { fetchOpenRouterModels, type AppModel } from '../lib/openrouter'
-import { useIsMobile } from '../hooks/useIsMobile'
+import { fetchOpenRouterModels, type AppModel } from '../../lib/openrouter'
+import { useIsMobile } from '../../hooks/useIsMobile'
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))

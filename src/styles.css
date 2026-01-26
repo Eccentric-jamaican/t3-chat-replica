@@ -1,17 +1,17 @@
-@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Poppins:wght@400;500;600;700&display=swap');
+@import url("https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Poppins:wght@400;500;600;700&display=swap");
 @import "tailwindcss";
 
 @theme {
   --color-primary: #a23b67;
   --color-background: #f2e1f4;
   --color-foreground: #501854;
-  
-  /* Exact T3.chat Colors & Spaces */
+
+  /* Exact Sendcat Colors & Spaces */
   --color-t3-lavender: oklab(0.87 0.06 -0.03);
   --color-t3-berry-light: oklab(0.7 0.15 -0.05);
   --color-t3-berry: oklab(0.55 0.16 -0.08);
   --color-t3-berry-deep: oklab(0.44 0.11 -0.08);
-  
+
   --color-t3-banner-bg: rgb(254, 235, 231);
   --color-t3-banner-text: rgb(80, 24, 84);
 
@@ -21,8 +21,15 @@
   --animate-pulse-slow: pulse-slow 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
+:root {
+  /* Visual Viewport (Keyboard) Height - managed by useVisualViewport hook */
+  --visual-viewport-bottom: 0px;
+  --visual-viewport-height: 100dvh;
+}
+
 @keyframes pulse-slow {
-  0%, 100% {
+  0%,
+  100% {
     opacity: 1;
     transform: scale(1);
   }
@@ -58,12 +65,17 @@
     inset: 0;
     padding: 1px; /* The border width */
     border-radius: inherit;
-    background: linear-gradient(180deg, rgba(80, 24, 84, 0.05), rgba(80, 24, 84, 0.1), rgba(80, 24, 84, 0.05));
-    -webkit-mask: 
-      linear-gradient(#fff 0 0) content-box, 
+    background: linear-gradient(
+      180deg,
+      rgba(80, 24, 84, 0.05),
+      rgba(80, 24, 84, 0.1),
+      rgba(80, 24, 84, 0.05)
+    );
+    -webkit-mask:
+      linear-gradient(#fff 0 0) content-box,
       linear-gradient(#fff 0 0);
-    mask: 
-      linear-gradient(#fff 0 0) content-box, 
+    mask:
+      linear-gradient(#fff 0 0) content-box,
       linear-gradient(#fff 0 0);
     -webkit-mask-composite: xor;
     mask-composite: exclude;
@@ -72,7 +84,7 @@
 
   /* Specific glow for the input box */
   .input-glow {
-    box-shadow: 
+    box-shadow:
       0 0 0 1px rgba(80, 24, 84, 0.03),
       0 1px 1px rgba(0, 0, 0, 0.02),
       0 4px 12px rgba(80, 24, 84, 0.04);
@@ -104,18 +116,36 @@
   html {
     height: 100%;
     height: 100dvh;
-    overflow-x: hidden;
+    overflow: hidden;
   }
 
   body {
     background-color: var(--color-background);
     color: var(--color-foreground);
-    overflow-x: hidden;
+    overflow: hidden;
+    width: 100%;
     max-width: 100vw;
+    height: 100%;
     min-height: 100vh;
-    min-height: 100dvh;
-    overflow-x: hidden;
-    font-family: 'Poppins', system-ui, -apple-system, sans-serif;
+    font-family:
+      "Poppins",
+      system-ui,
+      -apple-system,
+      sans-serif;
+    touch-action: none; /* Only allow scrolling on elements that specifically enable it */
+  }
+
+  @supports (min-height: 100dvh) {
+    body {
+      min-height: 100dvh;
+    }
+  }
+
+  /* Specific elements that MUST be scrollable */
+  .message-scroll-area,
+  .sidebar-scroll-area,
+  [data-radix-scroll-area-viewport] {
+    touch-action: pan-y;
   }
 
   body::selection {
@@ -132,7 +162,11 @@
   transform: translateX(-50%);
   width: 100%;
   height: 200px;
-  background: radial-gradient(circle at center top, rgba(255, 255, 255, 0.4) 0%, transparent 70%);
+  background: radial-gradient(
+    circle at center top,
+    rgba(255, 255, 255, 0.4) 0%,
+    transparent 70%
+  );
   pointer-events: none;
   z-index: 10;
   filter: blur(40px);
@@ -145,7 +179,11 @@
   transform: translateX(-50%);
   width: 100%;
   height: 200px;
-  background: radial-gradient(circle at center bottom, rgba(255, 255, 255, 0.3) 0%, transparent 70%);
+  background: radial-gradient(
+    circle at center bottom,
+    rgba(255, 255, 255, 0.3) 0%,
+    transparent 70%
+  );
   pointer-events: none;
   z-index: 10;
   filter: blur(40px);
@@ -157,7 +195,7 @@
   z-index: 5;
   pointer-events: none;
   opacity: 0.03;
-  background-image: url("https://t3.chat/images/noise.png");
+  background-image: url("https://Sendcat/images/noise.png");
 }
 
 .scrollbar-hide::-webkit-scrollbar {
@@ -170,77 +208,81 @@
 
 /* Markdown Prose Styles */
 .prose {
-    font-size: 16px;     /* Aligned with t3.chat */
-    line-height: 1.75;   /* 28px perfectly */
-    letter-spacing: -0.01em;
-    color: var(--color-foreground);
-    font-weight: 400;    /* t3.chat uses regular weight */
+  font-size: 16px; /* Aligned with Sendcat */
+  line-height: 1.75; /* 28px perfectly */
+  letter-spacing: -0.01em;
+  color: var(--color-foreground);
+  font-weight: 400; /* Sendcat uses regular weight */
 }
 
-.prose h1, .prose h2, .prose h3 {
-    color: var(--color-foreground);
-    font-weight: 700;
-    margin-top: 1.25em;  /* Slightly reduced margins for tighter hierarchy */
-    margin-bottom: 0.5em;
-    letter-spacing: -0.02em;
+.prose h1,
+.prose h2,
+.prose h3 {
+  color: var(--color-foreground);
+  font-weight: 700;
+  margin-top: 1.25em; /* Slightly reduced margins for tighter hierarchy */
+  margin-bottom: 0.5em;
+  letter-spacing: -0.02em;
 }
 
 .prose p {
-    margin-bottom: 1.25em;
+  margin-bottom: 1.25em;
 }
 
 .prose strong {
-    font-weight: 600;    /* Aligned with t3.chat inspection */
-    color: var(--color-foreground);
+  font-weight: 600; /* Aligned with Sendcat inspection */
+  color: var(--color-foreground);
 }
 
-.prose ul, .prose ol {
-    margin-bottom: 1.25em;
-    padding-left: 1.5em;
+.prose ul,
+.prose ol {
+  margin-bottom: 1.25em;
+  padding-left: 1.5em;
 }
 
 .prose li {
-    margin-bottom: 0.5em;
+  margin-bottom: 0.5em;
 }
 
 .prose table {
-    width: 100%;
-    border-collapse: collapse;
-    margin: 2em 0;
+  width: 100%;
+  border-collapse: collapse;
+  margin: 2em 0;
 }
 
-.prose th, .prose td {
-    padding: 0.85em;
-    border: 1px solid rgba(80, 24, 84, 0.08);
-    text-align: left;
+.prose th,
+.prose td {
+  padding: 0.85em;
+  border: 1px solid rgba(80, 24, 84, 0.08);
+  text-align: left;
 }
 
 .prose th {
-    background: rgba(80, 24, 84, 0.03);
-    font-weight: 650;
-    font-size: 0.9em;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
+  background: rgba(80, 24, 84, 0.03);
+  font-weight: 650;
+  font-size: 0.9em;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
 }
 
 .prose blockquote {
-    border-left: 3px solid var(--color-t3-berry);
-    padding-left: 1.25em;
-    font-style: italic;
-    color: var(--color-t3-berry-deep);
-    margin: 2em 0;
-    opacity: 0.85;
+  border-left: 3px solid var(--color-t3-berry);
+  padding-left: 1.25em;
+  font-style: italic;
+  color: var(--color-t3-berry-deep);
+  margin: 2em 0;
+  opacity: 0.85;
 }
 
 .prose pre {
-    background: #000 !important;
-    border-radius: 0.75rem;
-    padding: 0 !important;
+  background: #000 !important;
+  border-radius: 0.75rem;
+  padding: 0 !important;
 }
 
 /* Syntax Highlighting Tweaks */
 .hljs {
-    background: transparent !important;
+  background: transparent !important;
 }
 
 /* Streaming Message Optimizations */
@@ -258,6 +300,8 @@
 /* Prevent scroll anchor jumps during streaming */
 .message-scroll-area {
   overflow-anchor: none;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
 }
 
 /* Keep scroll position stable */

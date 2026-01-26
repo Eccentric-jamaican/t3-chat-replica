@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { RotateCcw, GitBranch, Star, Sparkles, ChevronRight, ChevronDown } from 'lucide-react'
-import { fetchOpenRouterModels, type AppModel } from '../lib/openrouter'
-import { useIsMobile } from '../hooks/useIsMobile'
+import { fetchOpenRouterModels, type AppModel } from '../../lib/openrouter'
+import { useIsMobile } from '../../hooks/useIsMobile'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -10,8 +10,8 @@ import {
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
-} from './ui/dropdown-menu'
-import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip'
+} from '../ui/dropdown-menu'
+import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip'
 
 // Provider icons (copied from ModelPicker for consistency)
 const ProviderIcon = ({ provider }: { provider: string }) => {

@@ -1,11 +1,11 @@
 import { useState, useEffect, useRef } from 'react'
-import { fetchOpenRouterModels, type AppModel } from '../lib/openrouter'
+import { fetchOpenRouterModels, type AppModel } from '../../lib/openrouter'
 import { motion } from 'framer-motion'
 import { ChevronDown, Search, Star, Sparkles, Brain, Eye, CircleCheck, Plus, FileText } from 'lucide-react'
 import { clsx, type ClassValue } from 'clsx'
 import { twMerge } from 'tailwind-merge'
-import { Popover, PopoverContent, PopoverTrigger } from './ui/popover'
-import { useIsMobile } from '../hooks/useIsMobile'
+import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover'
+import { useIsMobile } from '../../hooks/useIsMobile'
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))

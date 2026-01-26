@@ -1,4 +1,4 @@
-import { type Product } from "../data/mockProducts";
+import { type Product } from "../../data/mockProducts";
 import { Checkbox } from "@/components/ui/checkbox";
 
 interface ProductTableProps {
@@ -18,9 +18,9 @@ export function ProductTable({ products, selectedIds, onToggleSelection, onProdu
               {/* Header checkbox would go here for select all */}
             </th>
             <th className="p-4 font-semibold text-gray-900">Product</th>
-            <th className="p-4 font-semibold text-gray-900">Supplier</th>
+            <th className="p-4 font-semibold text-gray-900">Seller</th>
             <th className="p-4 font-semibold text-gray-900">Price</th>
-            <th className="p-4 font-semibold text-gray-900">MOQ</th>
+            <th className="p-4 font-semibold text-gray-900">MOQ/Condition</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-gray-100 bg-white">
@@ -48,8 +48,8 @@ export function ProductTable({ products, selectedIds, onToggleSelection, onProdu
                     <span className="font-medium text-gray-900 group-hover:text-[#a23b67] transition-colors leading-tight line-clamp-1">
                       {product.title}
                     </span>
-                    {product.badge && (
-                      <span className="text-[10px] text-[#008a6c] font-semibold">{product.badge}</span>
+                    {(product.badge || product.condition) && (
+                      <span className="text-[10px] text-[#008a6c] font-semibold">{product.badge || product.condition}</span>
                     )}
                   </div>
                 </div>
@@ -57,17 +57,22 @@ export function ProductTable({ products, selectedIds, onToggleSelection, onProdu
               <td className="p-4">
                 <div className="flex items-center gap-2 text-gray-600">
                   <div className="h-5 w-5 flex items-center justify-center rounded bg-gray-100 text-[10px] font-bold">
-                    {product.supplier.logo}
+                    {product.supplier?.logo || (product.sellerName?.charAt(0).toUpperCase() || 'E')}
                   </div>
-                  <span className="truncate max-w-[120px]">{product.supplier.name}</span>
-                  <span className="text-gray-300 text-[10px] shrink-0 font-medium">{product.supplier.country} {product.supplier.years}yrs</span>
+                  <span className="truncate max-w-[120px]">{product.supplier?.name || product.sellerName}</span>
+                  {product.supplier && (
+                    <span className="text-gray-300 text-[10px] shrink-0 font-medium">{product.supplier.country} {product.supplier.years}yrs</span>
+                  )}
+                  {product.sellerFeedback && (
+                    <span className="text-t3-berry-deep text-[10px] shrink-0 font-bold">{product.sellerFeedback}</span>
+                  )}
                 </div>
               </td>
               <td className="p-4">
                 <span className="font-bold text-gray-900">{product.priceRange}</span>
               </td>
               <td className="p-4">
-                <span className="text-gray-500 whitespace-nowrap">{product.moq}</span>
+                <span className="text-gray-500 whitespace-nowrap">{product.moq || "-"}</span>
               </td>
             </tr>
           ))}

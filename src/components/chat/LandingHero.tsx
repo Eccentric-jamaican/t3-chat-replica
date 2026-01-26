@@ -1,6 +1,6 @@
 import { motion } from 'framer-motion'
 import { Sparkles, Compass, Code2, GraduationCap } from 'lucide-react'
-import { useIsMobile } from '../hooks/useIsMobile'
+import { useIsMobile } from '../../hooks/useIsMobile'
 import { clsx, type ClassValue } from 'clsx'
 import { twMerge } from 'tailwind-merge'
 

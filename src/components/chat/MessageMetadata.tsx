@@ -1,5 +1,5 @@
 import { Zap, Clock, Wrench, Cpu, Info } from 'lucide-react';
-import { useIsMobile } from '../hooks/useIsMobile';
+import { useIsMobile } from '../../hooks/useIsMobile';
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 

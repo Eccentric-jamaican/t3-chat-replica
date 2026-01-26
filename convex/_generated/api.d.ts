@@ -9,7 +9,10 @@
  */
 
 import type * as chat from "../chat.js";
+import type * as ebay from "../ebay.js";
+import type * as explore from "../explore.js";
 import type * as messages from "../messages.js";
+import type * as streamSessions from "../streamSessions.js";
 import type * as threads from "../threads.js";
 
 import type {
@@ -20,7 +23,10 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   chat: typeof chat;
+  ebay: typeof ebay;
+  explore: typeof explore;
   messages: typeof messages;
+  streamSessions: typeof streamSessions;
   threads: typeof threads;
 }>;
 

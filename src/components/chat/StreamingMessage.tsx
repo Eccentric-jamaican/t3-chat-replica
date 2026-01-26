@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { useSmoothStreaming } from '../hooks/useSmoothStreaming';
+import { useSmoothStreaming } from '../../hooks/useSmoothStreaming';
 import { Markdown } from './Markdown';
 import { AnimatedStreamingText } from './AnimatedStreamingText';
 

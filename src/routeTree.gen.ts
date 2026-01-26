@@ -9,26 +9,59 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as ExploreRouteImport } from './routes/explore'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as ExploreIndexRouteImport } from './routes/explore.index'
+import { Route as ExploreSearchRouteImport } from './routes/explore.search'
 import { Route as ChatThreadIdRouteImport } from './routes/chat.$threadId'
+import { Route as ExploreCategoryCategoryIdRouteImport } from './routes/explore.category.$categoryId'
 import { Route as DemoStartServerFuncsRouteImport } from './routes/demo/start.server-funcs'
 import { Route as DemoStartApiRequestRouteImport } from './routes/demo/start.api-request'
 import { Route as DemoApiNamesRouteImport } from './routes/demo/api.names'
+import { Route as ExploreCategoryCategoryIdIndexRouteImport } from './routes/explore.category.$categoryId.index'
 import { Route as DemoStartSsrIndexRouteImport } from './routes/demo/start.ssr.index'
+import { Route as ExploreCategoryCategoryIdSubCategoryIdRouteImport } from './routes/explore.category.$categoryId.$subCategoryId'
 import { Route as DemoStartSsrSpaModeRouteImport } from './routes/demo/start.ssr.spa-mode'
 import { Route as DemoStartSsrFullSsrRouteImport } from './routes/demo/start.ssr.full-ssr'
 import { Route as DemoStartSsrDataOnlyRouteImport } from './routes/demo/start.ssr.data-only'
 
+const SettingsRoute = SettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ExploreRoute = ExploreRouteImport.update({
+  id: '/explore',
+  path: '/explore',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
+} as any)
+const ExploreIndexRoute = ExploreIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => ExploreRoute,
+} as any)
+const ExploreSearchRoute = ExploreSearchRouteImport.update({
+  id: '/search',
+  path: '/search',
+  getParentRoute: () => ExploreRoute,
 } as any)
 const ChatThreadIdRoute = ChatThreadIdRouteImport.update({
   id: '/chat/$threadId',
   path: '/chat/$threadId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ExploreCategoryCategoryIdRoute =
+  ExploreCategoryCategoryIdRouteImport.update({
+    id: '/category/$categoryId',
+    path: '/category/$categoryId',
+    getParentRoute: () => ExploreRoute,
+  } as any)
 const DemoStartServerFuncsRoute = DemoStartServerFuncsRouteImport.update({
   id: '/demo/start/server-funcs',
   path: '/demo/start/server-funcs',
@@ -44,11 +77,23 @@ const DemoApiNamesRoute = DemoApiNamesRouteImport.update({
   path: '/demo/api/names',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ExploreCategoryCategoryIdIndexRoute =
+  ExploreCategoryCategoryIdIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => ExploreCategoryCategoryIdRoute,
+  } as any)
 const DemoStartSsrIndexRoute = DemoStartSsrIndexRouteImport.update({
   id: '/demo/start/ssr/',
   path: '/demo/start/ssr/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ExploreCategoryCategoryIdSubCategoryIdRoute =
+  ExploreCategoryCategoryIdSubCategoryIdRouteImport.update({
+    id: '/$subCategoryId',
+    path: '/$subCategoryId',
+    getParentRoute: () => ExploreCategoryCategoryIdRoute,
+  } as any)
 const DemoStartSsrSpaModeRoute = DemoStartSsrSpaModeRouteImport.update({
   id: '/demo/start/ssr/spa-mode',
   path: '/demo/start/ssr/spa-mode',
@@ -67,76 +112,116 @@ const DemoStartSsrDataOnlyRoute = DemoStartSsrDataOnlyRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/explore': typeof ExploreRouteWithChildren
+  '/settings': typeof SettingsRoute
   '/chat/$threadId': typeof ChatThreadIdRoute
+  '/explore/search': typeof ExploreSearchRoute
+  '/explore/': typeof ExploreIndexRoute
   '/demo/api/names': typeof DemoApiNamesRoute
   '/demo/start/api-request': typeof DemoStartApiRequestRoute
   '/demo/start/server-funcs': typeof DemoStartServerFuncsRoute
+  '/explore/category/$categoryId': typeof ExploreCategoryCategoryIdRouteWithChildren
   '/demo/start/ssr/data-only': typeof DemoStartSsrDataOnlyRoute
   '/demo/start/ssr/full-ssr': typeof DemoStartSsrFullSsrRoute
   '/demo/start/ssr/spa-mode': typeof DemoStartSsrSpaModeRoute
+  '/explore/category/$categoryId/$subCategoryId': typeof ExploreCategoryCategoryIdSubCategoryIdRoute
   '/demo/start/ssr/': typeof DemoStartSsrIndexRoute
+  '/explore/category/$categoryId/': typeof ExploreCategoryCategoryIdIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/settings': typeof SettingsRoute
   '/chat/$threadId': typeof ChatThreadIdRoute
+  '/explore/search': typeof ExploreSearchRoute
+  '/explore': typeof ExploreIndexRoute
   '/demo/api/names': typeof DemoApiNamesRoute
   '/demo/start/api-request': typeof DemoStartApiRequestRoute
   '/demo/start/server-funcs': typeof DemoStartServerFuncsRoute
   '/demo/start/ssr/data-only': typeof DemoStartSsrDataOnlyRoute
   '/demo/start/ssr/full-ssr': typeof DemoStartSsrFullSsrRoute
   '/demo/start/ssr/spa-mode': typeof DemoStartSsrSpaModeRoute
+  '/explore/category/$categoryId/$subCategoryId': typeof ExploreCategoryCategoryIdSubCategoryIdRoute
   '/demo/start/ssr': typeof DemoStartSsrIndexRoute
+  '/explore/category/$categoryId': typeof ExploreCategoryCategoryIdIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/explore': typeof ExploreRouteWithChildren
+  '/settings': typeof SettingsRoute
   '/chat/$threadId': typeof ChatThreadIdRoute
+  '/explore/search': typeof ExploreSearchRoute
+  '/explore/': typeof ExploreIndexRoute
   '/demo/api/names': typeof DemoApiNamesRoute
   '/demo/start/api-request': typeof DemoStartApiRequestRoute
   '/demo/start/server-funcs': typeof DemoStartServerFuncsRoute
+  '/explore/category/$categoryId': typeof ExploreCategoryCategoryIdRouteWithChildren
   '/demo/start/ssr/data-only': typeof DemoStartSsrDataOnlyRoute
   '/demo/start/ssr/full-ssr': typeof DemoStartSsrFullSsrRoute
   '/demo/start/ssr/spa-mode': typeof DemoStartSsrSpaModeRoute
+  '/explore/category/$categoryId/$subCategoryId': typeof ExploreCategoryCategoryIdSubCategoryIdRoute
   '/demo/start/ssr/': typeof DemoStartSsrIndexRoute
+  '/explore/category/$categoryId/': typeof ExploreCategoryCategoryIdIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/explore'
+    | '/settings'
     | '/chat/$threadId'
+    | '/explore/search'
+    | '/explore/'
     | '/demo/api/names'
     | '/demo/start/api-request'
     | '/demo/start/server-funcs'
+    | '/explore/category/$categoryId'
     | '/demo/start/ssr/data-only'
     | '/demo/start/ssr/full-ssr'
     | '/demo/start/ssr/spa-mode'
+    | '/explore/category/$categoryId/$subCategoryId'
     | '/demo/start/ssr/'
+    | '/explore/category/$categoryId/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/settings'
     | '/chat/$threadId'
+    | '/explore/search'
+    | '/explore'
     | '/demo/api/names'
     | '/demo/start/api-request'
     | '/demo/start/server-funcs'
     | '/demo/start/ssr/data-only'
     | '/demo/start/ssr/full-ssr'
     | '/demo/start/ssr/spa-mode'
+    | '/explore/category/$categoryId/$subCategoryId'
     | '/demo/start/ssr'
+    | '/explore/category/$categoryId'
   id:
     | '__root__'
     | '/'
+    | '/explore'
+    | '/settings'
     | '/chat/$threadId'
+    | '/explore/search'
+    | '/explore/'
     | '/demo/api/names'
     | '/demo/start/api-request'
     | '/demo/start/server-funcs'
+    | '/explore/category/$categoryId'
     | '/demo/start/ssr/data-only'
     | '/demo/start/ssr/full-ssr'
     | '/demo/start/ssr/spa-mode'
+    | '/explore/category/$categoryId/$subCategoryId'
     | '/demo/start/ssr/'
+    | '/explore/category/$categoryId/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  ExploreRoute: typeof ExploreRouteWithChildren
+  SettingsRoute: typeof SettingsRoute
   ChatThreadIdRoute: typeof ChatThreadIdRoute
   DemoApiNamesRoute: typeof DemoApiNamesRoute
   DemoStartApiRequestRoute: typeof DemoStartApiRequestRoute
@@ -149,6 +234,20 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/settings': {
+      id: '/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof SettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/explore': {
+      id: '/explore'
+      path: '/explore'
+      fullPath: '/explore'
+      preLoaderRoute: typeof ExploreRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -156,12 +255,33 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/explore/': {
+      id: '/explore/'
+      path: '/'
+      fullPath: '/explore/'
+      preLoaderRoute: typeof ExploreIndexRouteImport
+      parentRoute: typeof ExploreRoute
+    }
+    '/explore/search': {
+      id: '/explore/search'
+      path: '/search'
+      fullPath: '/explore/search'
+      preLoaderRoute: typeof ExploreSearchRouteImport
+      parentRoute: typeof ExploreRoute
+    }
     '/chat/$threadId': {
       id: '/chat/$threadId'
       path: '/chat/$threadId'
       fullPath: '/chat/$threadId'
       preLoaderRoute: typeof ChatThreadIdRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/explore/category/$categoryId': {
+      id: '/explore/category/$categoryId'
+      path: '/category/$categoryId'
+      fullPath: '/explore/category/$categoryId'
+      preLoaderRoute: typeof ExploreCategoryCategoryIdRouteImport
+      parentRoute: typeof ExploreRoute
     }
     '/demo/start/server-funcs': {
       id: '/demo/start/server-funcs'
@@ -184,12 +304,26 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DemoApiNamesRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/explore/category/$categoryId/': {
+      id: '/explore/category/$categoryId/'
+      path: '/'
+      fullPath: '/explore/category/$categoryId/'
+      preLoaderRoute: typeof ExploreCategoryCategoryIdIndexRouteImport
+      parentRoute: typeof ExploreCategoryCategoryIdRoute
+    }
     '/demo/start/ssr/': {
       id: '/demo/start/ssr/'
       path: '/demo/start/ssr'
       fullPath: '/demo/start/ssr/'
       preLoaderRoute: typeof DemoStartSsrIndexRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/explore/category/$categoryId/$subCategoryId': {
+      id: '/explore/category/$categoryId/$subCategoryId'
+      path: '/$subCategoryId'
+      fullPath: '/explore/category/$categoryId/$subCategoryId'
+      preLoaderRoute: typeof ExploreCategoryCategoryIdSubCategoryIdRouteImport
+      parentRoute: typeof ExploreCategoryCategoryIdRoute
     }
     '/demo/start/ssr/spa-mode': {
       id: '/demo/start/ssr/spa-mode'
@@ -215,8 +349,42 @@ declare module '@tanstack/react-router' {
   }
 }
 
+interface ExploreCategoryCategoryIdRouteChildren {
+  ExploreCategoryCategoryIdSubCategoryIdRoute: typeof ExploreCategoryCategoryIdSubCategoryIdRoute
+  ExploreCategoryCategoryIdIndexRoute: typeof ExploreCategoryCategoryIdIndexRoute
+}
+
+const ExploreCategoryCategoryIdRouteChildren: ExploreCategoryCategoryIdRouteChildren =
+  {
+    ExploreCategoryCategoryIdSubCategoryIdRoute:
+      ExploreCategoryCategoryIdSubCategoryIdRoute,
+    ExploreCategoryCategoryIdIndexRoute: ExploreCategoryCategoryIdIndexRoute,
+  }
+
+const ExploreCategoryCategoryIdRouteWithChildren =
+  ExploreCategoryCategoryIdRoute._addFileChildren(
+    ExploreCategoryCategoryIdRouteChildren,
+  )
+
+interface ExploreRouteChildren {
+  ExploreSearchRoute: typeof ExploreSearchRoute
+  ExploreIndexRoute: typeof ExploreIndexRoute
+  ExploreCategoryCategoryIdRoute: typeof ExploreCategoryCategoryIdRouteWithChildren
+}
+
+const ExploreRouteChildren: ExploreRouteChildren = {
+  ExploreSearchRoute: ExploreSearchRoute,
+  ExploreIndexRoute: ExploreIndexRoute,
+  ExploreCategoryCategoryIdRoute: ExploreCategoryCategoryIdRouteWithChildren,
+}
+
+const ExploreRouteWithChildren =
+  ExploreRoute._addFileChildren(ExploreRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  ExploreRoute: ExploreRouteWithChildren,
+  SettingsRoute: SettingsRoute,
   ChatThreadIdRoute: ChatThreadIdRoute,
   DemoApiNamesRoute: DemoApiNamesRoute,
   DemoStartApiRequestRoute: DemoStartApiRequestRoute,
