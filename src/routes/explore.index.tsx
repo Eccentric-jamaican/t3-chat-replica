@@ -107,7 +107,7 @@ function ExplorePage() {
                 <span className="rounded-full border border-white/10 bg-white/10 px-3 py-1.5 text-xs font-bold tracking-widest text-white/70 uppercase backdrop-blur-md">
                   {card.subtitle}
                 </span>
-                <div className="flex hidden h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/10 text-white opacity-0 backdrop-blur-md transition-opacity group-hover:opacity-100 md:flex">
+                <div className="hidden h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/10 text-white opacity-0 backdrop-blur-md transition-opacity group-hover:opacity-100 md:flex">
                   <ArrowUpRight size={20} />
                 </div>
               </div>
