@@ -1,5 +1,5 @@
-import { defineSchema, defineTable } from "convex/server";
-import { v } from "convex/values";
+import { defineSchema, defineTable } from 'convex/server'
+import { v } from 'convex/values'
 
 export default defineSchema({
   threads: defineTable({
@@ -9,44 +9,86 @@ export default defineSchema({
     userId: v.optional(v.string()), // For logged in users (Clerk)
     lastMessageAt: v.optional(v.number()),
     isPinned: v.optional(v.boolean()),
-  }).index("by_session", ["sessionId"]),
+  }).index('by_session', ['sessionId']),
 
   messages: defineTable({
-    threadId: v.id("threads"),
-    role: v.union(v.literal("user"), v.literal("assistant"), v.literal("system"), v.literal("tool")),
+    threadId: v.id('threads'),
+    role: v.union(
+      v.literal('user'),
+      v.literal('assistant'),
+      v.literal('system'),
+      v.literal('tool'),
+    ),
     content: v.string(),
     modelId: v.optional(v.string()), // Track which model generated this message
-    status: v.optional(v.union(v.literal("streaming"), v.literal("completed"), v.literal("error"), v.literal("aborted"))),
+    status: v.optional(
+      v.union(
+        v.literal('streaming'),
+        v.literal('completed'),
+        v.literal('error'),
+        v.literal('aborted'),
+      ),
+    ),
     reasoningContent: v.optional(v.string()), // Store reasoning tokens from thinking models
-    attachments: v.optional(v.array(v.object({
-      storageId: v.id("_storage"),
-      type: v.string(), // e.g., "image/png"
-      name: v.string(),
-      size: v.number(),
-    }))),
-    toolCalls: v.optional(v.array(v.object({
-      id: v.string(),
-      type: v.literal("function"),
-      function: v.object({
-        name: v.string(),
-        arguments: v.string(),
-      })
-    }))),
+    attachments: v.optional(
+      v.array(
+        v.object({
+          storageId: v.id('_storage'),
+          type: v.string(), // e.g., "image/png"
+          name: v.string(),
+          size: v.number(),
+        }),
+      ),
+    ),
+    toolCalls: v.optional(
+      v.array(
+        v.object({
+          id: v.string(),
+          type: v.literal('function'),
+          function: v.object({
+            name: v.string(),
+            arguments: v.string(),
+          }),
+        }),
+      ),
+    ),
     toolCallId: v.optional(v.string()),
     name: v.optional(v.string()),
-    products: v.optional(v.array(v.object({
-      id: v.string(),
-      title: v.string(),
-      price: v.string(),
-      image: v.string(),
-      url: v.string(),
-      sellerName: v.optional(v.string()),
-      sellerFeedback: v.optional(v.string()),
-      condition: v.optional(v.string()),
-      rating: v.optional(v.number()),
-      reviews: v.optional(v.number()),
-    }))),
-  }).index("by_thread", ["threadId"])
-    .index("by_thread_status", ["threadId", "status"]),
+    products: v.optional(
+      v.array(
+        v.object({
+          id: v.string(),
+          title: v.string(),
+          price: v.string(),
+          image: v.string(),
+          url: v.string(),
+          sellerName: v.optional(v.string()),
+          sellerFeedback: v.optional(v.string()),
+          condition: v.optional(v.string()),
+          rating: v.optional(v.number()),
+          reviews: v.optional(v.number()),
+        }),
+      ),
+    ),
+  })
+    .index('by_thread', ['threadId'])
+    .index('by_thread_status', ['threadId', 'status']),
 
-});
+  streamSessions: defineTable({
+    threadId: v.id('threads'),
+    messageId: v.id('messages'),
+    status: v.union(
+      v.literal('streaming'),
+      v.literal('completed'),
+      v.literal('error'),
+      v.literal('aborted'),
+    ),
+    startedAt: v.optional(v.number()),
+    endedAt: v.optional(v.number()),
+    lastHeartbeat: v.optional(v.number()),
+  })
+    .index('by_thread', ['threadId'])
+    .index('by_thread_status', ['threadId', 'status'])
+    .index('by_message', ['messageId'])
+    .index('by_status', ['status']),
+})
