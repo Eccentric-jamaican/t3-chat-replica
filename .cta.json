@@ -1,5 +1,5 @@
 {
-  "projectName": "t3-chat-replica",
+  "projectName": "sendcat",
   "mode": "file-router",
   "typescript": true,
   "tailwind": false,
@@ -9,8 +9,5 @@
   "addOnOptions": {},
   "version": 1,
   "framework": "react-cra",
-  "chosenAddOns": [
-    "start",
-    "nitro"
-  ]
+  "chosenAddOns": ["start", "nitro"]
 }

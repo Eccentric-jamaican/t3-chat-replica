@@ -1,6 +1,6 @@
 {
-  "short_name": "T3.chat",
-  "name": "T3.chat Replica",
+  "short_name": "Sendcat",
+  "name": "Sendcat",
   "description": "AI chat application",
   "id": "/",
   "start_url": "/",

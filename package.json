@@ -1,7 +1,13 @@
 {
-  "name": "t3-chat-replica",
+  "name": "sendcat",
   "private": true,
   "type": "module",
+  "prettier": {
+    "plugins": [
+      "prettier-plugin-tailwindcss"
+    ],
+    "tailwindStylesheet": "src/styles.css"
+  },
   "scripts": {
     "dev": "vite dev --port 3000",
     "build": "vite build",
