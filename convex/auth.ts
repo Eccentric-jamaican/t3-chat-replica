@@ -109,8 +109,13 @@ export const createAuth: CreateAuth<DataModel> = (ctx) => {
         clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
       },
     },
+    // TODO: Update trustedOrigins for production - remove localhost and preview URLs,
+    // keep only your production domain (e.g., "https://yourdomain.com")
     trustedOrigins: [
-      process.env.VITE_AUTH_URL || "http://localhost:3000",
+      "http://localhost:3000",
+      "https://t3-chat-replica.vercel.app",
+      "https://t3-chat-replica-eccentric-devs-projects.vercel.app",
+      "https://t3-chat-replica-git-betterauth-eccentric-devs-projects.vercel.app",
     ],
     plugins: [
       convex({ authConfig }),
