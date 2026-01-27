@@ -1,11 +1,23 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, redirect } from '@tanstack/react-router'
 import { Sidebar } from '../components/layout/Sidebar'
 import { ChatInput, type ChatInputHandle } from '../components/chat/ChatInput'
 import { LandingHero } from '../components/chat/LandingHero'
 import { useEffect, useRef, useState } from 'react'
 import { useIsMobile } from '../hooks/useIsMobile'
 
-export const Route = createFileRoute('/')({ component: App })
+import { authClient } from '../lib/auth'
+
+export const Route = createFileRoute('/')({ 
+  beforeLoad: async ({ location }) => {
+    const { data: session } = await authClient.getSession()
+    if (!session && location.pathname !== '/sign-in' && location.pathname !== '/sign-up') {
+      throw redirect({
+        to: '/sign-in',
+      })
+    }
+  },
+  component: App 
+})
 
 function App() {
   const chatInputRef = useRef<ChatInputHandle>(null)

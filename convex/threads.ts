@@ -1,35 +1,86 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
+import { safeGetAuthUser } from "./auth";
 
 export const create = mutation({
-  args: { 
-    title: v.optional(v.string()), 
-    modelId: v.string(), 
-    sessionId: v.string() 
+  args: {
+    title: v.optional(v.string()),
+    modelId: v.string(),
+    sessionId: v.string()
   },
   handler: async (ctx, args) => {
-    return await ctx.db.insert("threads", {
+    // Get authenticated user if available
+    const user = await safeGetAuthUser(ctx);
+
+    console.log("[THREADS] create - Auth state:", {
+      isAuthenticated: !!user,
+      userId: user?._id ?? null,
+      userEmail: user?.email ?? null,
+      sessionId: args.sessionId,
+      timestamp: new Date().toISOString(),
+    });
+
+    const threadId = await ctx.db.insert("threads", {
       ...args,
+      userId: user?._id, // Associate with user if authenticated
       lastMessageAt: Date.now(),
     });
+
+    console.log("[THREADS] create - Thread created:", {
+      threadId,
+      ownedBy: user?._id ? "user" : "session",
+      ownerId: user?._id ?? args.sessionId,
+    });
+
+    return threadId;
   },
 });
 
 export const list = query({
   args: { sessionId: v.string(), search: v.optional(v.string()) },
   handler: async (ctx, args) => {
-    let threads = await ctx.db
-      .query("threads")
-      .withIndex("by_session", (q) => q.eq("sessionId", args.sessionId))
-      .collect();
-    
+    // Get authenticated user if available
+    const user = await safeGetAuthUser(ctx);
+
+    console.log("[THREADS] list - Auth state:", {
+      isAuthenticated: !!user,
+      userId: user?._id ?? null,
+      userEmail: user?.email ?? null,
+      sessionId: args.sessionId,
+      queryMode: user ? "by_user" : "by_session",
+      timestamp: new Date().toISOString(),
+    });
+
+    let threads;
+    if (user) {
+      // Authenticated: query by userId
+      threads = await ctx.db
+        .query("threads")
+        .withIndex("by_user", (q) => q.eq("userId", user._id))
+        .collect();
+      console.log("[THREADS] list - Queried by userId:", {
+        userId: user._id,
+        threadCount: threads.length,
+      });
+    } else {
+      // Anonymous: query by sessionId
+      threads = await ctx.db
+        .query("threads")
+        .withIndex("by_session", (q) => q.eq("sessionId", args.sessionId))
+        .collect();
+      console.log("[THREADS] list - Queried by sessionId:", {
+        sessionId: args.sessionId,
+        threadCount: threads.length,
+      });
+    }
+
     if (args.search) {
       const searchLower = args.search.toLowerCase();
-      threads = threads.filter(t => 
+      threads = threads.filter(t =>
         t.title?.toLowerCase().includes(searchLower)
       );
     }
-    
+
     // Sort: Pinned first, then by lastMessageAt desc
     return threads.sort((a, b) => {
       if (a.isPinned && !b.isPinned) return -1;
@@ -69,5 +120,73 @@ export const rename = mutation({
   args: { id: v.id("threads"), title: v.string() },
   handler: async (ctx, args) => {
     await ctx.db.patch(args.id, { title: args.title });
+  },
+});
+
+// Migrate threads from a sessionId to the current authenticated user
+export const claimThreads = mutation({
+  args: { sessionId: v.string() },
+  handler: async (ctx, args) => {
+    const user = await safeGetAuthUser(ctx);
+
+    console.log("[THREADS] claimThreads - Auth state:", {
+      isAuthenticated: !!user,
+      userId: user?._id ?? null,
+      userEmail: user?.email ?? null,
+      sessionId: args.sessionId,
+      timestamp: new Date().toISOString(),
+    });
+
+    if (!user) {
+      console.log("[THREADS] claimThreads - REJECTED: Not authenticated");
+      throw new Error("Must be authenticated to claim threads");
+    }
+
+    // Find all threads with this sessionId that don't have a userId
+    const threads = await ctx.db
+      .query("threads")
+      .withIndex("by_session", (q) => q.eq("sessionId", args.sessionId))
+      .collect();
+
+    const unclaimedThreads = threads.filter((t) => !t.userId);
+    let claimedCount = 0;
+
+    console.log("[THREADS] claimThreads - Found threads:", {
+      totalWithSession: threads.length,
+      unclaimed: unclaimedThreads.length,
+    });
+
+    for (const thread of unclaimedThreads) {
+      await ctx.db.patch(thread._id, { userId: user._id });
+      claimedCount++;
+    }
+
+    console.log("[THREADS] claimThreads - Complete:", {
+      claimedCount,
+      userId: user._id,
+    });
+
+    return { claimedCount, userId: user._id };
+  },
+});
+
+// Admin function to claim threads for a specific user (for CLI use)
+export const adminClaimThreads = mutation({
+  args: { sessionId: v.string(), userId: v.string() },
+  handler: async (ctx, args) => {
+    const threads = await ctx.db
+      .query("threads")
+      .withIndex("by_session", (q) => q.eq("sessionId", args.sessionId))
+      .collect();
+
+    const unclaimedThreads = threads.filter((t) => !t.userId);
+    let claimedCount = 0;
+
+    for (const thread of unclaimedThreads) {
+      await ctx.db.patch(thread._id, { userId: args.userId });
+      claimedCount++;
+    }
+
+    return { claimedCount, totalThreads: threads.length, userId: args.userId };
   },
 });

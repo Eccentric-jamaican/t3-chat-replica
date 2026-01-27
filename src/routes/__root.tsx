@@ -81,8 +81,9 @@ export const Route = createRootRoute({
 
 import { useEffect } from "react";
 import { Toaster } from "sonner";
-import { ConvexProvider } from "convex/react";
+import { ConvexBetterAuthProvider } from "@convex-dev/better-auth/react";
 import { convex } from "../lib/convex";
+import { authClient } from "../lib/auth";
 import { useVisualViewport } from "../hooks/useVisualViewport";
 
 function RootDocument({ children }: { children: React.ReactNode }) {
@@ -106,10 +107,13 @@ function RootDocument({ children }: { children: React.ReactNode }) {
       </head>
       <body className="antialiased">
         <div className="grain-overlay" />
-        <ConvexProvider client={convex}>
+        <ConvexBetterAuthProvider
+          client={convex}
+          authClient={authClient}
+        >
           {children}
           <Toaster position="bottom-right" theme="light" />
-        </ConvexProvider>
+        </ConvexBetterAuthProvider>
         <TanStackDevtools
           config={{
             position: "bottom-right",

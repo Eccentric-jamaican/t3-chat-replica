@@ -1,15 +1,23 @@
 import { defineSchema, defineTable } from 'convex/server'
 import { v } from 'convex/values'
 
+// Note: Better Auth tables (user, session, account, verification) are managed
+// by the @convex-dev/better-auth component. User data is synced to the
+// profiles table via triggers defined in auth.ts.
+
 export default defineSchema({
   threads: defineTable({
     title: v.optional(v.string()),
     modelId: v.string(), // e.g. "gpt-5-nano"
     sessionId: v.string(), // UUID for anonymous users
-    userId: v.optional(v.string()), // For logged in users (Clerk)
+    userId: v.optional(v.string()), // For logged in users (Better Auth)
     lastMessageAt: v.optional(v.number()),
     isPinned: v.optional(v.boolean()),
-  }).index('by_session', ['sessionId']),
+  })
+    .index('by_session', ['sessionId'])
+    .index('by_user', ['userId']),
+  
+  // ... rest of the tables
 
   messages: defineTable({
     threadId: v.id('threads'),
