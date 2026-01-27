@@ -91,4 +91,26 @@ export default defineSchema({
     .index('by_thread_status', ['threadId', 'status'])
     .index('by_message', ['messageId'])
     .index('by_status', ['status']),
+
+  profiles: defineTable({
+    sessionId: v.string(),
+    userId: v.optional(v.string()),
+    fullName: v.optional(v.string()),
+    email: v.optional(v.string()),
+    phone: v.optional(v.string()),
+    gender: v.optional(v.string()),
+    dob: v.optional(v.number()),
+    trn: v.optional(v.string()),
+    address: v.optional(
+      v.object({
+        streetAddress: v.string(),
+        streetAddress2: v.optional(v.string()),
+        city: v.string(),
+        parish: v.string(),
+        postalCode: v.optional(v.string()),
+      })
+    ),
+  })
+    .index("by_session", ["sessionId"])
+    .index("by_user", ["userId"]),
 })

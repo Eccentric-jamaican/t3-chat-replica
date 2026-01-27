@@ -1,16 +1,38 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { Sidebar } from '../components/layout/Sidebar'
 import { useEffect, useState } from 'react'
+import { useQuery, useMutation } from 'convex/react'
+import { api } from '../../convex/_generated/api'
 import { useIsMobile } from '../hooks/useIsMobile'
+import { toast } from 'sonner'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card'
 import { Label } from '../components/ui/label'
 import { Input } from '../components/ui/input'
 import { Button } from '../components/ui/button'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select'
+import { DatePicker } from '../components/ui/date-picker'
 import { motion } from 'framer-motion'
-import { User, Shield, Link2, Gift, Mail } from 'lucide-react'
+import { User, Shield, Link2, Gift, Mail, MapPin } from 'lucide-react'
 import { clsx, type ClassValue } from 'clsx'
 import { twMerge } from 'tailwind-merge'
+
+const JAMAICA_PARISHES = [
+  "Kingston",
+  "St. Andrew",
+  "St. Thomas",
+  "Portland",
+  "St. Mary",
+  "St. Ann",
+  "Trelawny",
+  "St. James",
+  "Hanover",
+  "Westmoreland",
+  "St. Elizabeth",
+  "Manchester",
+  "Clarendon",
+  "St. Catherine",
+] as const
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
@@ -23,6 +45,75 @@ export const Route = createFileRoute('/settings')({
 function SettingsPage() {
   const isMobile = useIsMobile()
   const [sidebarOpen, setSidebarOpen] = useState(!isMobile)
+  const [sessionId] = useState(() => {
+    if (typeof window === 'undefined') return ""
+    return localStorage.getItem('t3_session_id') || ""
+  })
+
+  // Profile data
+  const profile = useQuery(api.profiles.get, { sessionId })
+  const updateProfile = useMutation(api.profiles.update)
+
+  // Local state for profile fields
+  const [fullName, setFullName] = useState("")
+  const [email, setEmail] = useState("")
+  const [phone, setPhone] = useState("")
+  const [gender, setGender] = useState("")
+  const [dob, setDob] = useState<number | undefined>()
+  const [trn, setTrn] = useState("")
+  const [streetAddress, setStreetAddress] = useState("")
+  const [streetAddress2, setStreetAddress2] = useState("")
+  const [city, setCity] = useState("")
+  const [parish, setParish] = useState("")
+  const [postalCode, setPostalCode] = useState("")
+
+  const [isSaving, setIsSaving] = useState(false)
+
+  useEffect(() => {
+    if (profile) {
+      setFullName(profile.fullName || "")
+      setEmail(profile.email || "")
+      setPhone(profile.phone || "")
+      setGender(profile.gender || "")
+      setDob(profile.dob)
+      setTrn(profile.trn || "")
+      setStreetAddress(profile.address?.streetAddress || "")
+      setStreetAddress2(profile.address?.streetAddress2 || "")
+      setCity(profile.address?.city || "")
+      setParish(profile.address?.parish || "")
+      setPostalCode(profile.address?.postalCode || "")
+    }
+  }, [profile])
+
+  const handleSave = async () => {
+    setIsSaving(true)
+    try {
+      await updateProfile({
+        sessionId,
+        profile: {
+          fullName,
+          email,
+          phone,
+          gender,
+          dob,
+          trn,
+          address: {
+            streetAddress,
+            streetAddress2,
+            city,
+            parish,
+            postalCode,
+          }
+        }
+      })
+      toast.success("Settings saved successfully")
+    } catch (error) {
+      console.error(error)
+      toast.error("Failed to save settings")
+    } finally {
+      setIsSaving(false)
+    }
+  }
 
   useEffect(() => {
     setSidebarOpen(!isMobile)
@@ -74,41 +165,160 @@ function SettingsPage() {
                 </TabsTrigger>
               </TabsList>
 
-              <TabsContent value="profile">
+              <TabsContent value="profile" className="space-y-6">
+                {/* Personal Information Section */}
                 <Card>
                   <CardHeader>
-                    <CardTitle>Profile Information</CardTitle>
-                    <CardDescription>Update your personal details and how others see you.</CardDescription>
+                    <CardTitle className="flex items-center gap-2">
+                      <User size={20} />
+                      Personal Information
+                    </CardTitle>
+                    <CardDescription>Update your personal details.</CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-6">
-                    <div className="flex flex-col md:flex-row gap-6 items-start">
-                       <div className="w-24 h-24 rounded-full bg-primary/10 border-2 border-dashed border-primary/30 flex items-center justify-center shrink-0">
-                          <User size={40} className="text-primary/40" />
-                       </div>
-                       <div className="flex-1 w-full space-y-4">
+                    <div className="grid gap-4">
+                        <div className="space-y-4">
                           <div className="grid gap-2">
-                            <Label htmlFor="name">Display Name</Label>
-                            <Input id="name" placeholder="Tellahneishe Callum" />
+                            <Label htmlFor="fullName">Full Name</Label>
+                            <Input 
+                              id="fullName" 
+                              placeholder="Enter your full name" 
+                              value={fullName}
+                              onChange={(e) => setFullName(e.target.value)}
+                            />
                           </div>
                           <div className="grid gap-2">
                             <Label htmlFor="email">Email Address</Label>
-                            <Input id="email" type="email" placeholder="user@example.com" />
+                            <Input 
+                              id="email" 
+                              type="email" 
+                              placeholder="user@example.com" 
+                              value={email}
+                              onChange={(e) => setEmail(e.target.value)}
+                            />
                           </div>
                           <div className="grid gap-2">
-                            <Label htmlFor="bio">Bio</Label>
-                            <textarea 
-                              id="bio"
-                              className="flex min-h-[100px] w-full rounded-xl border border-black/5 bg-black/[0.03] px-3 py-2 text-sm text-foreground shadow-sm transition-colors placeholder:text-foreground/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/20"
-                              placeholder="Tell us a bit about yourself..."
+                            <Label htmlFor="phone">Phone Number</Label>
+                            <Input 
+                              id="phone" 
+                              type="tel" 
+                              placeholder="+1 (876) 000-0000" 
+                              value={phone}
+                              onChange={(e) => setPhone(e.target.value)}
+                            />
+                          </div>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="grid gap-2">
+                              <Label htmlFor="gender">Gender</Label>
+                              <Select value={gender} onValueChange={setGender}>
+                                <SelectTrigger id="gender">
+                                  <SelectValue placeholder="Select gender" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="male">Male</SelectItem>
+                                  <SelectItem value="female">Female</SelectItem>
+                                  <SelectItem value="other">Other</SelectItem>
+                                  <SelectItem value="prefer-not-to-say">Prefer not to say</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            <div className="grid gap-2">
+                              <Label htmlFor="dob">Date of Birth</Label>
+                              <DatePicker
+                                placeholder="Select date of birth"
+                                date={dob ? new Date(dob) : undefined}
+                                onDateChange={(date) => setDob(date?.getTime())}
+                                fromYear={1920}
+                                toYear={new Date().getFullYear() - 13}
+                              />
+                            </div>
+                          </div>
+                          <div className="grid gap-2">
+                            <Label htmlFor="trn">TRN (Taxpayer Registration Number)</Label>
+                            <Input 
+                              id="trn" 
+                              placeholder="000-000-000" 
+                              maxLength={11} 
+                              value={trn}
+                              onChange={(e) => setTrn(e.target.value)}
                             />
                           </div>
                        </div>
                     </div>
-                    <div className="flex justify-end">
-                      <Button>Save Changes</Button>
+                  </CardContent>
+                </Card>
+
+                {/* Address Section */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <MapPin size={20} />
+                      Address
+                    </CardTitle>
+                    <CardDescription>Your residential address information.</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="grid gap-2">
+                      <Label htmlFor="streetAddress">Street Address</Label>
+                      <Input 
+                        id="streetAddress" 
+                        placeholder="123 Main Street" 
+                        value={streetAddress}
+                        onChange={(e) => setStreetAddress(e.target.value)}
+                      />
+                    </div>
+                    <div className="grid gap-2">
+                      <Label htmlFor="streetAddress2">Street Address Line 2</Label>
+                      <Input 
+                        id="streetAddress2" 
+                        placeholder="Apartment, suite, unit, etc. (optional)" 
+                        value={streetAddress2}
+                        onChange={(e) => setStreetAddress2(e.target.value)}
+                      />
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="grid gap-2">
+                        <Label htmlFor="city">City / Town</Label>
+                        <Input 
+                          id="city" 
+                          placeholder="Enter city or town" 
+                          value={city}
+                          onChange={(e) => setCity(e.target.value)}
+                        />
+                      </div>
+                      <div className="grid gap-2">
+                        <Label htmlFor="parish">Parish</Label>
+                        <Select value={parish} onValueChange={setParish}>
+                          <SelectTrigger id="parish">
+                            <SelectValue placeholder="Select parish" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {JAMAICA_PARISHES.map((p) => (
+                              <SelectItem key={p} value={p.toLowerCase().replace(/\s+/g, '-')}>
+                                {p}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                    <div className="grid gap-2">
+                      <Label htmlFor="postalCode">Postal Code</Label>
+                      <Input 
+                        id="postalCode" 
+                        placeholder="Enter postal code (optional)" 
+                        value={postalCode}
+                        onChange={(e) => setPostalCode(e.target.value)}
+                      />
                     </div>
                   </CardContent>
                 </Card>
+
+                <div className="flex justify-end">
+                  <Button onClick={handleSave} disabled={isSaving}>
+                    {isSaving ? "Saving..." : "Save Changes"}
+                  </Button>
+                </div>
               </TabsContent>
 
               <TabsContent value="security">
@@ -157,9 +367,28 @@ function SettingsPage() {
                   </CardHeader>
                   <CardContent className="space-y-4">
                     {[
-                      { name: 'Google', icon: 'G', status: 'Connected', email: 'user@gmail.com' },
-                      { name: 'GitHub', icon: 'GH', status: 'Not Connected' },
-                      { name: 'Discord', icon: 'D', status: 'Not Connected' },
+                      { 
+                        name: 'Google', 
+                        icon: (
+                          <svg viewBox="0 0 24 24" className="w-5 h-5">
+                            <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                            <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                            <path fill="#FBBC05" d="M5.84 14.1c-.22-.66-.35-1.36-.35-2.1s.13-1.44.35-2.1V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.83z"/>
+                            <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.66l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.83c.87-2.6 3.3-4.52 6.16-4.52z"/>
+                          </svg>
+                        ), 
+                        status: 'Connected', 
+                        email: 'user@gmail.com' 
+                      },
+                      { 
+                        name: 'WhatsApp', 
+                        icon: (
+                          <svg viewBox="0 0 24 24" className="w-5 h-5 fill-[#25D366]">
+                            <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
+                          </svg>
+                        ), 
+                        status: 'Not Connected' 
+                      },
                     ].map((conn) => (
                       <div key={conn.name} className="flex items-center justify-between p-4 rounded-xl bg-black/[0.02] border border-black/5">
                         <div className="flex items-center gap-3">

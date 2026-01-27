@@ -12,6 +12,7 @@ import type * as chat from "../chat.js";
 import type * as ebay from "../ebay.js";
 import type * as explore from "../explore.js";
 import type * as messages from "../messages.js";
+import type * as profiles from "../profiles.js";
 import type * as streamSessions from "../streamSessions.js";
 import type * as threads from "../threads.js";
 
@@ -26,6 +27,7 @@ declare const fullApi: ApiFromModules<{
   ebay: typeof ebay;
   explore: typeof explore;
   messages: typeof messages;
+  profiles: typeof profiles;
   streamSessions: typeof streamSessions;
   threads: typeof threads;
 }>;
