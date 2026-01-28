@@ -247,10 +247,14 @@ function ChatPage() {
       const messagesToCopy = messages.slice(0, messageIndex + 1);
       const userMessage = messagesToCopy[messageIndex];
 
-      // Create a new thread
-      const sessionId = localStorage.getItem("t3_session_id") || uuidv4();
+      // Create a new thread - ensure sessionId is persisted
+      let branchSessionId = localStorage.getItem("t3_session_id");
+      if (!branchSessionId) {
+        branchSessionId = uuidv4();
+        localStorage.setItem("t3_session_id", branchSessionId);
+      }
       const newThreadId = await createThread({
-        sessionId,
+        sessionId: branchSessionId,
         modelId:
           modelId ||
           localStorage.getItem("t3_selected_model") ||
@@ -265,7 +269,7 @@ function ChatPage() {
             threadId: newThreadId,
             content: msg.content,
             role: msg.role,
-            sessionId,
+            sessionId: branchSessionId,
             attachments: msg.attachments?.map((a: any) => ({
               storageId: a.storageId,
               type: a.type,

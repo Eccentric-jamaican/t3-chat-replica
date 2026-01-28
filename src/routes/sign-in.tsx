@@ -21,11 +21,6 @@ function SignIn() {
     setLoading(true)
     setError(null)
 
-    console.log('[AUTH CLIENT] Sign-in attempt:', {
-      email,
-      timestamp: new Date().toISOString(),
-    })
-
     try {
       const { data, error: authError } = await authClient.signIn.email({
         email,
@@ -33,30 +28,23 @@ function SignIn() {
       })
 
       if (authError) {
-        console.log('[AUTH CLIENT] Sign-in failed:', {
-          email,
-          error: authError.message,
-          timestamp: new Date().toISOString(),
-        })
+        if (import.meta.env.DEV) {
+          console.log('[AUTH CLIENT] Sign-in failed:', authError.message)
+        }
         setError(authError.message || 'Invalid email or password')
         return
       }
 
-      console.log('[AUTH CLIENT] Sign-in success:', {
-        email,
-        userId: data?.user?.id,
-        sessionId: data?.session?.id,
-        timestamp: new Date().toISOString(),
-      })
+      if (import.meta.env.DEV) {
+        console.log('[AUTH CLIENT] Sign-in success')
+      }
 
       toast.success('Successfully signed in!')
       navigate({ to: '/' })
     } catch (err) {
-      console.error('[AUTH CLIENT] Sign-in error:', {
-        email,
-        error: err,
-        timestamp: new Date().toISOString(),
-      })
+      if (import.meta.env.DEV) {
+        console.error('[AUTH CLIENT] Sign-in error:', err)
+      }
       setError('An unexpected error occurred. Please try again.')
     } finally {
       setLoading(false)
@@ -65,19 +53,14 @@ function SignIn() {
 
   const handleGoogleSignIn = async () => {
     setLoading(true)
-    console.log('[AUTH CLIENT] Google sign-in attempt:', {
-      timestamp: new Date().toISOString(),
-    })
     try {
       await authClient.signIn.social({
         provider: 'google',
       })
-      console.log('[AUTH CLIENT] Google sign-in redirect initiated')
     } catch (err) {
-      console.error('[AUTH CLIENT] Google sign-in error:', {
-        error: err,
-        timestamp: new Date().toISOString(),
-      })
+      if (import.meta.env.DEV) {
+        console.error('[AUTH CLIENT] Google sign-in error:', err)
+      }
       toast.error('Google sign-in failed')
     } finally {
       setLoading(false)
@@ -128,9 +111,9 @@ function SignIn() {
             <div className="space-y-2">
               <div className="flex items-center justify-between ml-1">
                 <label className="text-sm font-medium text-foreground/80">Password</label>
-                <Link to="/sign-in" className="text-xs text-primary hover:underline">
+                <span className="text-xs text-muted-foreground/50 cursor-not-allowed" title="Coming soon">
                   Forgot password?
-                </Link>
+                </span>
               </div>
               <div className="group relative">
                 <Lock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground transition-colors group-focus-within:text-primary" />

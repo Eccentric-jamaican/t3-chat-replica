@@ -761,15 +761,7 @@ export const Sidebar = ({ isOpen: externalOpen, onToggle }: SidebarProps) => {
                   </DropdownMenuItem>
                   <DropdownMenuItem
                     onSelect={async () => {
-                      console.log('[AUTH CLIENT] Sign-out attempt:', {
-                        userId: authSession?.user?.id,
-                        email: authSession?.user?.email,
-                        timestamp: new Date().toISOString(),
-                      });
                       await authClient.signOut();
-                      console.log('[AUTH CLIENT] Sign-out complete:', {
-                        timestamp: new Date().toISOString(),
-                      });
                       navigate({ to: "/sign-in" });
                     }}
                     className="text-red-500/90 focus:bg-red-50 focus:text-red-600"

@@ -34,11 +34,11 @@ async function verifyThreadAccess(
     }
   } else {
     // Anonymous thread - verify sessionId matches
-    if (sessionId && thread.sessionId !== sessionId) {
+    if (!sessionId || thread.sessionId !== sessionId) {
       console.log("[SECURITY] Anonymous thread access denied:", {
         threadId,
         threadSession: thread.sessionId,
-        requestingSession: sessionId,
+        requestingSession: sessionId ?? "none",
         timestamp: new Date().toISOString(),
       });
       throw new Error("Access denied: You don't have permission to access this thread");

@@ -119,14 +119,21 @@ export const streamAnswer = action({
     const flushContentBuffer = async (): Promise<boolean> => {
       if (!contentBuffer || !currentMessageId) return false;
       const contentToFlush = contentBuffer;
-      contentBuffer = "";
-      lastFlushTime = Date.now();
 
-      const result = await ctx.runMutation(api.messages.appendContent, {
-        messageId: currentMessageId,
-        content: contentToFlush,
-      });
-      return result.aborted;
+      try {
+        const result = await ctx.runMutation(api.messages.appendContent, {
+          messageId: currentMessageId,
+          content: contentToFlush,
+        });
+        // Only clear buffer after successful write
+        contentBuffer = "";
+        lastFlushTime = Date.now();
+        return result.aborted;
+      } catch (error) {
+        // Leave contentBuffer and currentMessageId intact so content isn't lost
+        console.error("Failed to flush content buffer:", error);
+        return false;
+      }
     };
 
     const checkAbortStatus = async () => {
@@ -377,52 +384,55 @@ export const streamAnswer = action({
               const dataStr = line.replace("data: ", "");
               if (dataStr === "[DONE]") break streamLoop;
 
+              let data;
               try {
-                const data = JSON.parse(dataStr);
-                const delta = data.choices[0]?.delta;
-                const chunkFinishReason = data.choices[0]?.finish_reason;
+                data = JSON.parse(dataStr);
+              } catch (e) {
+                // Malformed SSE chunks are expected, skip them
+                continue;
+              }
 
-                if (chunkFinishReason) {
-                  finishReason = chunkFinishReason;
-                }
+              const delta = data.choices[0]?.delta;
+              const chunkFinishReason = data.choices[0]?.finish_reason;
 
-                // Handle Reasoning tokens
-                if (delta?.reasoning) {
-                  accumulatedReasoning += delta.reasoning;
-                }
+              if (chunkFinishReason) {
+                finishReason = chunkFinishReason;
+              }
 
-                // Handle Content - buffer tokens and flush periodically
-                if (delta?.content) {
-                  contentBuffer += delta.content;
+              // Handle Reasoning tokens
+              if (delta?.reasoning) {
+                accumulatedReasoning += delta.reasoning;
+              }
 
-                  // Flush if buffer is large enough or enough time has passed
-                  const shouldFlush =
-                    contentBuffer.length >= BUFFER_FLUSH_SIZE ||
-                    Date.now() - lastFlushTime >= BUFFER_FLUSH_MS;
+              // Handle Content - buffer tokens and flush periodically
+              if (delta?.content) {
+                contentBuffer += delta.content;
 
-                  if (shouldFlush) {
-                    const wasAborted = await flushContentBuffer();
-                    if (wasAborted) {
-                      console.log("Aborting stream - message was aborted");
-                      isAborted = true;
-                      controller.abort();
-                      try {
-                        await reader.cancel();
-                      } catch {}
-                      break streamLoop;
-                    }
+                // Flush if buffer is large enough or enough time has passed
+                const shouldFlush =
+                  contentBuffer.length >= BUFFER_FLUSH_SIZE ||
+                  Date.now() - lastFlushTime >= BUFFER_FLUSH_MS;
+
+                if (shouldFlush) {
+                  const wasAborted = await flushContentBuffer();
+                  if (wasAborted) {
+                    console.log("Aborting stream - message was aborted");
+                    isAborted = true;
+                    controller.abort();
+                    try {
+                      await reader.cancel();
+                    } catch {}
+                    break streamLoop;
                   }
                 }
+              }
 
-                // Handle Tool Calls
-                if (delta?.tool_calls) {
-                  accumulatedToolCalls = mergeToolCalls(
-                    accumulatedToolCalls,
-                    delta.tool_calls,
-                  );
-                }
-              } catch (e) {
-                // JSON parse errors are expected for malformed chunks, skip them
+              // Handle Tool Calls
+              if (delta?.tool_calls) {
+                accumulatedToolCalls = mergeToolCalls(
+                  accumulatedToolCalls,
+                  delta.tool_calls,
+                );
               }
             }
           }

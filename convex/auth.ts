@@ -52,7 +52,7 @@ export const authComponent = createClient<DataModel>(components.betterAuth, {
           sessionId: `auth-${doc._id}`,
           userId: doc._id,
           email: doc.email,
-          fullName: doc.name ?? doc.email.split("@")[0],
+          fullName: doc.name ?? (doc.email ? doc.email.split("@")[0] : "User"),
         });
         if (isDebugMode) {
           console.log("[AUTH TRIGGER] onCreate - Profile created:", {
@@ -162,10 +162,17 @@ export const createAuth: CreateAuth<DataModel> = (ctx) => {
       },
     },
     socialProviders: {
-      google: {
-        clientId: process.env.GOOGLE_CLIENT_ID!,
-        clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
-      },
+      ...(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET
+        ? {
+            google: {
+              clientId: process.env.GOOGLE_CLIENT_ID,
+              clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+            },
+          }
+        : (console.warn(
+            "[AUTH] Google OAuth disabled: GOOGLE_CLIENT_ID or GOOGLE_CLIENT_SECRET not set"
+          ),
+          {})),
     },
     // Trusted origins for auth requests
     // In production, only include your actual domains

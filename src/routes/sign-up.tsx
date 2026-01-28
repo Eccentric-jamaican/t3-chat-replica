@@ -22,12 +22,6 @@ function SignUp() {
     setLoading(true)
     setError(null)
 
-    console.log('[AUTH CLIENT] Sign-up attempt:', {
-      email,
-      name,
-      timestamp: new Date().toISOString(),
-    })
-
     try {
       const { data, error: authError } = await authClient.signUp.email({
         email,
@@ -36,31 +30,23 @@ function SignUp() {
       })
 
       if (authError) {
-        console.log('[AUTH CLIENT] Sign-up failed:', {
-          email,
-          error: authError.message,
-          timestamp: new Date().toISOString(),
-        })
+        if (import.meta.env.DEV) {
+          console.log('[AUTH CLIENT] Sign-up failed:', authError.message)
+        }
         setError(authError.message || 'Failed to create account')
         return
       }
 
-      console.log('[AUTH CLIENT] Sign-up success:', {
-        email,
-        name,
-        userId: data?.user?.id,
-        sessionId: data?.session?.id,
-        timestamp: new Date().toISOString(),
-      })
+      if (import.meta.env.DEV) {
+        console.log('[AUTH CLIENT] Sign-up success')
+      }
 
       toast.success('Account created successfully!')
       navigate({ to: '/' })
     } catch (err) {
-      console.error('[AUTH CLIENT] Sign-up error:', {
-        email,
-        error: err,
-        timestamp: new Date().toISOString(),
-      })
+      if (import.meta.env.DEV) {
+        console.error('[AUTH CLIENT] Sign-up error:', err)
+      }
       setError('An unexpected error occurred. Please try again.')
     } finally {
       setLoading(false)

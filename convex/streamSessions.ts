@@ -22,7 +22,7 @@ async function verifyThreadAccess(
     if (!user || thread.userId !== user._id) {
       throw new Error("Access denied: You don't have permission to access this thread");
     }
-  } else if (sessionId && thread.sessionId !== sessionId) {
+  } else if (!sessionId || thread.sessionId !== sessionId) {
     throw new Error("Access denied: You don't have permission to access this thread");
   }
 }
