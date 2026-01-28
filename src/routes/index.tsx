@@ -1,4 +1,4 @@
-import { createFileRoute, redirect } from '@tanstack/react-router'
+import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { Sidebar } from '../components/layout/Sidebar'
 import { ChatInput, type ChatInputHandle } from '../components/chat/ChatInput'
 import { LandingHero } from '../components/chat/LandingHero'
@@ -7,26 +7,31 @@ import { useIsMobile } from '../hooks/useIsMobile'
 
 import { authClient } from '../lib/auth'
 
-export const Route = createFileRoute('/')({ 
-  beforeLoad: async ({ location }) => {
-    const { data: session } = await authClient.getSession()
-    if (!session && location.pathname !== '/sign-in' && location.pathname !== '/sign-up') {
-      throw redirect({
-        to: '/sign-in',
-      })
-    }
-  },
-  component: App 
+export const Route = createFileRoute('/')({
+  component: App
 })
 
 function App() {
   const chatInputRef = useRef<ChatInputHandle>(null)
   const isMobile = useIsMobile()
   const [sidebarOpen, setSidebarOpen] = useState(!isMobile)
+  const navigate = useNavigate()
+  const { data: session, isPending } = authClient.useSession()
 
   useEffect(() => {
     setSidebarOpen(!isMobile)
   }, [isMobile])
+
+  // Non-blocking redirect: once session resolves as null, navigate to sign-in
+  useEffect(() => {
+    if (!isPending && !session) {
+      navigate({ to: '/sign-in' })
+    }
+  }, [isPending, session, navigate])
+
+  // Show nothing while auth is resolving (avoids flash of content before redirect)
+  if (isPending) return null
+  if (!session) return null
 
   return (
     <div className="flex h-dvh min-h-screen overflow-hidden bg-background relative">

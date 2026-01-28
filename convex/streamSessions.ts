@@ -1,7 +1,7 @@
 import { mutation, query, internalMutation, MutationCtx } from "./_generated/server";
 import { v } from "convex/values";
 import { Id } from "./_generated/dataModel";
-import { safeGetAuthUser } from "./auth";
+import { getAuthUserId } from "./auth";
 
 /**
  * Verify the current user has access to a thread.
@@ -16,10 +16,10 @@ async function verifyThreadAccess(
     throw new Error("Thread not found");
   }
 
-  const user = await safeGetAuthUser(ctx);
+  const userId = await getAuthUserId(ctx);
 
   if (thread.userId) {
-    if (!user || thread.userId !== user._id) {
+    if (!userId || thread.userId !== userId) {
       throw new Error("Access denied: You don't have permission to access this thread");
     }
   } else if (!sessionId || thread.sessionId !== sessionId) {

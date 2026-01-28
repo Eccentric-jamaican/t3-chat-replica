@@ -128,6 +128,23 @@ export const { onCreate, onUpdate, onDelete } = authComponent.triggersApi();
 export const { getAuthUser, safeGetAuthUser } = authComponent;
 
 /**
+ * Lightweight auth check — extracts user ID from the JWT token
+ * with ZERO database queries. The JWT is already cryptographically
+ * validated by Convex infrastructure.
+ *
+ * Use this instead of safeGetAuthUser() when you only need the
+ * user ID for access control (not email, name, or other fields).
+ *
+ * Returns null for anonymous (unauthenticated) users.
+ */
+export async function getAuthUserId(
+  ctx: { auth: { getUserIdentity: () => Promise<{ subject: string } | null> } }
+): Promise<string | null> {
+  const identity = await ctx.auth.getUserIdentity();
+  return identity?.subject ?? null;
+}
+
+/**
  * Creates a Better Auth instance configured for Convex.
  * Used by the HTTP router to handle auth requests.
  * @param ctx - The Convex context
