@@ -1,7 +1,7 @@
 import { v } from "convex/values";
 import { mutation, query, QueryCtx, MutationCtx } from "./_generated/server";
 import { Id, Doc } from "./_generated/dataModel";
-import { safeGetAuthUser } from "./auth";
+import { getAuthUserId, safeGetAuthUser } from "./auth";
 
 const isDebugMode = process.env.CONVEX_DEBUG_LOGS === "true";
 
@@ -15,21 +15,21 @@ async function verifyThreadAccess(
   ctx: QueryCtx | MutationCtx,
   threadId: Id<"threads">,
   sessionId?: string
-): Promise<{ thread: Doc<"threads">; userId: string | undefined }> {
+): Promise<{ thread: Doc<"threads">; userId: string | null }> {
   const thread = await ctx.db.get(threadId);
   if (!thread) {
     throw new Error("Thread not found");
   }
 
-  const user = await safeGetAuthUser(ctx);
+  const userId = await getAuthUserId(ctx);
 
   // If thread belongs to an authenticated user
   if (thread.userId) {
-    if (!user || thread.userId !== user._id) {
+    if (!userId || thread.userId !== userId) {
       console.log("[SECURITY] Thread access denied:", {
         threadId,
         threadOwner: thread.userId,
-        requestingUser: user?._id ?? "anonymous",
+        requestingUser: userId ?? "anonymous",
         timestamp: new Date().toISOString(),
       });
       throw new Error("Access denied: You don't have permission to access this thread");
@@ -47,7 +47,7 @@ async function verifyThreadAccess(
     }
   }
 
-  return { thread, userId: user?._id };
+  return { thread, userId };
 }
 
 export const create = mutation({
@@ -57,27 +57,27 @@ export const create = mutation({
     sessionId: v.string()
   },
   handler: async (ctx, args) => {
-    // Get authenticated user if available
-    const user = await safeGetAuthUser(ctx);
+    // Get authenticated user ID if available (JWT-only, no DB query)
+    const userId = await getAuthUserId(ctx);
 
     if (isDebugMode) {
       console.log("[THREADS] create - Auth state:", {
-        isAuthenticated: !!user,
-        userId: user?._id ?? null,
+        isAuthenticated: !!userId,
+        userId,
         sessionId: args.sessionId,
       });
     }
 
     const threadId = await ctx.db.insert("threads", {
       ...args,
-      userId: user?._id, // Associate with user if authenticated
+      userId: userId ?? undefined, // Associate with user if authenticated
       lastMessageAt: Date.now(),
     });
 
     if (isDebugMode) {
       console.log("[THREADS] create - Thread created:", {
         threadId,
-        ownedBy: user?._id ? "user" : "session",
+        ownedBy: userId ? "user" : "session",
       });
     }
 
@@ -88,23 +88,23 @@ export const create = mutation({
 export const list = query({
   args: { sessionId: v.string(), search: v.optional(v.string()) },
   handler: async (ctx, args) => {
-    // Get authenticated user if available
-    const user = await safeGetAuthUser(ctx);
+    // Get authenticated user ID if available (JWT-only, no DB query)
+    const userId = await getAuthUserId(ctx);
 
     if (isDebugMode) {
       console.log("[THREADS] list - Auth state:", {
-        isAuthenticated: !!user,
-        userId: user?._id ?? null,
-        queryMode: user ? "by_user" : "by_session",
+        isAuthenticated: !!userId,
+        userId,
+        queryMode: userId ? "by_user" : "by_session",
       });
     }
 
     let threads;
-    if (user) {
+    if (userId) {
       // Authenticated: query by userId
       threads = await ctx.db
         .query("threads")
-        .withIndex("by_user", (q) => q.eq("userId", user._id))
+        .withIndex("by_user", (q) => q.eq("userId", userId))
         .collect();
       if (isDebugMode) {
         console.log("[THREADS] list - Queried by userId:", {

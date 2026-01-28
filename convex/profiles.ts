@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import { mutation, query, internalMutation } from "./_generated/server";
-import { safeGetAuthUser } from "./auth";
+import { getAuthUserId, safeGetAuthUser } from "./auth";
 
 /**
  * Get the current user's profile.
@@ -10,13 +10,13 @@ import { safeGetAuthUser } from "./auth";
 export const get = query({
   args: { sessionId: v.string() },
   handler: async (ctx, args) => {
-    const user = await safeGetAuthUser(ctx);
+    const userId = await getAuthUserId(ctx);
 
     // If authenticated, get profile by userId
-    if (user) {
+    if (userId) {
       return await ctx.db
         .query("profiles")
-        .withIndex("by_user", (q) => q.eq("userId", user._id))
+        .withIndex("by_user", (q) => q.eq("userId", userId))
         .unique();
     }
 
@@ -35,12 +35,12 @@ export const get = query({
 export const getCurrentUserProfile = query({
   args: {},
   handler: async (ctx) => {
-    const user = await safeGetAuthUser(ctx);
-    if (!user) return null;
+    const userId = await getAuthUserId(ctx);
+    if (!userId) return null;
 
     return await ctx.db
       .query("profiles")
-      .withIndex("by_user", (q) => q.eq("userId", user._id))
+      .withIndex("by_user", (q) => q.eq("userId", userId))
       .unique();
   },
 });
@@ -70,7 +70,7 @@ export const update = mutation({
     }),
   },
   handler: async (ctx, args) => {
-    const user = await safeGetAuthUser(ctx);
+    const userId = await getAuthUserId(ctx);
 
     // Basic validation
     if (args.profile.email && !args.profile.email.includes("@")) {
@@ -84,10 +84,10 @@ export const update = mutation({
     let existing;
 
     // If authenticated, find profile by userId
-    if (user) {
+    if (userId) {
       existing = await ctx.db
         .query("profiles")
-        .withIndex("by_user", (q) => q.eq("userId", user._id))
+        .withIndex("by_user", (q) => q.eq("userId", userId))
         .unique();
     } else {
       // Anonymous: find by sessionId
@@ -99,10 +99,10 @@ export const update = mutation({
 
     if (existing) {
       // Verify ownership before updating
-      if (existing.userId && (!user || existing.userId !== user._id)) {
+      if (existing.userId && (!userId || existing.userId !== userId)) {
         console.log("[SECURITY] Profile update denied:", {
           profileOwner: existing.userId,
-          requestingUser: user?._id ?? "anonymous",
+          requestingUser: userId ?? "anonymous",
         });
         throw new Error("Access denied: You can only update your own profile");
       }
@@ -113,7 +113,7 @@ export const update = mutation({
       // Create new profile
       return await ctx.db.insert("profiles", {
         sessionId: args.sessionId,
-        userId: user?._id,
+        userId: userId ?? undefined,
         ...args.profile,
       });
     }
