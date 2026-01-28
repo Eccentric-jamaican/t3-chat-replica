@@ -2,7 +2,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { Sidebar } from "../components/layout/Sidebar";
 import { useIsMobile } from "../hooks/useIsMobile";
 import { ChatInput, type ChatInputHandle } from "../components/chat/ChatInput";
-import { useQuery, useMutation, useAction } from "convex/react";
+import { useQuery, useMutation, useAction, useConvexAuth } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -90,7 +90,20 @@ function ChatPage() {
   const { productId } = Route.useSearch();
   const navigate = useNavigate();
   const isMobile = useIsMobile();
-  const messages = useQuery(api.messages.list, { threadId: threadId as any });
+
+  // Wait for Convex auth to be ready before querying messages
+  const { isLoading: isConvexAuthLoading } = useConvexAuth();
+
+  // Get sessionId for ownership verification
+  const sessionId = typeof window !== "undefined"
+    ? localStorage.getItem("t3_session_id") || undefined
+    : undefined;
+
+  // Skip query while Convex auth is loading to prevent "Access denied" on reload
+  const messages = useQuery(
+    api.messages.list,
+    isConvexAuthLoading ? "skip" : { threadId: threadId as any, sessionId }
+  );
   const deleteAfter = useMutation(api.messages.deleteAfter);
   const streamAnswer = useAction(api.chat.streamAnswer);
   const createThread = useMutation(api.threads.create);
@@ -163,6 +176,7 @@ function ChatPage() {
       await deleteAfter({
         threadId: threadId as any,
         afterMessageId: userMessageId as any,
+        sessionId,
       });
 
       // Get the model to use (either specified or from localStorage)
@@ -232,10 +246,14 @@ function ChatPage() {
       const messagesToCopy = messages.slice(0, messageIndex + 1);
       const userMessage = messagesToCopy[messageIndex];
 
-      // Create a new thread
-      const sessionId = localStorage.getItem("t3_session_id") || uuidv4();
+      // Create a new thread - ensure sessionId is persisted
+      let branchSessionId = localStorage.getItem("t3_session_id");
+      if (!branchSessionId) {
+        branchSessionId = uuidv4();
+        localStorage.setItem("t3_session_id", branchSessionId);
+      }
       const newThreadId = await createThread({
-        sessionId,
+        sessionId: branchSessionId,
         modelId:
           modelId ||
           localStorage.getItem("t3_selected_model") ||
@@ -250,6 +268,7 @@ function ChatPage() {
             threadId: newThreadId,
             content: msg.content,
             role: msg.role,
+            sessionId: branchSessionId,
             attachments: msg.attachments?.map((a: any) => ({
               storageId: a.storageId,
               type: a.type,

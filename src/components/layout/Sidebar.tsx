@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, type MouseEvent } from "react";
+import { v4 as uuidv4 } from "uuid";
 import {
   PanelLeft,
   Plus,
@@ -21,11 +22,14 @@ import {
   Ticket,
   ArrowUp,
   ChevronLeft,
+  LogOut,
+  User as UserIcon,
 } from "lucide-react";
+import { authClient } from "../../lib/auth";
 import { motion, AnimatePresence } from "framer-motion";
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
-import { useQuery, useMutation } from "convex/react";
+import { useQuery, useMutation, useConvexAuth } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import {
   useNavigate,
@@ -405,6 +409,31 @@ export const Sidebar = ({ isOpen: externalOpen, onToggle }: SidebarProps) => {
   const [internalOpen, setInternalOpen] = useState(!isMobile); // Closed by default on mobile
   const hasSyncedMobileRef = useRef(false);
 
+  const { data: authSession, isPending: isAuthPending } = authClient.useSession();
+  const { isLoading: isConvexAuthLoading } = useConvexAuth();
+  const currentUserId = authSession?.user?.id ?? null;
+
+  // Track auth transitions to prevent showing stale data from previous user
+  const prevUserIdRef = useRef<string | null>(undefined as any);
+  const [isAuthTransitioning, setIsAuthTransitioning] = useState(false);
+
+  useEffect(() => {
+    // On first render, just record the initial state
+    if (prevUserIdRef.current === undefined) {
+      prevUserIdRef.current = currentUserId;
+      return;
+    }
+
+    // If user ID changed (sign in/out), mark as transitioning
+    if (prevUserIdRef.current !== currentUserId) {
+      setIsAuthTransitioning(true);
+      prevUserIdRef.current = currentUserId;
+      // Clear transitioning state after a short delay to allow query to update
+      const timeout = setTimeout(() => setIsAuthTransitioning(false), 100);
+      return () => clearTimeout(timeout);
+    }
+  }, [currentUserId]);
+
   const isOpen = externalOpen !== undefined ? externalOpen : internalOpen;
   const setIsOpen = (open: boolean) => {
     if (onToggle) {
@@ -419,7 +448,11 @@ export const Sidebar = ({ isOpen: externalOpen, onToggle }: SidebarProps) => {
   const [searchQuery, setSearchQuery] = useState("");
   const [sessionId] = useState(() => {
     if (typeof window === "undefined") return "";
-    return localStorage.getItem("t3_session_id") || "";
+    const saved = localStorage.getItem("t3_session_id");
+    if (saved) return saved;
+    const newId = uuidv4();
+    localStorage.setItem("t3_session_id", newId);
+    return newId;
   });
 
   useEffect(() => {
@@ -446,10 +479,12 @@ export const Sidebar = ({ isOpen: externalOpen, onToggle }: SidebarProps) => {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [isMobile, isOpen]);
 
-  const threads = useQuery(api.threads.list, {
-    sessionId,
-    search: searchQuery || undefined,
-  });
+  // Skip query during auth state transitions to prevent showing wrong user's threads
+  const shouldSkipQuery = isAuthPending || isConvexAuthLoading || isAuthTransitioning;
+  const threads = useQuery(
+    api.threads.list,
+    shouldSkipQuery ? "skip" : { sessionId, search: searchQuery || undefined }
+  );
   const togglePinned = useMutation(api.threads.togglePinned);
   const removeThread = useMutation(api.threads.remove);
   const renameThread = useMutation(api.threads.rename);
@@ -469,7 +504,7 @@ export const Sidebar = ({ isOpen: externalOpen, onToggle }: SidebarProps) => {
       setEditingId(null);
       return;
     }
-    await renameThread({ id, title: editingTitle.trim() });
+    await renameThread({ id, title: editingTitle.trim(), sessionId: sessionId || undefined });
     setEditingId(null);
   };
 
@@ -477,7 +512,7 @@ export const Sidebar = ({ isOpen: externalOpen, onToggle }: SidebarProps) => {
     if (activeThreadId === id) {
       await navigate({ to: "/" });
     }
-    await removeThread({ id });
+    await removeThread({ id, sessionId: sessionId || undefined });
   };
 
   return (
@@ -652,6 +687,7 @@ export const Sidebar = ({ isOpen: externalOpen, onToggle }: SidebarProps) => {
                       handleRename={handleRename}
                       togglePinned={togglePinned}
                       onDelete={handleDeleteThread}
+                      sessionId={sessionId}
                     />
                   ))}
               </>
@@ -681,16 +717,67 @@ export const Sidebar = ({ isOpen: externalOpen, onToggle }: SidebarProps) => {
                     handleRename={handleRename}
                     togglePinned={togglePinned}
                     onDelete={handleDeleteThread}
+                    sessionId={sessionId}
                   />
                 ))
             )}
           </div>
 
           <div className="border-border/10 shrink-0 border-t p-3">
-            <button className="flex w-full items-center gap-3 rounded-lg px-4 py-2.5 text-[13.5px] font-bold text-foreground/60 transition-all hover:bg-black/5">
-              <LogIn size={16} className="opacity-70" />
-              <span>Login</span>
-            </button>
+            {!authSession ? (
+              <Link
+                to="/sign-in"
+                className="flex w-full items-center gap-3 rounded-lg px-4 py-2.5 text-[13.5px] font-bold text-foreground/60 transition-all hover:bg-black/5"
+              >
+                <LogIn size={16} className="opacity-70" />
+                <span>Login</span>
+              </Link>
+            ) : (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-[13.5px] font-bold text-foreground/60 transition-all hover:bg-black/5">
+                    <div className="flex h-7 w-7 items-center justify-center rounded-full bg-primary/10 text-primary">
+                      {authSession?.user?.image ? (
+                        <img src={authSession.user.image} className="h-full w-full rounded-full border border-black/5 object-cover" />
+                      ) : (
+                        <UserIcon size={14} />
+                      )}
+                    </div>
+                    <span className="flex-1 truncate text-left">{authSession?.user?.name}</span>
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent side="top" align="start" className="w-52" sideOffset={10}>
+                  <div className="flex items-center gap-2 px-3 py-2.5">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-primary">
+                      {authSession?.user?.image ? (
+                        <img src={authSession.user.image} className="h-full w-full rounded-full border border-black/5 object-cover" />
+                      ) : (
+                        <UserIcon size={16} />
+                      )}
+                    </div>
+                    <div className="flex flex-1 flex-col overflow-hidden">
+                      <span className="truncate text-xs font-semibold">{authSession?.user?.name}</span>
+                      <span className="truncate text-[10px] text-foreground/50">{authSession?.user?.email}</span>
+                    </div>
+                  </div>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onSelect={() => navigate({ to: "/settings" })}>
+                    <Settings size={15} />
+                    <span>Settings</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onSelect={async () => {
+                      await authClient.signOut();
+                      navigate({ to: "/sign-in" });
+                    }}
+                    className="text-red-500/90 focus:bg-red-50 focus:text-red-600"
+                  >
+                    <LogOut size={15} />
+                    <span>Sign Out</span>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
           </div>
         </div>
       </motion.aside>
@@ -722,6 +809,7 @@ const ThreadItem = ({
   handleRename,
   togglePinned,
   onDelete,
+  sessionId,
 }: any) => {
   const isEditing = editingId === thread._id;
   const isActive = activeThreadId === thread._id;
@@ -731,7 +819,7 @@ const ThreadItem = ({
   const threadUrl = getThreadUrl(thread._id);
   const threadMessages = useQuery(
     api.messages.list,
-    menuOpen ? { threadId: thread._id } : "skip",
+    menuOpen ? { threadId: thread._id, sessionId } : "skip",
   );
   const isExportReady = threadMessages !== undefined;
 
@@ -1040,7 +1128,7 @@ const ThreadItem = ({
         </DropdownMenuTrigger>
         {!isEditing && (
           <DropdownMenuContent side="right" align="start" sideOffset={10}>
-            <DropdownMenuItem onSelect={() => togglePinned({ id: thread._id })}>
+            <DropdownMenuItem onSelect={() => togglePinned({ id: thread._id, sessionId: sessionId || undefined })}>
               <Pin size={15} />
               <span>{thread.isPinned ? "Unpin" : "Pin"}</span>
             </DropdownMenuItem>
@@ -1129,7 +1217,7 @@ const ThreadItem = ({
           <button
             onClick={(e) => {
               e.stopPropagation();
-              togglePinned({ id: thread._id });
+              togglePinned({ id: thread._id, sessionId: sessionId || undefined });
             }}
             className="rounded p-1 text-foreground/40 transition-colors hover:bg-black/5 hover:text-foreground"
           >

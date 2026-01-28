@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import { action } from "./_generated/server";
-import { api } from "./_generated/api";
+import { api, internal } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
 import {
   searchEbayItems,
@@ -95,8 +95,11 @@ export const streamAnswer = action({
     webSearch: v.optional(v.boolean()),
   },
   handler: async (ctx, args): Promise<Id<"messages"> | null> => {
-    const ABORT_POLL_MS = 250;
+    const ABORT_POLL_MS = 100; // Reduced from 250ms for snappier response
     const MAX_CYCLES = 5;
+    const BUFFER_FLUSH_SIZE = 80; // Flush after ~80 characters
+    const BUFFER_FLUSH_MS = 150; // Or flush every 150ms
+
     let cycle = 0;
     let currentMessageId: Id<"messages"> | null = null;
     let currentSessionId: Id<"streamSessions"> | null = args.sessionId ?? null;
@@ -108,13 +111,38 @@ export const streamAnswer = action({
     const toolResultsCache = new Map<string, string>();
     const toolUsageCounts = new Map<string, number>();
 
+    // Content buffering for reduced DB writes
+    let contentBuffer = "";
+    let lastFlushTime = Date.now();
+
+    // Flush buffered content to database
+    const flushContentBuffer = async (): Promise<boolean> => {
+      if (!contentBuffer || !currentMessageId) return false;
+      const contentToFlush = contentBuffer;
+
+      try {
+        const result = await ctx.runMutation(internal.messages.internalAppendContent, {
+          messageId: currentMessageId,
+          content: contentToFlush,
+        });
+        // Only clear buffer after successful write
+        contentBuffer = "";
+        lastFlushTime = Date.now();
+        return result.aborted;
+      } catch (error) {
+        // Leave contentBuffer and currentMessageId intact so content isn't lost
+        console.error("Failed to flush content buffer:", error);
+        return false;
+      }
+    };
+
     const checkAbortStatus = async () => {
       if (!currentMessageId || isAborted) return;
       const status = currentSessionId
         ? await ctx.runQuery(api.streamSessions.getStatus, {
             sessionId: currentSessionId,
           })
-        : await ctx.runQuery(api.messages.getStatus, {
+        : await ctx.runQuery(internal.messages.internalGetStatus, {
             messageId: currentMessageId,
           });
       if (status === "aborted") {
@@ -139,17 +167,17 @@ export const streamAnswer = action({
     const apiKey = process.env.OPENROUTER_API_KEY;
     if (!apiKey) {
       const msgId = await ctx.runMutation(
-        api.messages.initializeAssistantMessage,
+        internal.messages.internalInitializeAssistantMessage,
         {
           threadId: args.threadId,
           modelId: args.modelId,
         },
       );
-      await ctx.runMutation(api.messages.appendContent, {
+      await ctx.runMutation(internal.messages.internalAppendContent, {
         messageId: msgId,
         content: "Error: No API Key configured.",
       });
-      await ctx.runMutation(api.messages.updateStatus, {
+      await ctx.runMutation(internal.messages.internalUpdateStatus, {
         messageId: msgId,
         status: "error",
       });
@@ -165,7 +193,7 @@ export const streamAnswer = action({
           });
           if (status === "aborted") return currentMessageId;
         } else {
-          const status = await ctx.runQuery(api.messages.getStatus, {
+          const status = await ctx.runQuery(internal.messages.internalGetStatus, {
             messageId: currentMessageId,
           });
           if (status === "aborted") return currentMessageId;
@@ -173,7 +201,7 @@ export const streamAnswer = action({
       } else {
         // Create the assistant message once, before the loop
         currentMessageId = await ctx.runMutation(
-          api.messages.initializeAssistantMessage,
+          internal.messages.internalInitializeAssistantMessage,
           {
             threadId: args.threadId,
             modelId: args.modelId,
@@ -182,7 +210,7 @@ export const streamAnswer = action({
       }
 
       if (!currentSessionId && currentMessageId) {
-        currentSessionId = await ctx.runMutation(api.streamSessions.start, {
+        currentSessionId = await ctx.runMutation(internal.streamSessions.internalStart, {
           threadId: args.threadId,
           messageId: currentMessageId,
         });
@@ -193,7 +221,7 @@ export const streamAnswer = action({
         cycle++;
 
         // Fetch Context
-        const messages = await ctx.runQuery(api.messages.list, {
+        const messages = await ctx.runQuery(internal.messages.internalList, {
           threadId: args.threadId,
         });
 
@@ -356,30 +384,38 @@ export const streamAnswer = action({
               const dataStr = line.replace("data: ", "");
               if (dataStr === "[DONE]") break streamLoop;
 
+              let data;
               try {
-                const data = JSON.parse(dataStr);
-                const delta = data.choices[0]?.delta;
-                const chunkFinishReason = data.choices[0]?.finish_reason;
+                data = JSON.parse(dataStr);
+              } catch (e) {
+                // Malformed SSE chunks are expected, skip them
+                continue;
+              }
 
-                if (chunkFinishReason) {
-                  finishReason = chunkFinishReason;
-                }
+              const delta = data.choices[0]?.delta;
+              const chunkFinishReason = data.choices[0]?.finish_reason;
 
-                // Handle Reasoning tokens
-                if (delta?.reasoning) {
-                  accumulatedReasoning += delta.reasoning;
-                }
+              if (chunkFinishReason) {
+                finishReason = chunkFinishReason;
+              }
 
-                // Handle Content - check if aborted via mutation return value
-                if (delta?.content) {
-                  const result = await ctx.runMutation(
-                    api.messages.appendContent,
-                    {
-                      messageId: currentMessageId,
-                      content: delta.content,
-                    },
-                  );
-                  if (result.aborted) {
+              // Handle Reasoning tokens
+              if (delta?.reasoning) {
+                accumulatedReasoning += delta.reasoning;
+              }
+
+              // Handle Content - buffer tokens and flush periodically
+              if (delta?.content) {
+                contentBuffer += delta.content;
+
+                // Flush if buffer is large enough or enough time has passed
+                const shouldFlush =
+                  contentBuffer.length >= BUFFER_FLUSH_SIZE ||
+                  Date.now() - lastFlushTime >= BUFFER_FLUSH_MS;
+
+                if (shouldFlush) {
+                  const wasAborted = await flushContentBuffer();
+                  if (wasAborted) {
                     console.log("Aborting stream - message was aborted");
                     isAborted = true;
                     controller.abort();
@@ -389,18 +425,29 @@ export const streamAnswer = action({
                     break streamLoop;
                   }
                 }
+              }
 
-                // Handle Tool Calls
-                if (delta?.tool_calls) {
-                  accumulatedToolCalls = mergeToolCalls(
-                    accumulatedToolCalls,
-                    delta.tool_calls,
-                  );
-                }
-              } catch (e) {
-                // JSON parse errors are expected for malformed chunks, skip them
+              // Handle Tool Calls
+              if (delta?.tool_calls) {
+                accumulatedToolCalls = mergeToolCalls(
+                  accumulatedToolCalls,
+                  delta.tool_calls,
+                );
               }
             }
+          }
+        }
+
+        // Flush any remaining buffered content before post-processing
+        if (contentBuffer && !isAborted) {
+          const wasAborted = await flushContentBuffer();
+          if (wasAborted) {
+            isAborted = true;
+          } else if (contentBuffer) {
+            // Flush failed (buffer wasn't cleared) — content is incomplete,
+            // don't mark the message as completed
+            console.error("Final content flush failed, marking message as error");
+            isAborted = true;
           }
         }
 
@@ -411,12 +458,12 @@ export const streamAnswer = action({
             await ctx.runMutation(api.streamSessions.abort, {
               sessionId: currentSessionId,
             });
-            await ctx.runMutation(api.messages.updateStatus, {
+            await ctx.runMutation(internal.messages.internalUpdateStatus, {
               messageId: currentMessageId,
               status: "aborted",
             });
           } else {
-            await ctx.runMutation(api.messages.updateStatus, {
+            await ctx.runMutation(internal.messages.internalUpdateStatus, {
               messageId: currentMessageId,
               status: "aborted",
             });
@@ -426,7 +473,7 @@ export const streamAnswer = action({
 
         // Save reasoning content if any was accumulated
         if (accumulatedReasoning.trim()) {
-          await ctx.runMutation(api.messages.saveReasoningContent, {
+          await ctx.runMutation(internal.messages.internalSaveReasoningContent, {
             messageId: currentMessageId,
             reasoningContent: accumulatedReasoning,
           });
@@ -443,7 +490,7 @@ export const streamAnswer = action({
 
         // Handle tool calls
         if (accumulatedToolCalls.length > 0 && !isAborted) {
-          await ctx.runMutation(api.messages.saveToolCalls, {
+          await ctx.runMutation(internal.messages.internalSaveToolCalls, {
             messageId: currentMessageId,
             toolCalls: accumulatedToolCalls,
           });
@@ -519,7 +566,7 @@ export const streamAnswer = action({
 
                     result = `I found ${items.length} items on eBay. They have been displayed to the user.`;
 
-                    await ctx.runMutation(api.messages.saveProducts, {
+                    await ctx.runMutation(internal.messages.internalSaveProducts, {
                       messageId: currentMessageId!,
                       products: items,
                     });
@@ -534,7 +581,7 @@ export const streamAnswer = action({
             }
 
             // Create Tool Result Message
-            await ctx.runMutation(api.messages.send, {
+            await ctx.runMutation(internal.messages.internalSend, {
               threadId: args.threadId,
               role: "tool",
               content: result,
@@ -553,7 +600,7 @@ export const streamAnswer = action({
               sessionId: currentSessionId,
             });
           } else {
-            await ctx.runMutation(api.messages.updateStatus, {
+            await ctx.runMutation(internal.messages.internalUpdateStatus, {
               messageId: currentMessageId,
               status: "completed",
             });
@@ -573,11 +620,11 @@ export const streamAnswer = action({
           });
         }
       } else if (currentMessageId) {
-        const msg = await ctx.runQuery(api.messages.getStatus, {
+        const msg = await ctx.runQuery(internal.messages.internalGetStatus, {
           messageId: currentMessageId,
         });
         if (msg === "streaming") {
-          await ctx.runMutation(api.messages.updateStatus, {
+          await ctx.runMutation(internal.messages.internalUpdateStatus, {
             messageId: currentMessageId,
             status: "completed",
           });
@@ -591,7 +638,7 @@ export const streamAnswer = action({
           sessionId: currentSessionId,
         });
       } else if (currentMessageId) {
-        await ctx.runMutation(api.messages.updateStatus, {
+        await ctx.runMutation(internal.messages.internalUpdateStatus, {
           messageId: currentMessageId,
           status: "error",
         });

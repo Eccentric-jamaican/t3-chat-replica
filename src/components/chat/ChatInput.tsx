@@ -10,7 +10,7 @@ import { ArrowUp, Paperclip, Globe, StopCircle, X, Brain } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
-import { useMutation, useAction, useQuery } from "convex/react";
+import { useMutation, useAction, useQuery, useConvexAuth } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import { v4 as uuidv4 } from "uuid";
 import { useNavigate } from "@tanstack/react-router";
@@ -106,10 +106,13 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
     const streamAnswer = useAction(api.chat.streamAnswer);
     const abortLatestInThread = useMutation(api.messages.abortLatestInThread);
     const generateUploadUrl = useMutation(api.messages.generateUploadUrl);
+    const { isLoading: isConvexAuthLoading } = useConvexAuth();
     const effectiveThreadId = threadId ?? existingThreadId ?? null;
     const isThreadStreaming = useQuery(
       api.messages.isThreadStreaming,
-      effectiveThreadId ? { threadId: effectiveThreadId as any } : "skip",
+      effectiveThreadId && !isConvexAuthLoading
+        ? { threadId: effectiveThreadId as any, sessionId }
+        : "skip",
     );
 
     useEffect(() => {
@@ -190,7 +193,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
 
       if (activeSessionId) {
         try {
-          await abortStreamSession({ sessionId: activeSessionId as any });
+          await abortStreamSession({ sessionId: activeSessionId as any, clientSessionId: sessionId });
           console.log("Aborted active session:", activeSessionId);
           aborted = true;
         } catch (error) {
@@ -202,6 +205,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
         try {
           await abortLatestStreamSession({
             threadId: effectiveThreadId as any,
+            sessionId,
           });
           console.log("Aborted latest stream session in thread");
           aborted = true;
@@ -215,7 +219,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
 
       if (!aborted && activeMessageId) {
         try {
-          await abortMessage({ messageId: activeMessageId as any });
+          await abortMessage({ messageId: activeMessageId as any, sessionId });
           console.log("Aborted active message:", activeMessageId);
           aborted = true;
         } catch (error) {
@@ -224,7 +228,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
       }
 
       if (!aborted && effectiveThreadId) {
-        await abortLatestInThread({ threadId: effectiveThreadId as any });
+        await abortLatestInThread({ threadId: effectiveThreadId as any, sessionId });
         console.log("Aborted latest message in thread");
       }
       setIsGenerating(false);
@@ -269,6 +273,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
           threadId: currentThreadId as any,
           content: messageContent,
           role: "user",
+          sessionId,
           attachments: attachments.map(({ storageId, type, name, size }) => ({
             storageId,
             type,
@@ -287,12 +292,14 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
         const newMessageId = await initializeAssistantMessage({
           threadId: currentThreadId as any,
           modelId: selectedModelId,
+          sessionId,
         });
         setActiveMessageId(newMessageId);
 
         const newSessionId = await startStreamSession({
           threadId: currentThreadId as any,
           messageId: newMessageId as any,
+          sessionId,
         });
         setActiveSessionId(newSessionId);
 

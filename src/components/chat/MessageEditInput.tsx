@@ -40,6 +40,11 @@ export function MessageEditInput({
   const [content, setContent] = useState(initialContent)
   const [isSubmitting, setIsSubmitting] = useState(false)
 
+  // Get sessionId for ownership verification
+  const sessionId = typeof window !== "undefined"
+    ? localStorage.getItem("t3_session_id") || undefined
+    : undefined
+
   const [selectedModelId, setSelectedModelId] = useState(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('t3_selected_model')
@@ -168,12 +173,13 @@ export function MessageEditInput({
 
     try {
       // Update the message content
-      await updateMessage({ id: messageId as any, content: content.trim() })
+      await updateMessage({ id: messageId as any, content: content.trim(), sessionId })
 
       // Delete all messages after this one
       await deleteAfter({
         threadId: threadId as any,
-        afterMessageId: messageId as any
+        afterMessageId: messageId as any,
+        sessionId
       })
 
       // Save model selection

@@ -1,7 +1,6 @@
 import { useMemo } from 'react';
-import { useSmoothStreaming } from '../../hooks/useSmoothStreaming';
 import { Markdown } from './Markdown';
-import { AnimatedStreamingText } from './AnimatedStreamingText';
+import { useSmoothStreaming } from '../../hooks/useSmoothStreaming';
 
 interface StreamingMessageProps {
   content: string;
@@ -9,27 +8,31 @@ interface StreamingMessageProps {
 }
 
 export const StreamingMessage = ({ content, isStreaming }: StreamingMessageProps) => {
-  const smoothContent = useSmoothStreaming(content, isStreaming);
+  const { displayedText, isAnimating } = useSmoothStreaming(content, isStreaming);
 
-  // Memoize the rendered content
+  // Keep showing plain text while streaming OR while the animation is still catching up.
+  // Only switch to Markdown once streaming is done AND animation has finished.
+  const showPlainText = isStreaming || isAnimating;
+
   const renderedContent = useMemo(() => {
-    if (isStreaming) {
-      // Use animated text with fade trail during streaming
-      return <AnimatedStreamingText content={smoothContent} isStreaming={isStreaming} />;
+    if (showPlainText) {
+      return (
+        <div className="prose max-w-none dark:prose-invert whitespace-pre-wrap break-words">
+          {displayedText}
+          {isStreaming && (
+            <span className="inline-block w-2 h-4 ml-0.5 bg-foreground/70 animate-pulse" />
+          )}
+        </div>
+      );
     }
-    // Use regular markdown when not streaming
-    return <Markdown content={smoothContent} />;
-  }, [smoothContent, isStreaming]);
+    // Full markdown rendering only when complete and animation is done
+    return <Markdown content={content} />;
+  }, [displayedText, content, isStreaming, showPlainText]);
 
   return (
     <div
       style={{
-        // GPU acceleration hints during streaming
-        willChange: isStreaming ? 'contents, opacity' : 'auto',
-        // CSS containment to isolate reflows
-        contain: isStreaming ? 'layout style paint' : 'none',
-        // Force GPU layer
-        transform: 'translateZ(0)',
+        contain: showPlainText ? 'layout style' : 'none',
       }}
     >
       {renderedContent}
