@@ -110,6 +110,21 @@ export const createAuth: CreateAuth<DataModel> = (ctx) => {
     },
     emailAndPassword: {
       enabled: true,
+      // Server-side password validation
+      password: {
+        minLength: 8,
+        maxLength: 128,
+        // Custom validation function
+        validate: (password: string) => {
+          if (password.length < 8) {
+            return { valid: false, message: "Password must be at least 8 characters" };
+          }
+          if (!/\d/.test(password)) {
+            return { valid: false, message: "Password must contain at least one number" };
+          }
+          return { valid: true };
+        },
+      },
     },
     socialProviders: {
       google: {
@@ -117,13 +132,13 @@ export const createAuth: CreateAuth<DataModel> = (ctx) => {
         clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
       },
     },
-    // TODO: Update trustedOrigins for production - remove localhost and preview URLs,
-    // keep only your production domain (e.g., "https://yourdomain.com")
+    // Trusted origins for auth requests
+    // In production, only include your actual domains
     trustedOrigins: [
+      // Development
       "http://localhost:3000",
+      // Production (update with your actual domain)
       "https://t3-chat-replica.vercel.app",
-      "https://t3-chat-replica-eccentric-devs-projects.vercel.app",
-      "https://t3-chat-replica-git-betterauth-eccentric-devs-projects.vercel.app",
     ],
     plugins: [
       convex({ authConfig }),
