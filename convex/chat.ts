@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import { action } from "./_generated/server";
-import { api } from "./_generated/api";
+import { api, internal } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
 import {
   searchEbayItems,
@@ -121,7 +121,7 @@ export const streamAnswer = action({
       const contentToFlush = contentBuffer;
 
       try {
-        const result = await ctx.runMutation(api.messages.appendContent, {
+        const result = await ctx.runMutation(internal.messages.internalAppendContent, {
           messageId: currentMessageId,
           content: contentToFlush,
         });
@@ -142,7 +142,7 @@ export const streamAnswer = action({
         ? await ctx.runQuery(api.streamSessions.getStatus, {
             sessionId: currentSessionId,
           })
-        : await ctx.runQuery(api.messages.getStatus, {
+        : await ctx.runQuery(internal.messages.internalGetStatus, {
             messageId: currentMessageId,
           });
       if (status === "aborted") {
@@ -167,17 +167,17 @@ export const streamAnswer = action({
     const apiKey = process.env.OPENROUTER_API_KEY;
     if (!apiKey) {
       const msgId = await ctx.runMutation(
-        api.messages.initializeAssistantMessage,
+        internal.messages.internalInitializeAssistantMessage,
         {
           threadId: args.threadId,
           modelId: args.modelId,
         },
       );
-      await ctx.runMutation(api.messages.appendContent, {
+      await ctx.runMutation(internal.messages.internalAppendContent, {
         messageId: msgId,
         content: "Error: No API Key configured.",
       });
-      await ctx.runMutation(api.messages.updateStatus, {
+      await ctx.runMutation(internal.messages.internalUpdateStatus, {
         messageId: msgId,
         status: "error",
       });
@@ -193,7 +193,7 @@ export const streamAnswer = action({
           });
           if (status === "aborted") return currentMessageId;
         } else {
-          const status = await ctx.runQuery(api.messages.getStatus, {
+          const status = await ctx.runQuery(internal.messages.internalGetStatus, {
             messageId: currentMessageId,
           });
           if (status === "aborted") return currentMessageId;
@@ -201,7 +201,7 @@ export const streamAnswer = action({
       } else {
         // Create the assistant message once, before the loop
         currentMessageId = await ctx.runMutation(
-          api.messages.initializeAssistantMessage,
+          internal.messages.internalInitializeAssistantMessage,
           {
             threadId: args.threadId,
             modelId: args.modelId,
@@ -210,7 +210,7 @@ export const streamAnswer = action({
       }
 
       if (!currentSessionId && currentMessageId) {
-        currentSessionId = await ctx.runMutation(api.streamSessions.start, {
+        currentSessionId = await ctx.runMutation(internal.streamSessions.internalStart, {
           threadId: args.threadId,
           messageId: currentMessageId,
         });
@@ -221,7 +221,7 @@ export const streamAnswer = action({
         cycle++;
 
         // Fetch Context
-        const messages = await ctx.runQuery(api.messages.list, {
+        const messages = await ctx.runQuery(internal.messages.internalList, {
           threadId: args.threadId,
         });
 
@@ -453,12 +453,12 @@ export const streamAnswer = action({
             await ctx.runMutation(api.streamSessions.abort, {
               sessionId: currentSessionId,
             });
-            await ctx.runMutation(api.messages.updateStatus, {
+            await ctx.runMutation(internal.messages.internalUpdateStatus, {
               messageId: currentMessageId,
               status: "aborted",
             });
           } else {
-            await ctx.runMutation(api.messages.updateStatus, {
+            await ctx.runMutation(internal.messages.internalUpdateStatus, {
               messageId: currentMessageId,
               status: "aborted",
             });
@@ -468,7 +468,7 @@ export const streamAnswer = action({
 
         // Save reasoning content if any was accumulated
         if (accumulatedReasoning.trim()) {
-          await ctx.runMutation(api.messages.saveReasoningContent, {
+          await ctx.runMutation(internal.messages.internalSaveReasoningContent, {
             messageId: currentMessageId,
             reasoningContent: accumulatedReasoning,
           });
@@ -485,7 +485,7 @@ export const streamAnswer = action({
 
         // Handle tool calls
         if (accumulatedToolCalls.length > 0 && !isAborted) {
-          await ctx.runMutation(api.messages.saveToolCalls, {
+          await ctx.runMutation(internal.messages.internalSaveToolCalls, {
             messageId: currentMessageId,
             toolCalls: accumulatedToolCalls,
           });
@@ -561,7 +561,7 @@ export const streamAnswer = action({
 
                     result = `I found ${items.length} items on eBay. They have been displayed to the user.`;
 
-                    await ctx.runMutation(api.messages.saveProducts, {
+                    await ctx.runMutation(internal.messages.internalSaveProducts, {
                       messageId: currentMessageId!,
                       products: items,
                     });
@@ -576,7 +576,7 @@ export const streamAnswer = action({
             }
 
             // Create Tool Result Message
-            await ctx.runMutation(api.messages.send, {
+            await ctx.runMutation(internal.messages.internalSend, {
               threadId: args.threadId,
               role: "tool",
               content: result,
@@ -595,7 +595,7 @@ export const streamAnswer = action({
               sessionId: currentSessionId,
             });
           } else {
-            await ctx.runMutation(api.messages.updateStatus, {
+            await ctx.runMutation(internal.messages.internalUpdateStatus, {
               messageId: currentMessageId,
               status: "completed",
             });
@@ -615,11 +615,11 @@ export const streamAnswer = action({
           });
         }
       } else if (currentMessageId) {
-        const msg = await ctx.runQuery(api.messages.getStatus, {
+        const msg = await ctx.runQuery(internal.messages.internalGetStatus, {
           messageId: currentMessageId,
         });
         if (msg === "streaming") {
-          await ctx.runMutation(api.messages.updateStatus, {
+          await ctx.runMutation(internal.messages.internalUpdateStatus, {
             messageId: currentMessageId,
             status: "completed",
           });
@@ -633,7 +633,7 @@ export const streamAnswer = action({
           sessionId: currentSessionId,
         });
       } else if (currentMessageId) {
-        await ctx.runMutation(api.messages.updateStatus, {
+        await ctx.runMutation(internal.messages.internalUpdateStatus, {
           messageId: currentMessageId,
           status: "error",
         });

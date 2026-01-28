@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { Markdown } from './Markdown';
+import { useSmoothStreaming } from '../../hooks/useSmoothStreaming';
 
 interface StreamingMessageProps {
   content: string;
@@ -7,27 +8,31 @@ interface StreamingMessageProps {
 }
 
 export const StreamingMessage = ({ content, isStreaming }: StreamingMessageProps) => {
-  // During streaming: plain text for maximum speed (like ChatGPT/Claude)
-  // After streaming: full Markdown rendering
+  const { displayedText, isAnimating } = useSmoothStreaming(content, isStreaming);
+
+  // Keep showing plain text while streaming OR while the animation is still catching up.
+  // Only switch to Markdown once streaming is done AND animation has finished.
+  const showPlainText = isStreaming || isAnimating;
+
   const renderedContent = useMemo(() => {
-    if (isStreaming) {
-      // Plain text with basic whitespace handling - no heavy parsing
+    if (showPlainText) {
       return (
         <div className="prose max-w-none dark:prose-invert whitespace-pre-wrap break-words">
-          {content}
-          <span className="inline-block w-2 h-4 ml-0.5 bg-foreground/70 animate-pulse" />
+          {displayedText}
+          {isStreaming && (
+            <span className="inline-block w-2 h-4 ml-0.5 bg-foreground/70 animate-pulse" />
+          )}
         </div>
       );
     }
-    // Full markdown rendering only when complete
+    // Full markdown rendering only when complete and animation is done
     return <Markdown content={content} />;
-  }, [content, isStreaming]);
+  }, [displayedText, content, isStreaming, showPlainText]);
 
   return (
     <div
       style={{
-        // Minimal style during streaming for performance
-        contain: isStreaming ? 'layout style' : 'none',
+        contain: showPlainText ? 'layout style' : 'none',
       }}
     >
       {renderedContent}

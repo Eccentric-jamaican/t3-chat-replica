@@ -1,4 +1,4 @@
-import { mutation, query, MutationCtx } from "./_generated/server";
+import { mutation, query, internalMutation, MutationCtx } from "./_generated/server";
 import { v } from "convex/values";
 import { Id } from "./_generated/dataModel";
 import { safeGetAuthUser } from "./auth";
@@ -144,5 +144,23 @@ export const heartbeat = mutation({
   args: { sessionId: v.id("streamSessions") },
   handler: async (ctx, args) => {
     await ctx.db.patch(args.sessionId, { lastHeartbeat: Date.now() });
+  },
+});
+
+// Internal version for server-side streaming action (skips auth check)
+export const internalStart = internalMutation({
+  args: {
+    threadId: v.id("threads"),
+    messageId: v.id("messages"),
+  },
+  handler: async (ctx, args) => {
+    const streamSessionId = await ctx.db.insert("streamSessions", {
+      threadId: args.threadId,
+      messageId: args.messageId,
+      status: "streaming",
+      startedAt: Date.now(),
+    });
+    await ctx.db.patch(args.messageId, { status: "streaming" });
+    return streamSessionId;
   },
 });

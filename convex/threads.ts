@@ -3,6 +3,8 @@ import { mutation, query, QueryCtx, MutationCtx } from "./_generated/server";
 import { Id, Doc } from "./_generated/dataModel";
 import { safeGetAuthUser } from "./auth";
 
+const isDebugMode = process.env.CONVEX_DEBUG_LOGS === "true";
+
 /**
  * Verify the current user has access to a thread.
  * - If thread has userId: only that authenticated user can access
@@ -58,13 +60,13 @@ export const create = mutation({
     // Get authenticated user if available
     const user = await safeGetAuthUser(ctx);
 
-    console.log("[THREADS] create - Auth state:", {
-      isAuthenticated: !!user,
-      userId: user?._id ?? null,
-      userEmail: user?.email ?? null,
-      sessionId: args.sessionId,
-      timestamp: new Date().toISOString(),
-    });
+    if (isDebugMode) {
+      console.log("[THREADS] create - Auth state:", {
+        isAuthenticated: !!user,
+        userId: user?._id ?? null,
+        sessionId: args.sessionId,
+      });
+    }
 
     const threadId = await ctx.db.insert("threads", {
       ...args,
@@ -72,11 +74,12 @@ export const create = mutation({
       lastMessageAt: Date.now(),
     });
 
-    console.log("[THREADS] create - Thread created:", {
-      threadId,
-      ownedBy: user?._id ? "user" : "session",
-      ownerId: user?._id ?? args.sessionId,
-    });
+    if (isDebugMode) {
+      console.log("[THREADS] create - Thread created:", {
+        threadId,
+        ownedBy: user?._id ? "user" : "session",
+      });
+    }
 
     return threadId;
   },
@@ -88,14 +91,13 @@ export const list = query({
     // Get authenticated user if available
     const user = await safeGetAuthUser(ctx);
 
-    console.log("[THREADS] list - Auth state:", {
-      isAuthenticated: !!user,
-      userId: user?._id ?? null,
-      userEmail: user?.email ?? null,
-      sessionId: args.sessionId,
-      queryMode: user ? "by_user" : "by_session",
-      timestamp: new Date().toISOString(),
-    });
+    if (isDebugMode) {
+      console.log("[THREADS] list - Auth state:", {
+        isAuthenticated: !!user,
+        userId: user?._id ?? null,
+        queryMode: user ? "by_user" : "by_session",
+      });
+    }
 
     let threads;
     if (user) {
@@ -104,20 +106,22 @@ export const list = query({
         .query("threads")
         .withIndex("by_user", (q) => q.eq("userId", user._id))
         .collect();
-      console.log("[THREADS] list - Queried by userId:", {
-        userId: user._id,
-        threadCount: threads.length,
-      });
+      if (isDebugMode) {
+        console.log("[THREADS] list - Queried by userId:", {
+          threadCount: threads.length,
+        });
+      }
     } else {
       // Anonymous: query by sessionId
       threads = await ctx.db
         .query("threads")
         .withIndex("by_session", (q) => q.eq("sessionId", args.sessionId))
         .collect();
-      console.log("[THREADS] list - Queried by sessionId:", {
-        sessionId: args.sessionId,
-        threadCount: threads.length,
-      });
+      if (isDebugMode) {
+        console.log("[THREADS] list - Queried by sessionId:", {
+          threadCount: threads.length,
+        });
+      }
     }
 
     if (args.search) {
@@ -142,10 +146,9 @@ export const remove = mutation({
     // Verify ownership before deleting
     await verifyThreadAccess(ctx, args.id, args.sessionId);
 
-    console.log("[THREADS] remove - Authorized deletion:", {
-      threadId: args.id,
-      timestamp: new Date().toISOString(),
-    });
+    if (isDebugMode) {
+      console.log("[THREADS] remove - Authorized deletion:", { threadId: args.id });
+    }
 
     // Delete messages first
     const messages = await ctx.db
@@ -185,16 +188,15 @@ export const claimThreads = mutation({
   handler: async (ctx, args) => {
     const user = await safeGetAuthUser(ctx);
 
-    console.log("[THREADS] claimThreads - Auth state:", {
-      isAuthenticated: !!user,
-      userId: user?._id ?? null,
-      userEmail: user?.email ?? null,
-      sessionId: args.sessionId,
-      timestamp: new Date().toISOString(),
-    });
+    if (isDebugMode) {
+      console.log("[THREADS] claimThreads - Auth state:", {
+        isAuthenticated: !!user,
+        userId: user?._id ?? null,
+      });
+    }
 
     if (!user) {
-      console.log("[THREADS] claimThreads - REJECTED: Not authenticated");
+      if (isDebugMode) console.log("[THREADS] claimThreads - REJECTED: Not authenticated");
       throw new Error("Must be authenticated to claim threads");
     }
 
@@ -207,20 +209,21 @@ export const claimThreads = mutation({
     const unclaimedThreads = threads.filter((t) => !t.userId);
     let claimedCount = 0;
 
-    console.log("[THREADS] claimThreads - Found threads:", {
-      totalWithSession: threads.length,
-      unclaimed: unclaimedThreads.length,
-    });
+    if (isDebugMode) {
+      console.log("[THREADS] claimThreads - Found threads:", {
+        totalWithSession: threads.length,
+        unclaimed: unclaimedThreads.length,
+      });
+    }
 
     for (const thread of unclaimedThreads) {
       await ctx.db.patch(thread._id, { userId: user._id });
       claimedCount++;
     }
 
-    console.log("[THREADS] claimThreads - Complete:", {
-      claimedCount,
-      userId: user._id,
-    });
+    if (isDebugMode) {
+      console.log("[THREADS] claimThreads - Complete:", { claimedCount });
+    }
 
     return { claimedCount, userId: user._id };
   },
@@ -238,12 +241,11 @@ export const adminClaimThreads = mutation({
       throw new Error("Must be authenticated to claim threads");
     }
 
-    console.log("[THREADS] adminClaimThreads - Authorized claim:", {
-      userId: user._id,
-      userEmail: user.email,
-      sessionId: args.sessionId,
-      timestamp: new Date().toISOString(),
-    });
+    if (isDebugMode) {
+      console.log("[THREADS] adminClaimThreads - Authorized claim:", {
+        userId: user._id,
+      });
+    }
 
     const threads = await ctx.db
       .query("threads")
@@ -258,11 +260,12 @@ export const adminClaimThreads = mutation({
       claimedCount++;
     }
 
-    console.log("[THREADS] adminClaimThreads - Complete:", {
-      claimedCount,
-      totalThreads: threads.length,
-      userId: user._id,
-    });
+    if (isDebugMode) {
+      console.log("[THREADS] adminClaimThreads - Complete:", {
+        claimedCount,
+        totalThreads: threads.length,
+      });
+    }
 
     return { claimedCount, totalThreads: threads.length, userId: user._id };
   },

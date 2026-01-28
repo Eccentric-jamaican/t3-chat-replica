@@ -2,9 +2,8 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { Sidebar } from "../components/layout/Sidebar";
 import { useIsMobile } from "../hooks/useIsMobile";
 import { ChatInput, type ChatInputHandle } from "../components/chat/ChatInput";
-import { useQuery, useMutation, useAction } from "convex/react";
+import { useQuery, useMutation, useAction, useConvexAuth } from "convex/react";
 import { api } from "../../convex/_generated/api";
-import { authClient } from "../lib/auth";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   MessageSquare,
@@ -92,18 +91,18 @@ function ChatPage() {
   const navigate = useNavigate();
   const isMobile = useIsMobile();
 
-  // Wait for auth session to load before querying messages
-  const { isPending: isAuthPending } = authClient.useSession();
+  // Wait for Convex auth to be ready before querying messages
+  const { isLoading: isConvexAuthLoading } = useConvexAuth();
 
   // Get sessionId for ownership verification
   const sessionId = typeof window !== "undefined"
     ? localStorage.getItem("t3_session_id") || undefined
     : undefined;
 
-  // Skip query while auth is loading to prevent "Access denied" on reload
+  // Skip query while Convex auth is loading to prevent "Access denied" on reload
   const messages = useQuery(
     api.messages.list,
-    isAuthPending ? "skip" : { threadId: threadId as any, sessionId }
+    isConvexAuthLoading ? "skip" : { threadId: threadId as any, sessionId }
   );
   const deleteAfter = useMutation(api.messages.deleteAfter);
   const streamAnswer = useAction(api.chat.streamAnswer);

@@ -28,7 +28,7 @@ import { authClient } from "../../lib/auth";
 import { motion, AnimatePresence } from "framer-motion";
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
-import { useQuery, useMutation } from "convex/react";
+import { useQuery, useMutation, useConvexAuth } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import {
   useNavigate,
@@ -409,6 +409,7 @@ export const Sidebar = ({ isOpen: externalOpen, onToggle }: SidebarProps) => {
   const hasSyncedMobileRef = useRef(false);
 
   const { data: authSession, isPending: isAuthPending } = authClient.useSession();
+  const { isLoading: isConvexAuthLoading } = useConvexAuth();
   const currentUserId = authSession?.user?.id ?? null;
 
   // Track auth transitions to prevent showing stale data from previous user
@@ -474,7 +475,7 @@ export const Sidebar = ({ isOpen: externalOpen, onToggle }: SidebarProps) => {
   }, [isMobile, isOpen]);
 
   // Skip query during auth state transitions to prevent showing wrong user's threads
-  const shouldSkipQuery = isAuthPending || isAuthTransitioning;
+  const shouldSkipQuery = isAuthPending || isConvexAuthLoading || isAuthTransitioning;
   const threads = useQuery(
     api.threads.list,
     shouldSkipQuery ? "skip" : { sessionId, search: searchQuery || undefined }
