@@ -498,7 +498,7 @@ export const Sidebar = ({ isOpen: externalOpen, onToggle }: SidebarProps) => {
       setEditingId(null);
       return;
     }
-    await renameThread({ id, title: editingTitle.trim() });
+    await renameThread({ id, title: editingTitle.trim(), sessionId: sessionId || undefined });
     setEditingId(null);
   };
 
@@ -506,7 +506,7 @@ export const Sidebar = ({ isOpen: externalOpen, onToggle }: SidebarProps) => {
     if (activeThreadId === id) {
       await navigate({ to: "/" });
     }
-    await removeThread({ id });
+    await removeThread({ id, sessionId: sessionId || undefined });
   };
 
   return (
@@ -681,6 +681,7 @@ export const Sidebar = ({ isOpen: externalOpen, onToggle }: SidebarProps) => {
                       handleRename={handleRename}
                       togglePinned={togglePinned}
                       onDelete={handleDeleteThread}
+                      sessionId={sessionId}
                     />
                   ))}
               </>
@@ -710,6 +711,7 @@ export const Sidebar = ({ isOpen: externalOpen, onToggle }: SidebarProps) => {
                     handleRename={handleRename}
                     togglePinned={togglePinned}
                     onDelete={handleDeleteThread}
+                    sessionId={sessionId}
                   />
                 ))
             )}
@@ -809,6 +811,7 @@ const ThreadItem = ({
   handleRename,
   togglePinned,
   onDelete,
+  sessionId,
 }: any) => {
   const isEditing = editingId === thread._id;
   const isActive = activeThreadId === thread._id;
@@ -818,7 +821,7 @@ const ThreadItem = ({
   const threadUrl = getThreadUrl(thread._id);
   const threadMessages = useQuery(
     api.messages.list,
-    menuOpen ? { threadId: thread._id } : "skip",
+    menuOpen ? { threadId: thread._id, sessionId } : "skip",
   );
   const isExportReady = threadMessages !== undefined;
 
@@ -1127,7 +1130,7 @@ const ThreadItem = ({
         </DropdownMenuTrigger>
         {!isEditing && (
           <DropdownMenuContent side="right" align="start" sideOffset={10}>
-            <DropdownMenuItem onSelect={() => togglePinned({ id: thread._id })}>
+            <DropdownMenuItem onSelect={() => togglePinned({ id: thread._id, sessionId: sessionId || undefined })}>
               <Pin size={15} />
               <span>{thread.isPinned ? "Unpin" : "Pin"}</span>
             </DropdownMenuItem>
@@ -1216,7 +1219,7 @@ const ThreadItem = ({
           <button
             onClick={(e) => {
               e.stopPropagation();
-              togglePinned({ id: thread._id });
+              togglePinned({ id: thread._id, sessionId: sessionId || undefined });
             }}
             className="rounded p-1 text-foreground/40 transition-colors hover:bg-black/5 hover:text-foreground"
           >

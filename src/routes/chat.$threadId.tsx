@@ -90,7 +90,13 @@ function ChatPage() {
   const { productId } = Route.useSearch();
   const navigate = useNavigate();
   const isMobile = useIsMobile();
-  const messages = useQuery(api.messages.list, { threadId: threadId as any });
+
+  // Get sessionId for ownership verification
+  const sessionId = typeof window !== "undefined"
+    ? localStorage.getItem("t3_session_id") || undefined
+    : undefined;
+
+  const messages = useQuery(api.messages.list, { threadId: threadId as any, sessionId });
   const deleteAfter = useMutation(api.messages.deleteAfter);
   const streamAnswer = useAction(api.chat.streamAnswer);
   const createThread = useMutation(api.threads.create);
@@ -163,6 +169,7 @@ function ChatPage() {
       await deleteAfter({
         threadId: threadId as any,
         afterMessageId: userMessageId as any,
+        sessionId,
       });
 
       // Get the model to use (either specified or from localStorage)
@@ -250,6 +257,7 @@ function ChatPage() {
             threadId: newThreadId,
             content: msg.content,
             role: msg.role,
+            sessionId,
             attachments: msg.attachments?.map((a: any) => ({
               storageId: a.storageId,
               type: a.type,

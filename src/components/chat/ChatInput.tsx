@@ -109,7 +109,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
     const effectiveThreadId = threadId ?? existingThreadId ?? null;
     const isThreadStreaming = useQuery(
       api.messages.isThreadStreaming,
-      effectiveThreadId ? { threadId: effectiveThreadId as any } : "skip",
+      effectiveThreadId ? { threadId: effectiveThreadId as any, sessionId } : "skip",
     );
 
     useEffect(() => {
@@ -190,7 +190,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
 
       if (activeSessionId) {
         try {
-          await abortStreamSession({ sessionId: activeSessionId as any });
+          await abortStreamSession({ sessionId: activeSessionId as any, clientSessionId: sessionId });
           console.log("Aborted active session:", activeSessionId);
           aborted = true;
         } catch (error) {
@@ -202,6 +202,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
         try {
           await abortLatestStreamSession({
             threadId: effectiveThreadId as any,
+            sessionId,
           });
           console.log("Aborted latest stream session in thread");
           aborted = true;
@@ -215,7 +216,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
 
       if (!aborted && activeMessageId) {
         try {
-          await abortMessage({ messageId: activeMessageId as any });
+          await abortMessage({ messageId: activeMessageId as any, sessionId });
           console.log("Aborted active message:", activeMessageId);
           aborted = true;
         } catch (error) {
@@ -224,7 +225,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
       }
 
       if (!aborted && effectiveThreadId) {
-        await abortLatestInThread({ threadId: effectiveThreadId as any });
+        await abortLatestInThread({ threadId: effectiveThreadId as any, sessionId });
         console.log("Aborted latest message in thread");
       }
       setIsGenerating(false);
@@ -269,6 +270,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
           threadId: currentThreadId as any,
           content: messageContent,
           role: "user",
+          sessionId,
           attachments: attachments.map(({ storageId, type, name, size }) => ({
             storageId,
             type,
@@ -287,12 +289,14 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
         const newMessageId = await initializeAssistantMessage({
           threadId: currentThreadId as any,
           modelId: selectedModelId,
+          sessionId,
         });
         setActiveMessageId(newMessageId);
 
         const newSessionId = await startStreamSession({
           threadId: currentThreadId as any,
           messageId: newMessageId as any,
+          sessionId,
         });
         setActiveSessionId(newSessionId);
 

@@ -1,36 +1,56 @@
-import { mutation, query } from "./_generated/server";
+import { mutation, query, MutationCtx } from "./_generated/server";
 import { v } from "convex/values";
+import { Id } from "./_generated/dataModel";
+import { safeGetAuthUser } from "./auth";
+
+/**
+ * Verify the current user has access to a thread.
+ */
+async function verifyThreadAccess(
+  ctx: MutationCtx,
+  threadId: Id<"threads">,
+  sessionId?: string
+): Promise<void> {
+  const thread = await ctx.db.get(threadId);
+  if (!thread) {
+    throw new Error("Thread not found");
+  }
+
+  const user = await safeGetAuthUser(ctx);
+
+  if (thread.userId) {
+    if (!user || thread.userId !== user._id) {
+      throw new Error("Access denied: You don't have permission to access this thread");
+    }
+  } else if (sessionId && thread.sessionId !== sessionId) {
+    throw new Error("Access denied: You don't have permission to access this thread");
+  }
+}
 
 export const start = mutation({
   args: {
     threadId: v.id("threads"),
     messageId: v.id("messages"),
+    sessionId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    const userId =
-      identity?.subject ?? identity?.tokenIdentifier ?? "anonymous";
+    // Verify ownership before starting stream
+    await verifyThreadAccess(ctx, args.threadId, args.sessionId);
 
     const message = await ctx.db.get(args.messageId);
     if (!message) {
-      throw new Error(
-        `Message not found: ${args.messageId} (thread ${args.threadId}, user ${userId}, context streamSessions.start)`,
-      );
+      throw new Error(`Message not found: ${args.messageId}`);
     }
 
     const thread = await ctx.db.get(args.threadId);
     if (!thread) {
-      throw new Error(
-        `Thread not found: ${args.threadId} (message ${args.messageId}, user ${userId}, context streamSessions.start)`,
-      );
+      throw new Error(`Thread not found: ${args.threadId}`);
     }
     if (message.threadId !== args.threadId) {
-      throw new Error(
-        `Message ${args.messageId} does not belong to thread ${args.threadId} (user ${userId}, context streamSessions.start)`,
-      );
+      throw new Error(`Message ${args.messageId} does not belong to thread ${args.threadId}`);
     }
 
-    const sessionId = await ctx.db.insert("streamSessions", {
+    const streamSessionId = await ctx.db.insert("streamSessions", {
       threadId: args.threadId,
       messageId: args.messageId,
       status: "streaming",
@@ -39,7 +59,7 @@ export const start = mutation({
 
     await ctx.db.patch(args.messageId, { status: "streaming" });
 
-    return sessionId;
+    return streamSessionId;
   },
 });
 
@@ -52,10 +72,13 @@ export const getStatus = query({
 });
 
 export const abort = mutation({
-  args: { sessionId: v.id("streamSessions") },
+  args: { sessionId: v.id("streamSessions"), clientSessionId: v.optional(v.string()) },
   handler: async (ctx, args) => {
     const session = await ctx.db.get(args.sessionId);
     if (!session) return;
+
+    // Verify ownership via thread
+    await verifyThreadAccess(ctx, session.threadId, args.clientSessionId);
 
     await ctx.db.patch(args.sessionId, {
       status: "aborted",
@@ -65,8 +88,11 @@ export const abort = mutation({
 });
 
 export const abortLatestByThread = mutation({
-  args: { threadId: v.id("threads") },
+  args: { threadId: v.id("threads"), sessionId: v.optional(v.string()) },
   handler: async (ctx, args) => {
+    // Verify ownership before aborting
+    await verifyThreadAccess(ctx, args.threadId, args.sessionId);
+
     const latest = await ctx.db
       .query("streamSessions")
       .withIndex("by_thread_status", (q) =>
