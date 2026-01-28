@@ -97,8 +97,8 @@ export const streamAnswer = action({
   handler: async (ctx, args): Promise<Id<"messages"> | null> => {
     const ABORT_POLL_MS = 100; // Reduced from 250ms for snappier response
     const MAX_CYCLES = 5;
-    const BUFFER_FLUSH_SIZE = 80; // Flush after ~80 characters
-    const BUFFER_FLUSH_MS = 150; // Or flush every 150ms
+    const BUFFER_FLUSH_SIZE = 1; // Flush every chunk (t3.chat-style)
+    const BUFFER_FLUSH_MS = 0; // No time-based buffering
 
     let cycle = 0;
     let currentMessageId: Id<"messages"> | null = null;
@@ -121,10 +121,13 @@ export const streamAnswer = action({
       const contentToFlush = contentBuffer;
 
       try {
-        const result = await ctx.runMutation(internal.messages.internalAppendContent, {
-          messageId: currentMessageId,
-          content: contentToFlush,
-        });
+        const result = await ctx.runMutation(
+          internal.messages.internalAppendContent,
+          {
+            messageId: currentMessageId,
+            content: contentToFlush,
+          },
+        );
         // Only clear buffer after successful write
         contentBuffer = "";
         lastFlushTime = Date.now();
@@ -193,9 +196,12 @@ export const streamAnswer = action({
           });
           if (status === "aborted") return currentMessageId;
         } else {
-          const status = await ctx.runQuery(internal.messages.internalGetStatus, {
-            messageId: currentMessageId,
-          });
+          const status = await ctx.runQuery(
+            internal.messages.internalGetStatus,
+            {
+              messageId: currentMessageId,
+            },
+          );
           if (status === "aborted") return currentMessageId;
         }
       } else {
@@ -210,10 +216,13 @@ export const streamAnswer = action({
       }
 
       if (!currentSessionId && currentMessageId) {
-        currentSessionId = await ctx.runMutation(internal.streamSessions.internalStart, {
-          threadId: args.threadId,
-          messageId: currentMessageId,
-        });
+        currentSessionId = await ctx.runMutation(
+          internal.streamSessions.internalStart,
+          {
+            threadId: args.threadId,
+            messageId: currentMessageId,
+          },
+        );
       }
 
       while (shouldContinue && cycle < MAX_CYCLES && !isAborted) {
@@ -446,7 +455,9 @@ export const streamAnswer = action({
           } else if (contentBuffer) {
             // Flush failed (buffer wasn't cleared) — content is incomplete,
             // don't mark the message as completed
-            console.error("Final content flush failed, marking message as error");
+            console.error(
+              "Final content flush failed, marking message as error",
+            );
             isAborted = true;
           }
         }
@@ -473,10 +484,13 @@ export const streamAnswer = action({
 
         // Save reasoning content if any was accumulated
         if (accumulatedReasoning.trim()) {
-          await ctx.runMutation(internal.messages.internalSaveReasoningContent, {
-            messageId: currentMessageId,
-            reasoningContent: accumulatedReasoning,
-          });
+          await ctx.runMutation(
+            internal.messages.internalSaveReasoningContent,
+            {
+              messageId: currentMessageId,
+              reasoningContent: accumulatedReasoning,
+            },
+          );
         }
 
         // Log non-standard finish reasons for debugging
@@ -566,10 +580,13 @@ export const streamAnswer = action({
 
                     result = `I found ${items.length} items on eBay. They have been displayed to the user.`;
 
-                    await ctx.runMutation(internal.messages.internalSaveProducts, {
-                      messageId: currentMessageId!,
-                      products: items,
-                    });
+                    await ctx.runMutation(
+                      internal.messages.internalSaveProducts,
+                      {
+                        messageId: currentMessageId!,
+                        products: items,
+                      },
+                    );
                   }
                 }
 

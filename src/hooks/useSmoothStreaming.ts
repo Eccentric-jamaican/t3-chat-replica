@@ -1,10 +1,7 @@
-import { useEffect, useState, useRef, useCallback } from 'react';
+import { useEffect, useState, useRef, useCallback } from "react";
 
-export function useSmoothStreaming(
-  text: string,
-  streaming: boolean,
-) {
-  const [displayedText, setDisplayedText] = useState(streaming ? '' : text);
+export function useSmoothStreaming(text: string, streaming: boolean) {
+  const [displayedText, setDisplayedText] = useState(streaming ? "" : text);
   const [isAnimating, setIsAnimating] = useState(false);
 
   const currentLength = useRef(0);
@@ -15,9 +12,10 @@ export function useSmoothStreaming(
   const textRef = useRef(text);
 
   // Spring physics parameters
-  const stiffness = 0.5;
-  const damping = 0.5;
-  const minVelocity = 10;
+  const stiffness = 0.4;
+  const damping = 0.6;
+  const minVelocity = 2;
+  const maxVelocity = 64;
 
   textRef.current = text;
 
@@ -51,7 +49,9 @@ export function useSmoothStreaming(
     // Animation complete — caught up to target
     if (distance <= 0.5) {
       currentLength.current = targetLength.current;
-      setDisplayedText(textRef.current.slice(0, Math.floor(currentLength.current)));
+      setDisplayedText(
+        textRef.current.slice(0, Math.floor(currentLength.current)),
+      );
       velocity.current = 0;
       setIsAnimating(false);
       return;
@@ -61,7 +61,10 @@ export function useSmoothStreaming(
 
     const force = distance * stiffness;
     velocity.current = velocity.current * damping + force;
-    velocity.current = Math.max(velocity.current, minVelocity);
+    velocity.current = Math.min(
+      Math.max(velocity.current, minVelocity),
+      maxVelocity,
+    );
 
     currentLength.current += velocity.current;
 
@@ -69,9 +72,11 @@ export function useSmoothStreaming(
       currentLength.current = targetLength.current;
     }
 
-    setDisplayedText(textRef.current.slice(0, Math.floor(currentLength.current)));
+    setDisplayedText(
+      textRef.current.slice(0, Math.floor(currentLength.current)),
+    );
     animationFrameId.current = requestAnimationFrame(animate);
-  }, [stiffness, damping, minVelocity]);
+  }, [stiffness, damping, minVelocity, maxVelocity]);
 
   // Run animation whenever there's a gap between current and target
   useEffect(() => {
@@ -86,7 +91,8 @@ export function useSmoothStreaming(
     animationFrameId.current = requestAnimationFrame(animate);
 
     return () => {
-      if (animationFrameId.current) cancelAnimationFrame(animationFrameId.current);
+      if (animationFrameId.current)
+        cancelAnimationFrame(animationFrameId.current);
     };
   }, [text, streaming, animate]);
 
