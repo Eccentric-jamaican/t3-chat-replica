@@ -1,4 +1,4 @@
-import { mutation, query, internalMutation, MutationCtx } from "./_generated/server";
+import { mutation, internalMutation, internalQuery, MutationCtx } from "./_generated/server";
 import { v } from "convex/values";
 import { Id } from "./_generated/dataModel";
 import { getAuthUserId } from "./auth";
@@ -63,7 +63,8 @@ export const start = mutation({
   },
 });
 
-export const getStatus = query({
+// Internal query for server-side streaming action (skips auth check)
+export const internalGetStatus = internalQuery({
   args: { sessionId: v.id("streamSessions") },
   handler: async (ctx, args) => {
     const session = await ctx.db.get(args.sessionId);
@@ -110,7 +111,21 @@ export const abortLatestByThread = mutation({
   },
 });
 
-export const complete = mutation({
+// Internal mutations for server-side streaming action (skips auth check)
+export const internalAbort = internalMutation({
+  args: { sessionId: v.id("streamSessions") },
+  handler: async (ctx, args) => {
+    const session = await ctx.db.get(args.sessionId);
+    if (!session) return;
+
+    await ctx.db.patch(args.sessionId, {
+      status: "aborted",
+      endedAt: Date.now(),
+    });
+  },
+});
+
+export const internalComplete = internalMutation({
   args: { sessionId: v.id("streamSessions") },
   handler: async (ctx, args) => {
     const session = await ctx.db.get(args.sessionId);
@@ -125,7 +140,7 @@ export const complete = mutation({
   },
 });
 
-export const error = mutation({
+export const internalError = internalMutation({
   args: { sessionId: v.id("streamSessions") },
   handler: async (ctx, args) => {
     const session = await ctx.db.get(args.sessionId);
@@ -137,13 +152,6 @@ export const error = mutation({
     });
 
     await ctx.db.patch(session.messageId, { status: "error" });
-  },
-});
-
-export const heartbeat = mutation({
-  args: { sessionId: v.id("streamSessions") },
-  handler: async (ctx, args) => {
-    await ctx.db.patch(args.sessionId, { lastHeartbeat: Date.now() });
   },
 });
 

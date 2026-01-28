@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import { action } from "./_generated/server";
-import { api, internal } from "./_generated/api";
+import { internal } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
 import {
   searchEbayItems,
@@ -142,7 +142,7 @@ export const streamAnswer = action({
     const checkAbortStatus = async () => {
       if (!currentMessageId || isAborted) return;
       const status = currentSessionId
-        ? await ctx.runQuery(api.streamSessions.getStatus, {
+        ? await ctx.runQuery(internal.streamSessions.internalGetStatus, {
             sessionId: currentSessionId,
           })
         : await ctx.runQuery(internal.messages.internalGetStatus, {
@@ -191,7 +191,7 @@ export const streamAnswer = action({
       if (args.messageId) {
         currentMessageId = args.messageId;
         if (currentSessionId) {
-          const status = await ctx.runQuery(api.streamSessions.getStatus, {
+          const status = await ctx.runQuery(internal.streamSessions.internalGetStatus, {
             sessionId: currentSessionId,
           });
           if (status === "aborted") return currentMessageId;
@@ -466,7 +466,7 @@ export const streamAnswer = action({
         if (isAborted) {
           // Ensure the message is marked as aborted
           if (currentSessionId) {
-            await ctx.runMutation(api.streamSessions.abort, {
+            await ctx.runMutation(internal.streamSessions.internalAbort, {
               sessionId: currentSessionId,
             });
             await ctx.runMutation(internal.messages.internalUpdateStatus, {
@@ -613,7 +613,7 @@ export const streamAnswer = action({
         } else if (!isAborted) {
           // No tool calls - mark the message as completed
           if (currentSessionId) {
-            await ctx.runMutation(api.streamSessions.complete, {
+            await ctx.runMutation(internal.streamSessions.internalComplete, {
               sessionId: currentSessionId,
             });
           } else {
@@ -628,11 +628,11 @@ export const streamAnswer = action({
 
       // Final safety check: ensure message isn't left in streaming state
       if (currentSessionId) {
-        const status = await ctx.runQuery(api.streamSessions.getStatus, {
+        const status = await ctx.runQuery(internal.streamSessions.internalGetStatus, {
           sessionId: currentSessionId,
         });
         if (status === "streaming") {
-          await ctx.runMutation(api.streamSessions.complete, {
+          await ctx.runMutation(internal.streamSessions.internalComplete, {
             sessionId: currentSessionId,
           });
         }
@@ -651,7 +651,7 @@ export const streamAnswer = action({
       return currentMessageId;
     } catch (err) {
       if (currentSessionId) {
-        await ctx.runMutation(api.streamSessions.error, {
+        await ctx.runMutation(internal.streamSessions.internalError, {
           sessionId: currentSessionId,
         });
       } else if (currentMessageId) {
