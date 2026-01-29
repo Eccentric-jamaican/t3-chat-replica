@@ -309,6 +309,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
           threadId: currentThreadId as any,
           messageId: newMessageId as any,
           sessionId: newSessionId as any,
+          clientSessionId: sessionId,
           modelId: selectedModelId,
           reasoningEffort:
             supportsReasoning && reasoningEffort ? reasoningEffort : undefined,

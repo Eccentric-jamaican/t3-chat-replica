@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { mutation, query, QueryCtx, MutationCtx } from "./_generated/server";
+import { mutation, query, internalQuery, QueryCtx, MutationCtx } from "./_generated/server";
 import { Id, Doc } from "./_generated/dataModel";
 import { getAuthUserId, safeGetAuthUser } from "./auth";
 
@@ -49,6 +49,31 @@ async function verifyThreadAccess(
 
   return { thread, userId };
 }
+
+// Internal auth check for actions (single DB read, no extra data returned)
+export const internalVerifyThreadAccess = internalQuery({
+  args: { threadId: v.id("threads"), sessionId: v.optional(v.string()) },
+  handler: async (ctx, args) => {
+    const thread = await ctx.db.get(args.threadId);
+    if (!thread) {
+      throw new Error("Thread not found");
+    }
+
+    const userId = await getAuthUserId(ctx);
+
+    if (thread.userId) {
+      if (!userId || thread.userId !== userId) {
+        throw new Error("Access denied: You don't have permission to access this thread");
+      }
+    } else {
+      if (!args.sessionId || thread.sessionId !== args.sessionId) {
+        throw new Error("Access denied: You don't have permission to access this thread");
+      }
+    }
+
+    return { ok: true };
+  },
+});
 
 export const create = mutation({
   args: {

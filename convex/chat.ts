@@ -87,6 +87,7 @@ export const streamAnswer = action({
     threadId: v.id("threads"),
     messageId: v.optional(v.id("messages")),
     sessionId: v.optional(v.id("streamSessions")),
+    clientSessionId: v.optional(v.string()),
     modelId: v.optional(v.string()),
     reasoningEffort: v.optional(v.string()),
     reasoningType: v.optional(
@@ -110,6 +111,12 @@ export const streamAnswer = action({
     let lastAbortCheck = Date.now();
     const toolResultsCache = new Map<string, string>();
     const toolUsageCounts = new Map<string, number>();
+
+    // Verify thread ownership once before any internal reads
+    await ctx.runQuery(internal.threads.internalVerifyThreadAccess, {
+      threadId: args.threadId,
+      sessionId: args.clientSessionId,
+    });
 
     // Content buffering for reduced DB writes
     let contentBuffer = "";
