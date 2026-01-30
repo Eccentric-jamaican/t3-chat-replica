@@ -64,6 +64,23 @@ http.route({
     try {
       // Decrypt state to recover userId
       const stateData = JSON.parse(await decrypt(decodeURIComponent(state)));
+
+      // Validate state payload before using it
+      if (
+        typeof stateData !== "object" ||
+        stateData === null ||
+        typeof stateData.userId !== "string" ||
+        !stateData.userId ||
+        typeof stateData.ts !== "number" ||
+        !Number.isFinite(stateData.ts)
+      ) {
+        console.error("[Gmail OAuth] Invalid state payload:", stateData);
+        return Response.redirect(
+          `${frontendUrl}/settings?tab=connections&gmail=error`,
+          302,
+        );
+      }
+
       const userId: string = stateData.userId;
 
       // Verify state is not stale (10 minute max)
@@ -221,7 +238,14 @@ http.route({
       }
 
       // Decode the Pub/Sub base64 message
-      const data = JSON.parse(atob(body.message.data));
+      let data: { emailAddress?: string; historyId?: string };
+      try {
+        data = JSON.parse(atob(body.message.data));
+      } catch {
+        return new Response("Malformed base64 or JSON in message.data", {
+          status: 400,
+        });
+      }
       const { emailAddress, historyId } = data;
 
       if (!emailAddress || !historyId) {
