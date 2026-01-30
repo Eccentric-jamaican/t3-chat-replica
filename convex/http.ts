@@ -3,7 +3,7 @@ import { httpAction } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { authComponent, createAuth } from "./auth";
 import { encrypt, decrypt, hmacSha256Hex, timingSafeEqual } from "./integrations/crypto";
-import { chat } from "./chatHttp";
+import { chat, chatHandler } from "./chatHttp";
 
 const http = httpRouter();
 
@@ -332,7 +332,7 @@ http.route({
   path: "/api/chat",
   method: "POST",
   handler: httpAction(async (ctx, request) => {
-    const response = await chat(ctx, request);
+    const response = await chatHandler(ctx, request);
     const origin = request.headers.get("Origin");
     if (origin && allowedOrigins.includes(origin)) {
       response.headers.set("Access-Control-Allow-Origin", origin);

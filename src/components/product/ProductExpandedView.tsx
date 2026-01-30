@@ -18,7 +18,8 @@ import {
 interface ProductExpandedViewProps {
   products: Product[];
   onClose: () => void;
-  onProductClick: (id: string) => void;
+  onProductClick?: (id: string) => void;
+  onSelect?: (id: string) => void;
   selectedIds: string[];
   onToggleSelection: (id: string) => void;
 }
@@ -27,6 +28,7 @@ export function ProductExpandedView({
   products = [],
   onClose,
   onProductClick,
+  onSelect,
   selectedIds,
   onToggleSelection,
 }: ProductExpandedViewProps) {
@@ -127,7 +129,7 @@ export function ProductExpandedView({
               products={paginatedProducts}
               selectedIds={selectedIds}
               onToggleSelection={onToggleSelection}
-              onProductClick={onProductClick}
+              onProductClick={onSelect || onProductClick || (() => {})}
             />
           </div>
         )}

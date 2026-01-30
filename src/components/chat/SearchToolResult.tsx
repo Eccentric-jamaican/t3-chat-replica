@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Globe, ChevronDown, ChevronUp, ExternalLink } from 'lucide-react'
+import { Globe, ChevronDown, ChevronUp } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 
 interface SearchResult {
@@ -10,7 +10,7 @@ interface SearchResult {
 
 interface SearchToolResultProps {
   isLoading: boolean
-  result?: string
+  result?: any
 }
 
 export function SearchToolResult({ isLoading, result }: SearchToolResultProps) {
@@ -26,15 +26,19 @@ export function SearchToolResult({ isLoading, result }: SearchToolResultProps) {
   }
 
   let parsedResults: SearchResult[] = []
-  try {
-    if (result) parsedResults = JSON.parse(result)
-  } catch (e) {
-    // If it's pure text (legacy) or error
-    return (
-      <div className="text-xs bg-black/5 p-2 rounded font-mono text-foreground/60">
-        {result}
-      </div>
-    )
+  if (Array.isArray(result)) {
+    parsedResults = result;
+  } else {
+    try {
+      if (result && typeof result === "string") parsedResults = JSON.parse(result)
+    } catch (e) {
+      // If it's pure text (legacy) or error
+      return (
+        <div className="text-xs bg-black/5 p-2 rounded font-mono text-foreground/60">
+          {result}
+        </div>
+      )
+    }
   }
 
   if (!parsedResults || parsedResults.length === 0) return null

@@ -1,10 +1,10 @@
 import { httpAction } from "./_generated/server";
 import { internal } from "./_generated/api";
-import { Id } from "./_generated/dataModel";
 import { getAuthUserId } from "./auth";
 import {
   searchEbayItems,
 } from "./ebay";
+import { getModelCapabilities } from "./lib/models";
 
 const TOOLS = [
   {
@@ -66,16 +66,16 @@ function mergeToolCalls(acc: any[], defaults: any[]) {
   return acc;
 }
 
-export const chat = httpAction(async (ctx, request) => {
+export async function chatHandler(ctx: any, request: Request) {
   if (request.method !== "POST") {
     return new Response("Method not allowed", { status: 405 });
   }
 
   // 1. Auth check
-  const userId = await getAuthUserId(ctx);
+  await getAuthUserId(ctx);
 
   const body = await request.json();
-  const { threadId, modelId, webSearch, sessionId: clientSessionId } = body;
+  const { threadId, modelId, webSearch } = body;
 
   if (!threadId) {
     return new Response("threadId is required", { status: 400 });
@@ -114,12 +114,14 @@ export const chat = httpAction(async (ctx, request) => {
         const MAX_CYCLES = 5;
         let shouldContinue = true;
         let fullContent = "";
+        let fullReasoning = "";
 
         while (shouldContinue && cycle < MAX_CYCLES && !isAborted) {
           shouldContinue = false;
           cycle++;
 
           const messages = await ctx.runQuery(internal.messages.internalList, { threadId });
+          const capabilities = getModelCapabilities(modelId);
           const openRouterMessages = messages.map((m: any) => {
             const msg: any = { role: m.role };
             msg.content = m.content;
@@ -127,6 +129,21 @@ export const chat = httpAction(async (ctx, request) => {
             if (m.role === "tool") msg.tool_call_id = m.toolCallId;
             return msg;
           });
+
+          // [AGENTIC] Inject System Prompt for Fallback
+          if (capabilities.toolFallback === "regex" && webSearch) {
+             openRouterMessages.unshift({
+               role: "system",
+               content: `You currently lack native tool support. To search the web, you MUST output a search command in this EXACT format:
+[[SEARCH: your search query here]]
+
+Example:
+User: What is the price of bitcoin?
+Assistant: [[SEARCH: price of bitcoin]]
+
+When you receive the search results, answer the user's question.`
+             });
+          }
 
           const abortController = new AbortController();
           const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
@@ -138,7 +155,10 @@ export const chat = httpAction(async (ctx, request) => {
             body: JSON.stringify({
               models: [modelId ?? "google/gemini-2.0-flash-exp:free"],
               messages: openRouterMessages,
-              tools: TOOLS.filter(t => t.function.name !== "search_web" || webSearch),
+              // [AGENTIC] Filter by capability
+              tools: getModelCapabilities(modelId).supportsTools 
+                ? TOOLS.filter(t => t.function.name !== "search_web" || webSearch)
+                : undefined,
               tool_choice: "auto",
               stream: true,
             }),
@@ -155,7 +175,7 @@ export const chat = httpAction(async (ctx, request) => {
           const decoder = new TextDecoder();
           let accumulatedToolCalls: any[] = [];
 
-          while (!isAborted) {
+          readLoop: while (!isAborted) {
             const { done, value } = await reader.read();
             if (done) break;
 
@@ -170,9 +190,32 @@ export const chat = httpAction(async (ctx, request) => {
               try { data = JSON.parse(dataStr); } catch { continue; }
 
               const delta = data.choices[0]?.delta;
+              
               if (delta?.content) {
                 fullContent += delta.content;
                 send({ type: "content", content: delta.content });
+              }
+
+              // [AGENTIC] Stream Reasoning
+              if (delta?.reasoning) {
+                 fullReasoning += delta.reasoning;
+                 send({ type: "reasoning", content: delta.reasoning });
+              }
+              
+              // [AGENTIC] Regex Fallback
+              if (capabilities.toolFallback === "regex" && delta?.content) {
+                 const searchRegex = /\[\[SEARCH: (.*?)\]\]/;
+                 const match = fullContent.match(searchRegex);
+                 if (match) {
+                    const query = match[1];
+                    accumulatedToolCalls.push({
+                      id: `call_${Date.now()}`,
+                      type: "function",
+                      function: { name: "search_web", arguments: JSON.stringify({ query }) }
+                    });
+                    // Break reader loop to execute tool
+                    break readLoop; 
+                 }
               }
 
               if (delta?.tool_calls) {
@@ -213,18 +256,20 @@ export const chat = httpAction(async (ctx, request) => {
                   });
                   const searchData = await res.json();
                   
+                  const searchResults = searchData.organic?.map((item: any) => ({
+                      title: item.title,
+                      link: item.link,
+                      snippet: item.snippet
+                  }));
+
                   send({ 
                     type: "tool-output-partially-available", 
                     toolCallId: tc.id,
-                    output: searchData.organic?.map((item: any) => ({
-                      id: item.link,
-                      title: item.title,
-                      url: item.link,
-                      snippet: item.snippet
-                    }))
+                    output: searchResults
                   });
 
-                  result = searchData.organic?.map((item: any) => `${item.title}: ${item.link}`).join("\n");
+                  // Save JSON for Rich UI and LLM structure
+                  result = JSON.stringify(searchResults);
                 }
               } else if (name === "search_ebay") {
                  const items = await searchEbayItems(argsObj.query, argsObj.limit || 8);
@@ -253,6 +298,15 @@ export const chat = httpAction(async (ctx, request) => {
             messageId,
             content: fullContent,
           });
+
+          // Save Reasoning (if any)
+           if (fullReasoning) {
+             await ctx.runMutation(internal.messages.internalSaveReasoningContent, {
+               messageId,
+               reasoningContent: fullReasoning,
+             });
+          }
+
           await ctx.runMutation(internal.messages.internalUpdateStatus, {
             messageId,
             status: "completed",
@@ -281,4 +335,6 @@ export const chat = httpAction(async (ctx, request) => {
       "Access-Control-Allow-Origin": "*",
     },
   });
-});
+}
+
+export const chat = httpAction(chatHandler);

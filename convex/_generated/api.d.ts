@@ -36,6 +36,7 @@ import type * as integrations_types from "../integrations/types.js";
 import type * as integrations_whatsapp from "../integrations/whatsapp.js";
 import type * as integrations_whatsapp_messaging from "../integrations/whatsapp/messaging.js";
 import type * as integrations_whatsapp_verify from "../integrations/whatsapp/verify.js";
+import type * as lib_models from "../lib/models.js";
 import type * as messages from "../messages.js";
 import type * as profiles from "../profiles.js";
 import type * as streamSessions from "../streamSessions.js";
@@ -76,6 +77,7 @@ declare const fullApi: ApiFromModules<{
   "integrations/whatsapp": typeof integrations_whatsapp;
   "integrations/whatsapp/messaging": typeof integrations_whatsapp_messaging;
   "integrations/whatsapp/verify": typeof integrations_whatsapp_verify;
+  "lib/models": typeof lib_models;
   messages: typeof messages;
   profiles: typeof profiles;
   streamSessions: typeof streamSessions;

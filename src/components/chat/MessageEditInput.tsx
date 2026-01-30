@@ -3,11 +3,13 @@ import { ArrowUp, Paperclip, Globe, X, Brain } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
-import { useMutation, useAction } from "convex/react";
+import { useMutation, useAction, useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import { ModelPicker } from "./ModelPicker";
 import { fetchOpenRouterModels, type AppModel } from "../../lib/openrouter";
 import { useIsMobile } from "../../hooks/useIsMobile";
+import { useNavigate } from "@tanstack/react-router";
+import { v4 as uuidv4 } from "uuid";
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -110,8 +112,11 @@ export function MessageEditInput({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  const updateMessage = useMutation(api.messages.update);
-  const deleteAfter = useMutation(api.messages.deleteAfter);
+  const messages = useQuery(api.messages.list, { threadId: threadId as any, sessionId });
+  const currentThread = useQuery(api.threads.get, { id: threadId as any, sessionId: sessionId ?? "" });
+  const navigate = useNavigate();
+  const createThread = useMutation(api.threads.create);
+  const sendMessage = useMutation(api.messages.send);
   const streamAnswer = useAction(api.chat.streamAnswer);
   const generateUploadUrl = useMutation(api.messages.generateUploadUrl);
 
@@ -171,42 +176,86 @@ export function MessageEditInput({
   };
 
   const handleSubmit = async () => {
-    if (!content.trim() || isSubmitting) return;
+    if (!content.trim() || isSubmitting || !messages) return;
     setIsSubmitting(true);
 
     try {
-      // Update the message content
-      await updateMessage({
-        id: messageId as any,
-        content: content.trim(),
-        sessionId,
+      // Find the message index
+      const messageIndex = messages.findIndex((m: any) => m._id === messageId);
+      if (messageIndex === -1) return;
+
+      const messagesToCopy = messages.slice(0, messageIndex); // Copy all messages BEFORE this one
+      
+      // Determine the correct parent thread ID (avoid unnecessary nesting)
+      // If we are editing a message that exists in the parent thread, the new branch should be a sibling.
+      let finalParentThreadId = threadId;
+      if (currentThread?.parentThreadId) {
+        // Simple heuristic: if we are editing an' earlier part of the conversation, 
+        // we might want a sibling branch.
+        // For now, if it's already a branch, we favor sibling branches for clarity unless specified otherwise.
+        // t3.chat handles this by making forks flat under the original root usually.
+        finalParentThreadId = currentThread.parentThreadId as any;
+      }
+
+      // Create new branched thread
+      const newThreadId = await createThread({
+        sessionId: sessionId || uuidv4(),
+        modelId: selectedModelId,
+        title: content.trim().slice(0, 40),
+        parentThreadId: finalParentThreadId as any,
       });
 
-      // Delete all messages after this one
-      await deleteAfter({
-        threadId: threadId as any,
-        afterMessageId: messageId as any,
+      // Copy messages before
+      for (const msg of messagesToCopy) {
+        if (msg.role === "user" || msg.role === "assistant") {
+          await sendMessage({
+            threadId: newThreadId,
+            content: msg.content,
+            role: msg.role,
+            sessionId,
+            attachments: msg.attachments?.map((a: any) => ({
+              storageId: a.storageId,
+              type: a.type,
+              name: a.name,
+              size: a.size,
+            })),
+          });
+        }
+      }
+
+      // Send the EDITED message as the last user message
+      await sendMessage({
+        threadId: newThreadId,
+        content: content.trim(),
+        role: "user",
         sessionId,
+        attachments: attachments.map((a) => ({
+          storageId: a.storageId as any,
+          type: a.type,
+          name: a.name,
+          size: a.size,
+        })),
       });
 
       // Save model selection
       localStorage.setItem("t3_selected_model", selectedModelId);
 
-      // Regenerate response with the selected model
-      // Only pass reasoningEffort when the current model supports reasoning
+      // CRITICAL: Close UI and Navigate IMMEDIATELY before starting the slow stream
+      onSubmit();
+      navigate({ to: "/chat/$threadId", params: { threadId: newThreadId } });
+
+      // Regenerate response in the new thread (fire and forget on the server)
       await streamAnswer({
-        threadId: threadId as any,
+        threadId: newThreadId,
         modelId: selectedModelId,
         reasoningEffort:
           supportsReasoning && reasoningEffort ? reasoningEffort : undefined,
         reasoningType:
-          supportsReasoning && reasoningEffort ? reasoningType : undefined,
+          supportsReasoning && reasoningEffort ? (reasoningType as any) : undefined,
         webSearch: searchEnabled,
       });
-
-      onSubmit();
     } catch (error) {
-      console.error("Failed to update and regenerate:", error);
+      console.error("Failed to edit and branch:", error);
     } finally {
       setIsSubmitting(false);
     }

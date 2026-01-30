@@ -6,11 +6,12 @@ import {
   useImperativeHandle,
 } from "react";
 import { fetchOpenRouterModels, type AppModel } from "../../lib/openrouter";
-import { ArrowUp, Paperclip, Globe, StopCircle, X, Brain } from "lucide-react";
+import { ArrowUp, Paperclip, Globe, X, Brain, StopCircle } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
-import { useMutation, useAction, useQuery, useConvexAuth, useConvex } from "convex/react";
+import { useMutation, useQuery, useConvexAuth, useConvex } from "convex/react";
+import { Id } from "../../../convex/_generated/dataModel";
 import { api } from "../../../convex/_generated/api";
 import { v4 as uuidv4 } from "uuid";
 import { useNavigate } from "@tanstack/react-router";
@@ -90,15 +91,9 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
     const [threadId, setThreadId] = useState<string | null>(
       existingThreadId || null,
     );
-    const [activeMessageId, setActiveMessageId] = useState<string | null>(null);
-    const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
 
     const createThread = useMutation(api.threads.create);
     const sendMessage = useMutation(api.messages.send);
-    const initializeAssistantMessage = useMutation(
-      api.messages.initializeAssistantMessage,
-    );
-    const abortMessage = useMutation(api.messages.abort);
     const abortLatestInThread = useMutation(api.messages.abortLatestInThread);
     const generateUploadUrl = useMutation(api.messages.generateUploadUrl);
     const { isLoading: isConvexAuthLoading } = useConvexAuth();
@@ -107,14 +102,12 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
     const isThreadStreaming = useQuery(
       api.messages.isThreadStreaming,
       effectiveThreadId && !isConvexAuthLoading
-        ? { threadId: effectiveThreadId as any, sessionId }
+        ? { threadId: effectiveThreadId as Id<"threads">, sessionId }
         : "skip",
     );
 
     useEffect(() => {
       setThreadId(existingThreadId || null);
-      setActiveMessageId(null);
-      setActiveSessionId(null);
     }, [existingThreadId]);
 
     const [attachments, setAttachments] = useState<
@@ -191,13 +184,12 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
 
       if (effectiveThreadId) {
         await abortLatestInThread({
-          threadId: effectiveThreadId as any,
+          threadId: effectiveThreadId as Id<"threads">,
           sessionId,
         });
         console.log("Aborted latest message in thread");
       }
       setIsGenerating(false);
-      setActiveSessionId(null);
     };
 
     useImperativeHandle(ref, () => ({
@@ -235,16 +227,16 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
         }
 
         await sendMessage({
-          threadId: currentThreadId as any,
+          threadId: currentThreadId as Id<"threads">,
           content: messageContent,
           role: "user",
           sessionId,
           attachments: attachments.map(({ storageId, type, name, size }) => ({
-            storageId,
+            storageId: storageId as Id<"_storage">,
             type,
             name,
             size,
-          })) as any,
+          })),
         });
 
         attachments.forEach((attachment) => {
@@ -301,7 +293,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
                 try {
                   const data = JSON.parse(trimmedLine.slice(6));
                   if (data.type === "start") {
-                    setActiveMessageId(data.messageId);
+                    // setActiveMessageId(data.messageId);
                     currentMessageId = data.messageId;
                   } else if (data.type === "content" && currentMessageId) {
                     window.dispatchEvent(
@@ -309,6 +301,37 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
                         detail: {
                           messageId: currentMessageId,
                           content: data.content,
+                        },
+                      })
+                    );
+                  } else if (data.type === "reasoning" && currentMessageId) {
+                    window.dispatchEvent(
+                      new CustomEvent("chat-streaming-reasoning", {
+                        detail: {
+                          messageId: currentMessageId,
+                          content: data.content,
+                        },
+                      })
+                    );
+                  } else if (data.type === "tool-call" && currentMessageId) {
+                    window.dispatchEvent(
+                      new CustomEvent("chat-streaming-tool-call", {
+                        detail: {
+                          messageId: currentMessageId,
+                          toolCallId: data.id,
+                          toolName: data.tool,
+                          args: "",
+                          state: "streaming"
+                        },
+                      })
+                    );
+                  } else if (data.type === "tool-output-partially-available" && currentMessageId) {
+                    window.dispatchEvent(
+                      new CustomEvent("chat-streaming-tool-output", {
+                        detail: {
+                          messageId: currentMessageId,
+                          toolCallId: data.toolCallId,
+                          output: data.output,
                         },
                       })
                     );
@@ -333,8 +356,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
         });
       } finally {
         setIsGenerating(false);
-        setActiveMessageId(null);
-        setActiveSessionId(null);
       }
     };
 

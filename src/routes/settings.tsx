@@ -87,7 +87,7 @@ const SUPPORTED_GMAIL_STATES = [
 
 export const Route = createFileRoute("/settings")({
   component: SettingsPage,
-  validateSearch: (search: Record<string, unknown>) => ({
+  validateSearch: (search: Record<string, unknown>): { tab?: string; gmail?: string } => ({
     tab: SUPPORTED_TABS.includes(search.tab as (typeof SUPPORTED_TABS)[number])
       ? (search.tab as string)
       : undefined,

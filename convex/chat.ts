@@ -6,6 +6,7 @@ import {
   searchEbayItems,
   getEbayItemDetails as fetchEbayDetails,
 } from "./ebay";
+import { getModelCapabilities } from "./lib/models";
 
 const TOOLS = [
   {
@@ -168,17 +169,20 @@ export const streamAnswer = action({
       }
     };
 
-    // Filter tools based on user preference
+    // Detect Model Capabilities
+    const capabilities = getModelCapabilities(args.modelId);
+    
+    // Filter tools based on user preference AND model capability
     const activeTools = TOOLS.filter((t) => {
-      if (t.function.name === "search_web" && !args.webSearch) {
-        console.log(
-          `[TOOLS] Filtering out search_web because webSearch=${args.webSearch}`,
-        );
+      // If model DOES NOT support native tools, we filter them all out
+      // We will handle them via Regex Fallback if configured
+      if (!capabilities.supportsTools) {
         return false;
       }
-      console.log(
-        `[TOOLS] Including tool: ${t.function.name}, webSearch=${args.webSearch}`,
-      );
+
+      if (t.function.name === "search_web" && !args.webSearch) {
+        return false;
+      }
       return true;
     });
 
@@ -320,6 +324,23 @@ export const streamAnswer = action({
             return msg;
           });
 
+        // [AGENTIC LOGIC] Inject System Prompt for Fallback Tools
+        if (capabilities.toolFallback === "regex" && args.webSearch) {
+          const systemPrompt = {
+            role: "system",
+            content: `You currently lack native tool support. To search the web, you MUST output a search command in this EXACT format:
+[[SEARCH: your search query here]]
+
+Example:
+User: What is the price of bitcoin?
+Assistant: [[SEARCH: price of bitcoin]]
+
+When you receive the search results, answer the user's question.
+`
+          };
+          openRouterMessages.unshift(systemPrompt);
+        }
+
         // Create AbortController to cancel the fetch if user aborts
         const controller = new AbortController();
         activeController = controller;
@@ -453,6 +474,30 @@ export const streamAnswer = action({
               // Handle Content - buffer tokens and flush periodically
               if (delta?.content) {
                 contentBuffer += delta.content;
+
+                // [AGENTIC LOGIC] Regex Tool Parsing Fallback
+                // Only check if enabled for this model to avoid perf hit on all models
+                if (capabilities.toolFallback === "regex") {
+                  const searchRegex = /\[\[SEARCH: (.*?)\]\]/;
+                  const match = contentBuffer.match(searchRegex);
+                  if (match) {
+                    const query = match[1];
+                    console.log(`[AGENTIC] Detected manual search command: ${query}`);
+
+                    // Synthesize a tool call
+                    accumulatedToolCalls.push({
+                      id: `call_${Date.now()}`,
+                      type: "function",
+                      function: {
+                        name: "search_web",
+                        arguments: JSON.stringify({ query }),
+                      },
+                    });
+
+                    // We treat this as a "stop" event to execute the tool immediately
+                    break streamLoop;
+                  }
+                }
 
                 // Check abort frequently during content accumulation
                 await checkAbortStatus();
@@ -611,7 +656,7 @@ export const streamAnswer = action({
                       );
 
                       if (!res.ok) {
-                        const errorText = await res.text();
+                        await res.text(); // Consume the body to prevent resource leaks
                         console.error(`Serper API error: ${res.status}`);
                         result = `Search API error: ${res.statusText}`;
                       } else {

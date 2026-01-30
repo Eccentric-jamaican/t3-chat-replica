@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { Sidebar } from "../components/layout/Sidebar";
 import { useIsMobile } from "../hooks/useIsMobile";
 import { ChatInput, type ChatInputHandle } from "../components/chat/ChatInput";
@@ -19,7 +19,6 @@ import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
 import { useState, useRef, useEffect } from "react";
 import { Markdown } from "../components/chat/Markdown";
-import { SearchToolResult } from "../components/chat/SearchToolResult";
 import {
   Tooltip,
   TooltipContent,
@@ -27,11 +26,9 @@ import {
   TooltipTrigger,
 } from "../components/ui/tooltip";
 import { StreamingMessage } from "../components/chat/StreamingMessage";
-import { ReasoningBlock } from "../components/chat/ReasoningBlock";
 import { MessageActionMenu } from "../components/chat/MessageActionMenu";
 import { MessageEditInput } from "../components/chat/MessageEditInput";
 import { MessageMetadata } from "../components/chat/MessageMetadata";
-import { ProductGrid } from "../components/product/ProductGrid";
 import { ProductDrawer } from "../components/product/ProductDrawer";
 import { ProductExpandedView } from "../components/product/ProductExpandedView";
 import { SelectionActionBar } from "../components/product/SelectionActionBar";
@@ -105,13 +102,22 @@ function ChatPage() {
     api.messages.list,
     isConvexAuthLoading ? "skip" : { threadId: threadId as any, sessionId },
   );
-  const deleteAfter = useMutation(api.messages.deleteAfter);
-  const streamAnswer = useAction(api.chat.streamAnswer);
+  const thread = useQuery(
+    api.threads.get,
+    isConvexAuthLoading ? "skip" : { id: threadId as any, sessionId },
+  );
   const createThread = useMutation(api.threads.create);
   const sendMessage = useMutation(api.messages.send);
+  const streamAnswer = useAction(api.chat.streamAnswer);
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingContent, setEditingContent] = useState("");
+  // Products drawer state
+  const [expandedProducts, setExpandedProducts] = useState<Product[] | null>(null);
+
+  const handleOpenExpanded = (products: Product[]) => {
+    setExpandedProducts(products);
+  };
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [retryingMessageId, setRetryingMessageId] = useState<string | null>(
     null,
@@ -122,19 +128,10 @@ function ChatPage() {
   const [sidebarOpen, setSidebarOpen] = useState(!isMobile);
   const [isExpandedOpen, setIsExpandedOpen] = useState(false);
   const [selectedProductIds, setSelectedProductIds] = useState<string[]>([]);
-  const [expandedProducts, setExpandedProducts] = useState<Product[]>([]);
   const chatInputRef = useRef<ChatInputHandle>(null);
 
-  const handleOpenExpanded = () => {
-    if (sidebarOpen && !isMobile) {
-      setSidebarOpen(false);
-      setTimeout(() => {
-        setIsExpandedOpen(true);
-      }, 300);
-    } else {
-      setIsExpandedOpen(true);
-    }
-  };
+  /* handleOpenExpandedView was unused and removed */
+
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const prevMessageCount = useRef(0);
@@ -166,77 +163,10 @@ function ChatPage() {
     setTimeout(() => setCopiedId(null), 2000);
   };
 
-  // Retry: delete messages after the user message and regenerate response
-  const handleRetry = async (userMessageId: string, modelId?: string) => {
-    // Prevent duplicate retries on the same message
-    if (retryingMessageId === userMessageId) return;
-    setRetryingMessageId(userMessageId);
-
-    try {
-      // Delete all messages after this user message
-      await deleteAfter({
-        threadId: threadId as any,
-        afterMessageId: userMessageId as any,
-        sessionId,
-      });
-
-      // Get the model to use (either specified or from localStorage)
-      const selectedModel =
-        modelId ||
-        localStorage.getItem("t3_selected_model") ||
-        "google/gemini-2.0-flash-exp:free";
-
-      // Detect reasoning type based on model ID patterns (per OpenRouter docs)
-      const modelLower = selectedModel.toLowerCase();
-      const supportsEffortReasoning =
-        modelLower.includes("/o1") ||
-        modelLower.includes("/o3") ||
-        modelLower.includes("/gpt-5") ||
-        modelLower.includes("grok");
-
-      const supportsMaxTokensReasoning =
-        (modelLower.includes("gemini") && modelLower.includes("thinking")) ||
-        modelLower.includes("claude-3.7") ||
-        modelLower.includes("claude-sonnet-4") ||
-        modelLower.includes("claude-4") ||
-        (modelLower.includes("qwen") && modelLower.includes("thinking")) ||
-        modelLower.includes("deepseek-r1");
-
-      const savedReasoning = localStorage.getItem("t3_reasoning_effort");
-      const reasoningEffort =
-        (supportsEffortReasoning || supportsMaxTokensReasoning) &&
-        savedReasoning
-          ? (savedReasoning as "low" | "medium" | "high")
-          : undefined;
-      const reasoningType = supportsEffortReasoning
-        ? "effort"
-        : supportsMaxTokensReasoning
-          ? "max_tokens"
-          : undefined;
-
-      // Regenerate the response
-      await streamAnswer({
-        threadId: threadId as any,
-        modelId: selectedModel,
-        webSearch: false,
-        reasoningEffort,
-        reasoningType,
-      });
-    } catch (error) {
-      console.error("Failed to retry:", error);
-      toast.error("Failed to retry message");
-    } finally {
-      setRetryingMessageId(null);
-    }
-  };
-
-  // Branch: create a new thread with messages up to and including the user message
-  const handleBranch = async (userMessageId: string, modelId?: string) => {
+  // Common logic to create a branch from a specific message point
+  const createBranch = async (userMessageId: string, modelId?: string) => {
     if (!messages) return;
-    // Prevent duplicate branch operations on the same message
-    if (branchingMessageId === userMessageId) return;
-    setBranchingMessageId(userMessageId);
-
+    
     try {
       // Find the user message and all messages before it
       const messageIndex = messages.findIndex(
@@ -247,22 +177,33 @@ function ChatPage() {
       const messagesToCopy = messages.slice(0, messageIndex + 1);
       const userMessage = messagesToCopy[messageIndex];
 
-      // Create a new thread - ensure sessionId is persisted
+      // Create a new thread with parent relationship
       let branchSessionId = localStorage.getItem("sendcat_session_id");
       if (!branchSessionId) {
         branchSessionId = uuidv4();
         localStorage.setItem("sendcat_session_id", branchSessionId);
       }
+      
+      const selectedModel =
+        modelId ||
+        localStorage.getItem("t3_selected_model") ||
+        "google/gemini-2.0-flash-exp:free";
+
+      // Determine the correct parent thread ID (avoid unnecessary nesting)
+      let finalParentThreadId = threadId;
+      if (thread?.parentThreadId) {
+        // Simple heuristic for sibling branching
+        finalParentThreadId = thread.parentThreadId as any;
+      }
+
       const newThreadId = await createThread({
         sessionId: branchSessionId,
-        modelId:
-          modelId ||
-          localStorage.getItem("t3_selected_model") ||
-          "google/gemini-2.0-flash-exp:free",
+        modelId: selectedModel,
         title: userMessage.content.slice(0, 40),
+        parentThreadId: finalParentThreadId as any,
       });
 
-      // Copy all messages to the new thread
+      // Copy previous messages to the new thread
       for (const msg of messagesToCopy) {
         if (msg.role === "user" || msg.role === "assistant") {
           await sendMessage({
@@ -281,12 +222,6 @@ function ChatPage() {
       }
 
       // Generate new response in the branched thread
-      const selectedModel =
-        modelId ||
-        localStorage.getItem("t3_selected_model") ||
-        "google/gemini-2.0-flash-exp:free";
-
-      // Detect reasoning type based on model ID patterns (per OpenRouter docs)
       const modelLower = selectedModel.toLowerCase();
       const supportsEffortReasoning =
         modelLower.includes("/o1") ||
@@ -300,7 +235,8 @@ function ChatPage() {
         modelLower.includes("claude-sonnet-4") ||
         modelLower.includes("claude-4") ||
         (modelLower.includes("qwen") && modelLower.includes("thinking")) ||
-        modelLower.includes("deepseek-r1");
+        modelLower.includes("deepseek-r1") ||
+        modelLower.includes("kimi");
 
       const savedReasoning = localStorage.getItem("t3_reasoning_effort");
       const reasoningEffort =
@@ -314,6 +250,11 @@ function ChatPage() {
           ? "max_tokens"
           : undefined;
 
+      // CRITICAL: Navigate and notify IMMEDIATELY before starting the slow stream
+      navigate({ to: "/chat/$threadId", params: { threadId: newThreadId } });
+      toast.success("Branched to new conversation");
+
+      // Regenerate response in the background (server handles the stream)
       await streamAnswer({
         threadId: newThreadId,
         modelId: selectedModel,
@@ -321,17 +262,24 @@ function ChatPage() {
         reasoningEffort,
         reasoningType,
       });
-
-      // Navigate to the new thread
-      navigate({ to: "/chat/$threadId", params: { threadId: newThreadId } });
-
-      toast.success("Branched to new conversation");
     } catch (error) {
-      console.error("Failed to branch:", error);
-      toast.error("Failed to branch conversation");
-    } finally {
-      setBranchingMessageId(null);
+      console.error("Failed to create branch:", error);
+      toast.error("Failed to start new branch");
     }
+  };
+
+  const handleRetry = async (userMessageId: string, modelId?: string) => {
+    if (retryingMessageId === userMessageId) return;
+    setRetryingMessageId(userMessageId);
+    await createBranch(userMessageId, modelId ?? undefined);
+    setRetryingMessageId(null);
+  };
+
+  const handleBranch = async (userMessageId: string, modelId?: string) => {
+    if (branchingMessageId === userMessageId) return;
+    setBranchingMessageId(userMessageId);
+    await createBranch(userMessageId, modelId ?? undefined);
+    setBranchingMessageId(null);
   };
 
   const isEmpty = messages !== undefined && messages.length === 0;
@@ -360,7 +308,19 @@ function ChatPage() {
               />
             </div>
           ) : (
-            <div className="scrollbar-hide message-scroll-area w-full max-w-5xl flex-1 overflow-x-hidden overflow-y-auto pt-20 pb-40 md:pt-20">
+            <div className="scrollbar-hide message-scroll-area w-full max-w-5xl flex-1 overflow-x-hidden overflow-y-auto pt-16 pb-40 md:pt-20">
+              {thread?.parentThreadId && (
+                <div className="mb-8 flex justify-center">
+                  <Link
+                    to="/chat/$threadId"
+                    params={{ threadId: thread.parentThreadId }}
+                    className="group flex items-center gap-2 rounded-full border border-black/5 bg-background/50 px-4 py-1.5 text-[12px] font-bold text-foreground/50 transition-all hover:bg-black/5 hover:text-foreground shadow-sm backdrop-blur-sm"
+                  >
+                    <GitBranch size={14} className="text-primary/60" />
+                    <span>Go to parent conversation</span>
+                  </Link>
+                </div>
+              )}
               <TooltipProvider delayDuration={150}>
                 {messages
                   ?.filter((msg: any) => {
@@ -481,86 +441,27 @@ function ChatPage() {
 
                                 {msg.role === "assistant" ? (
                                   <>
-                                    {/* Display reasoning tokens if present */}
-                                    {msg.reasoningContent && (
-                                      <ReasoningBlock
-                                        content={msg.reasoningContent}
-                                        isStreaming={msg.status === "streaming"}
-                                      />
-                                    )}
-
-                                    {msg.toolCalls &&
-                                      msg.toolCalls.length > 0 && (
-                                        <div className="mb-2 flex flex-col gap-2">
-                                          {msg.toolCalls.map(
-                                            (tc: any, i: number) => {
-                                              if (
-                                                tc.function.name ===
-                                                "search_web"
-                                              ) {
-                                                const toolMsg = messages.find(
-                                                  (m: any) =>
-                                                    m.role === "tool" &&
-                                                    m.toolCallId === tc.id,
-                                                );
-                                                return (
-                                                  <SearchToolResult
-                                                    key={i}
-                                                    isLoading={!toolMsg}
-                                                    result={toolMsg?.content}
-                                                  />
-                                                );
-                                              }
-                                              const toolMsg = messages.find(
-                                                (m: any) =>
-                                                  m.role === "tool" &&
-                                                  m.toolCallId === tc.id,
-                                              );
-                                              return (
-                                                <div
-                                                  key={i}
-                                                  className="flex flex-col gap-1 rounded border border-black/5 bg-black/5 p-2 font-mono text-xs text-foreground/70"
-                                                >
-                                                  <div className="flex items-center gap-2">
-                                                    <div className="h-2 w-2 rounded-full bg-blue-400" />
-                                                    Used tool:{" "}
-                                                    {tc.function.name}
-                                                  </div>
-                                                  {toolMsg && (
-                                                    <div className="line-clamp-2 pl-4 text-[11px] whitespace-pre-wrap text-foreground/50 italic">
-                                                      {toolMsg.content}
-                                                    </div>
-                                                  )}
-                                                </div>
-                                              );
-                                            },
-                                          )}
-                                        </div>
-                                      )}
-
-                                    {msg.content && (
-                                      <StreamingMessage
-                                        messageId={msg._id}
-                                        content={msg.content}
-                                        isStreaming={msg.status === "streaming"}
-                                      />
-                                    )}
-
-                                    {/* eBay Product Grid Integration */}
-                                    {msg.products &&
-                                      msg.products.length > 0 && (
-                                        <ProductGrid
-                                          products={msg.products.slice(0, 8)}
-                                          onViewMore={() => {
-                                            setExpandedProducts(msg.products);
-                                            handleOpenExpanded();
-                                          }}
-                                        />
-                                      )}
+                                    <StreamingMessage
+                                      messageId={msg._id}
+                                      content={msg.content}
+                                      reasoningContent={msg.reasoningContent}
+                                      toolCalls={msg.toolCalls}
+                                      toolResults={
+                                         msg.toolCalls?.reduce((acc: any, tc: any) => {
+                                            const toolMsg = messages?.find((m: any) => m.role === "tool" && m.toolCallId === tc.id);
+                                            if (toolMsg) acc[tc.id] = toolMsg.content;
+                                            return acc;
+                                         }, {})
+                                      }
+                                      products={msg.products}
+                                      isStreaming={msg.status === "streaming"}
+                                      onOpenExpanded={handleOpenExpanded}
+                                    />
 
                                     {msg.status === "streaming" &&
                                       (!msg.content || !msg.content.trim()) &&
-                                      !msg.toolCalls && (
+                                      (!msg.toolCalls || msg.toolCalls.length === 0) &&
+                                      (!msg.reasoningContent || !msg.reasoningContent.trim()) && (
                                         <div className="flex items-center gap-2.5 py-2 text-foreground/60">
                                           <motion.div
                                             className="flex gap-1.5"
@@ -597,13 +498,8 @@ function ChatPage() {
                                       )}
                                   </>
                                 ) : msg.role === "tool" ? (
-                                  // Hide search tool outputs (they're displayed in assistant message)
-                                  msg.name === "search_web" ||
-                                  msg.name === "search_ebay" ? null : (
-                                    <div className="max-h-32 overflow-y-auto rounded border border-black/5 bg-black/5 p-2 font-mono text-xs whitespace-pre-wrap text-foreground/60">
-                                      Tool Output ({msg.name}): {msg.content}
-                                    </div>
-                                  )
+                                  // Hide tool outputs (they're displayed in assistant message now)
+                                  null
                                 ) : (
                                   <>
                                     <Markdown content={msg.content} />
@@ -638,7 +534,7 @@ function ChatPage() {
                             <>
                               <MessageActionMenu
                                 type="retry"
-                                onAction={(modelId) =>
+                                onAction={(modelId?: string) =>
                                   handleRetry(msg._id, modelId)
                                 }
                               >
@@ -648,7 +544,7 @@ function ChatPage() {
                               </MessageActionMenu>
                               <MessageActionMenu
                                 type="branch"
-                                onAction={(modelId) =>
+                                onAction={(modelId?: string) =>
                                   handleBranch(msg._id, modelId)
                                 }
                               >
@@ -691,7 +587,7 @@ function ChatPage() {
                               />
                               <MessageActionMenu
                                 type="branch"
-                                onAction={(modelId) => {
+                                onAction={(modelId?: string) => {
                                   // Find the previous user message to branch from
                                   const msgIndex =
                                     messages?.findIndex(
@@ -713,7 +609,7 @@ function ChatPage() {
                               </MessageActionMenu>
                               <MessageActionMenu
                                 type="retry"
-                                onAction={(modelId) => {
+                                onAction={(modelId?: string) => {
                                   // Find the previous user message to regenerate from
                                   const msgIndex =
                                     messages?.findIndex(
@@ -798,6 +694,7 @@ function ChatPage() {
       <SelectionActionBar
         selectedCount={selectedProductIds.length}
         onClear={() => setSelectedProductIds([])}
+        onAskFollowUp={(id: string) => console.log("Follow up for:", id)}
       />
 
       {/* Product Details Drawer - renders based on productId search param */}
@@ -814,13 +711,12 @@ function ChatPage() {
       <AnimatePresence>
         {isExpandedOpen && (
           <ProductExpandedView
-            products={expandedProducts}
-            onClose={() => setIsExpandedOpen(false)}
-            onProductClick={(id) =>
-              navigate({ to: ".", search: { productId: id } })
-            }
+            isOpen={!!expandedProducts}
+            products={expandedProducts || []}
+            onClose={() => setExpandedProducts(null)}
+            onSelect={(id: string) => console.log("Selected:", id)}
             selectedIds={selectedProductIds}
-            onToggleSelection={(id) => {
+            onToggleSelection={(id: string) => {
               setSelectedProductIds((prev) =>
                 prev.includes(id)
                   ? prev.filter((item) => item !== id)

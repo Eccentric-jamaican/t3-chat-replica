@@ -13,6 +13,7 @@ export default defineSchema({
     userId: v.optional(v.string()), // For logged in users (Better Auth)
     lastMessageAt: v.optional(v.number()),
     isPinned: v.optional(v.boolean()),
+    parentThreadId: v.optional(v.id('threads')),
   })
     .index('by_session', ['sessionId'])
     .index('by_user', ['userId']),

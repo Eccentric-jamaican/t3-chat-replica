@@ -24,6 +24,7 @@ import {
   ChevronLeft,
   LogOut,
   User as UserIcon,
+  GitBranch,
 } from "lucide-react";
 import { authClient } from "../../lib/auth";
 import { motion, AnimatePresence } from "framer-motion";
@@ -540,7 +541,8 @@ export const Sidebar = ({ isOpen: externalOpen, onToggle }: SidebarProps) => {
       {/* Sidebar Toggle & Mini-Header (Fixed) */}
       <div
         className={cn(
-          "fixed top-4 left-4 z-[110] flex items-center gap-1 transition-all duration-300",
+          "fixed z-[110] flex items-center gap-1 transition-all duration-300",
+          "top-[calc(1rem+env(safe-area-inset-top,0px))] left-4",
           !isOpen &&
             "rounded-xl border border-black/5 bg-background/70 px-2 py-1.5 shadow-sm backdrop-blur-sm",
         )}
@@ -1133,15 +1135,25 @@ const ThreadItem = ({
                   : "text-foreground/75 hover:bg-black/[0.03] hover:text-foreground",
             )}
           >
-            <MessageSquare
-              size={14}
-              className={cn(
-                "flex-shrink-0 transition-opacity",
-                thread.isPinned || isActive
-                  ? "opacity-100"
-                  : "opacity-0 group-hover:opacity-40",
-              )}
-            />
+            {thread.parentThreadId ? (
+              <GitBranch
+                size={14}
+                className={cn(
+                  "flex-shrink-0 text-primary/60 transition-opacity",
+                  isActive ? "opacity-100" : "opacity-70 group-hover:opacity-100",
+                )}
+              />
+            ) : (
+              <MessageSquare
+                size={14}
+                className={cn(
+                  "flex-shrink-0 transition-opacity",
+                  thread.isPinned || isActive
+                    ? "opacity-100"
+                    : "opacity-0 group-hover:opacity-40",
+                )}
+              />
+            )}
             {isEditing ? (
               <input
                 autoFocus

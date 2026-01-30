@@ -4,6 +4,7 @@ import { ProductCard } from "./ProductCard";
 interface ProductGridProps {
   products?: Product[];
   onViewMore?: () => void;
+  onOpenExpanded?: (products: Product[]) => void;
   title?: string;
   subtitle?: string;
   hideHeader?: boolean;
@@ -12,6 +13,7 @@ interface ProductGridProps {
 export function ProductGrid({ 
   products = [], 
   onViewMore, 
+  onOpenExpanded,
   title = "Recommended for you",
   subtitle = "Based on your recent search activity",
   hideHeader = false
@@ -32,10 +34,10 @@ export function ProductGrid({
         ))}
       </div>
 
-      {onViewMore && (
+      {(onViewMore || (onOpenExpanded && products.length > 4)) && (
         <div className="mt-8 flex justify-center">
           <button
-            onClick={onViewMore}
+            onClick={() => onOpenExpanded?.(products) || onViewMore?.()}
             className="rounded-full bg-white px-6 py-2 text-sm font-semibold text-gray-900 border border-gray-200 shadow-sm hover:bg-gray-50 transition-colors"
           >
             View more products

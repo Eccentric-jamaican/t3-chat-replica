@@ -64,7 +64,8 @@ export async function fetchOpenRouterModels(): Promise<AppModel[]> {
         modelIdLower.includes('claude-sonnet-4') ||
         modelIdLower.includes('claude-4') ||
         (modelIdLower.includes('qwen') && modelIdLower.includes('thinking')) ||
-        modelIdLower.includes('deepseek-r1');
+        modelIdLower.includes('deepseek-r1') ||
+        modelIdLower.includes('kimi');
       
       if (supportsEffort) reasoningType = 'effort'
       else if (supportsMaxTokens) reasoningType = 'max_tokens'
