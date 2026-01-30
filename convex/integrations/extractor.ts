@@ -77,8 +77,19 @@ export async function extractPurchaseData(opts: {
       }
 
       const data = await response.json();
-      rawJson = data.choices?.[0]?.message?.content;
-      if (rawJson) break;
+      const content = data.choices?.[0]?.message?.content;
+      if (!content) continue;
+
+      // Validate that the content is parseable JSON before accepting it,
+      // so a malformed response from the primary model doesn't prevent
+      // the fallback from running.
+      const cleaned = content
+        .replace(/```json\s*/g, "")
+        .replace(/```\s*/g, "")
+        .trim();
+      JSON.parse(cleaned); // throws if not valid JSON
+      rawJson = content;
+      break;
     } catch (err) {
       console.error(`[Extractor] ${model} error:`, err);
       continue;

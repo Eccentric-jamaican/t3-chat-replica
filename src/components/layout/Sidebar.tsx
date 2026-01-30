@@ -638,6 +638,7 @@ export const Sidebar = ({ isOpen: externalOpen, onToggle }: SidebarProps) => {
               </button>
               <Link
                 to="/pre-alerts"
+                onClick={handleCloseSidebar}
                 className="group flex w-full items-center gap-3 rounded-lg px-3 py-2 text-[13.5px] font-medium text-foreground/75 transition-all hover:bg-black/[0.03] hover:text-foreground [&.active]:bg-black/[0.05] [&.active]:text-foreground"
                 activeProps={{ className: "active" }}
               >

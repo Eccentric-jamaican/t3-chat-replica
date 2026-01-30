@@ -126,8 +126,8 @@ function PreAlertsPage() {
                     <DraftCard
                       key={draft._id}
                       draft={draft}
-                      onConfirm={() => confirmDraft({ draftId: draft._id }).then(() => toast.success("Draft confirmed"))}
-                      onReject={() => rejectDraft({ draftId: draft._id }).then(() => toast.success("Draft rejected"))}
+                      onConfirm={() => confirmDraft({ draftId: draft._id }).then(() => toast.success("Draft confirmed")).catch(() => toast.error("Failed to confirm draft"))}
+                      onReject={() => rejectDraft({ draftId: draft._id }).then(() => toast.success("Draft rejected")).catch(() => toast.error("Failed to reject draft"))}
                     />
                   ))
                 )}
@@ -223,7 +223,14 @@ function DraftCard({
         headers: { 'Content-Type': file.type },
         body: file,
       })
+      if (!result.ok) {
+        const errorBody = await result.text()
+        throw new Error(`Upload failed (${result.status}): ${errorBody}`)
+      }
       const { storageId } = await result.json()
+      if (!storageId) {
+        throw new Error("Upload response missing storageId")
+      }
       await uploadInvoice({ draftId: draft._id, storageId })
       toast.success("Invoice uploaded")
     } catch {

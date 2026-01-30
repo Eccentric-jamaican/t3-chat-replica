@@ -190,7 +190,7 @@ export default defineSchema({
   })
     .index("by_user", ["userId"])
     .index("by_purchase_draft", ["purchaseDraftId"])
-    .index("by_tracking", ["trackingNumber"]),
+    .index("by_user_tracking", ["userId", "trackingNumber"]),
 
   integrationsGmail: defineTable({
     userId: v.string(),

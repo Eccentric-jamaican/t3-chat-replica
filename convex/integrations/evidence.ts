@@ -77,10 +77,12 @@ export const getDraftByTrackingNumber = internalQuery({
 
     const preAlert = await ctx.db
       .query("packagePreAlerts")
-      .withIndex("by_tracking", (q) => q.eq("trackingNumber", tracking))
+      .withIndex("by_user_tracking", (q) =>
+        q.eq("userId", args.userId).eq("trackingNumber", tracking),
+      )
       .first();
 
-    if (!preAlert || preAlert.userId !== args.userId) return null;
+    if (!preAlert) return null;
     return await ctx.db.get(preAlert.purchaseDraftId);
   },
 });
@@ -287,11 +289,11 @@ export const createPackagePreAlert = internalMutation({
     // Idempotency: check if tracking number already exists for this user
     const existing = await ctx.db
       .query("packagePreAlerts")
-      .withIndex("by_tracking", (q) =>
-        q.eq("trackingNumber", args.trackingNumber),
+      .withIndex("by_user_tracking", (q) =>
+        q.eq("userId", args.userId).eq("trackingNumber", args.trackingNumber),
       )
       .first();
-    if (existing && existing.userId === args.userId) {
+    if (existing) {
       if (existing.purchaseDraftId !== args.purchaseDraftId) {
         await ctx.db.patch(existing._id, {
           purchaseDraftId: args.purchaseDraftId,
@@ -347,6 +349,10 @@ export const listPreAlerts = query({
     if (!userId) throw new Error("Authentication required");
 
     if (args.purchaseDraftId) {
+      const draft = await ctx.db.get(args.purchaseDraftId);
+      if (!draft || draft.userId !== userId) {
+        throw new Error("Draft not found or access denied");
+      }
       return await ctx.db
         .query("packagePreAlerts")
         .withIndex("by_purchase_draft", (q) =>

@@ -1,4 +1,4 @@
-import { createFileRoute, useSearch } from '@tanstack/react-router'
+import { createFileRoute, useNavigate, useSearch } from '@tanstack/react-router'
 import { Sidebar } from '../components/layout/Sidebar'
 import { useEffect, useState } from 'react'
 import { useQuery, useMutation, useAction } from 'convex/react'
@@ -39,11 +39,18 @@ function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
+const SUPPORTED_TABS = ['profile', 'security', 'connections', 'rewards', 'contact'] as const
+const SUPPORTED_GMAIL_STATES = ['connected', 'error', 'expired', 'reauth'] as const
+
 export const Route = createFileRoute('/settings')({
   component: SettingsPage,
   validateSearch: (search: Record<string, unknown>) => ({
-    tab: (search.tab as string) || undefined,
-    gmail: (search.gmail as string) || undefined,
+    tab: SUPPORTED_TABS.includes(search.tab as typeof SUPPORTED_TABS[number])
+      ? (search.tab as string)
+      : undefined,
+    gmail: SUPPORTED_GMAIL_STATES.includes(search.gmail as typeof SUPPORTED_GMAIL_STATES[number])
+      ? (search.gmail as string)
+      : undefined,
   }),
 })
 
@@ -51,6 +58,7 @@ function SettingsPage() {
   const isMobile = useIsMobile()
   const [sidebarOpen, setSidebarOpen] = useState(!isMobile)
   const search = useSearch({ from: '/settings' })
+  const navigate = useNavigate({ from: '/settings' })
   const [sessionId] = useState(() => {
     if (typeof window === 'undefined') return ""
     return localStorage.getItem('t3_session_id') || ""
@@ -82,13 +90,20 @@ function SettingsPage() {
 
   // Handle post-OAuth redirect toasts
   useEffect(() => {
+    if (!search.gmail) return
+
     if (search.gmail === 'connected') {
       toast.success("Gmail connected successfully! Initial sync started.")
     } else if (search.gmail === 'error') {
       toast.error("Failed to connect Gmail. Please try again.")
     } else if (search.gmail === 'expired') {
       toast.error("Connection attempt expired. Please try again.")
+    } else if (search.gmail === 'reauth') {
+      toast.error("Gmail requires re-authentication. Please try again.")
     }
+
+    // Clear the gmail param so the toast doesn't reappear on navigation
+    navigate({ search: { ...search, gmail: undefined }, replace: true })
   }, [search.gmail])
 
   // Set linking code from WhatsApp status
@@ -150,9 +165,14 @@ function SettingsPage() {
 
   const handleCopyCode = async () => {
     if (linkingCode) {
-      await navigator.clipboard.writeText(linkingCode)
-      setCodeCopied(true)
-      setTimeout(() => setCodeCopied(false), 2000)
+      try {
+        await navigator.clipboard.writeText(linkingCode)
+        setCodeCopied(true)
+        setTimeout(() => setCodeCopied(false), 2000)
+      } catch (err) {
+        console.error("[Settings] Clipboard write failed:", err)
+        toast.error("Failed to copy code to clipboard")
+      }
     }
   }
 
@@ -605,7 +625,7 @@ function SettingsPage() {
                         type="button"
                         role="switch"
                         aria-checked={preferences?.autoCreatePreAlerts ?? false}
-                        onClick={() => updatePreferences({ autoCreatePreAlerts: !(preferences?.autoCreatePreAlerts ?? false) })}
+                        onClick={() => updatePreferences({ autoCreatePreAlerts: !(preferences?.autoCreatePreAlerts ?? false) }).catch(() => toast.error("Failed to update preference"))}
                         className={cn(
                           "relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors",
                           preferences?.autoCreatePreAlerts ? "bg-primary" : "bg-black/10"

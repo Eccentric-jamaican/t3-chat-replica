@@ -203,7 +203,7 @@ function ExplorePage() {
                     className="group w-[160px] flex-none cursor-pointer md:w-[220px]"
                   >
                     <div className="relative mb-3 aspect-square overflow-hidden rounded-2xl bg-black/5">
-                      {item.image.trim() ? (
+                      {item.image?.trim() ? (
                         <img
                           src={item.image}
                           alt={item.title}

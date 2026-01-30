@@ -2,7 +2,7 @@ import { httpRouter } from "convex/server";
 import { httpAction } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { authComponent, createAuth } from "./auth";
-import { encrypt, decrypt, hmacSha256Hex } from "./integrations/crypto";
+import { encrypt, decrypt, hmacSha256Hex, timingSafeEqual } from "./integrations/crypto";
 
 const http = httpRouter();
 
@@ -104,12 +104,53 @@ http.route({
 
       const tokens = await tokenResponse.json();
 
+      // Validate refresh token — Google omits it on re-auth unless
+      // prompt=consent was set. Fail early so the caller can retry.
+      if (!tokens.refresh_token) {
+        console.error(
+          "[Gmail OAuth] No refresh_token returned. " +
+            "The user may need to re-authenticate with prompt=consent.",
+        );
+        return Response.redirect(
+          `${frontendUrl}/settings?tab=connections&gmail=reauth`,
+          302,
+        );
+      }
+
       // Get user's email and historyId from Gmail profile
       const profileResponse = await fetch(
         "https://gmail.googleapis.com/gmail/v1/users/me/profile",
         { headers: { Authorization: `Bearer ${tokens.access_token}` } },
       );
+
+      if (!profileResponse.ok) {
+        const profileError = await profileResponse.text();
+        console.error(
+          "[Gmail OAuth] Profile fetch failed:",
+          profileResponse.status,
+          profileError,
+        );
+        return Response.redirect(
+          `${frontendUrl}/settings?tab=connections&gmail=error`,
+          302,
+        );
+      }
+
       const profile = await profileResponse.json();
+
+      if (!profile.emailAddress || !profile.historyId) {
+        console.error(
+          "[Gmail OAuth] Profile response missing required fields:",
+          {
+            hasEmail: !!profile.emailAddress,
+            hasHistoryId: !!profile.historyId,
+          },
+        );
+        return Response.redirect(
+          `${frontendUrl}/settings?tab=connections&gmail=error`,
+          302,
+        );
+      }
 
       // Encrypt refresh token and store connection
       const encryptedRefreshToken = await encrypt(tokens.refresh_token);
@@ -239,11 +280,16 @@ http.route({
 
     const hex = await hmacSha256Hex(secret, body);
     const expectedSignature = `sha256=${hex}`;
-    if (signature !== expectedSignature) {
+    if (!timingSafeEqual(signature, expectedSignature)) {
       return new Response("Invalid signature", { status: 403 });
     }
 
-    const payload = JSON.parse(body);
+    let payload: unknown;
+    try {
+      payload = JSON.parse(body);
+    } catch {
+      return new Response("Malformed JSON body", { status: 400 });
+    }
 
     // Schedule async processing
     await ctx.scheduler.runAfter(
