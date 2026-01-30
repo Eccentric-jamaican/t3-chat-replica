@@ -96,10 +96,10 @@ export const streamAnswer = action({
     webSearch: v.optional(v.boolean()),
   },
   handler: async (ctx, args): Promise<Id<"messages"> | null> => {
-    const ABORT_POLL_MS = 100; // Reduced from 250ms for snappier response
+    const ABORT_POLL_MS = 50; // More frequent abort checks for faster stop response
     const MAX_CYCLES = 5;
-    const BUFFER_FLUSH_SIZE = 1; // Flush every chunk (t3.chat-style)
-    const BUFFER_FLUSH_MS = 0; // No time-based buffering
+    const BUFFER_FLUSH_SIZE = 50; // Flush every 50 chars for balance of speed and responsiveness
+    const BUFFER_FLUSH_MS = 30; // Also flush every 30ms for smoother updates
 
     let cycle = 0;
     let currentMessageId: Id<"messages"> | null = null;
@@ -170,7 +170,15 @@ export const streamAnswer = action({
 
     // Filter tools based on user preference
     const activeTools = TOOLS.filter((t) => {
-      if (t.function.name === "search_web" && !args.webSearch) return false;
+      if (t.function.name === "search_web" && !args.webSearch) {
+        console.log(
+          `[TOOLS] Filtering out search_web because webSearch=${args.webSearch}`,
+        );
+        return false;
+      }
+      console.log(
+        `[TOOLS] Including tool: ${t.function.name}, webSearch=${args.webSearch}`,
+      );
       return true;
     });
 
@@ -198,9 +206,12 @@ export const streamAnswer = action({
       if (args.messageId) {
         currentMessageId = args.messageId;
         if (currentSessionId) {
-          const status = await ctx.runQuery(internal.streamSessions.internalGetStatus, {
-            sessionId: currentSessionId,
-          });
+          const status = await ctx.runQuery(
+            internal.streamSessions.internalGetStatus,
+            {
+              sessionId: currentSessionId,
+            },
+          );
           if (status === "aborted") return currentMessageId;
         } else {
           const status = await ctx.runQuery(
@@ -320,14 +331,22 @@ export const streamAnswer = action({
             headers: {
               Authorization: `Bearer ${apiKey}`,
               "Content-Type": "application/json",
-              "HTTP-Referer": "https://Sendcat",
-              "X-Title": "T3 Chat Replica",
+              "HTTP-Referer": "https://sendcat.app",
+              "X-Title": "Sendcat",
             },
             body: JSON.stringify({
-              model: args.modelId ?? "google/gemini-2.0-flash-exp:free",
+              // Use models array for automatic fallback on errors
+              models: [
+                args.modelId ?? "google/gemini-2.0-flash-exp:free",
+                "anthropic/claude-sonnet-4",
+                "google/gemini-2.0-flash-001",
+              ],
               messages: openRouterMessages,
               tools: activeTools.length > 0 ? activeTools : undefined,
-              // Note: tool_choice is not supported by all OpenRouter providers, so we omit it
+              // Tool choice control - let model decide but can override
+              tool_choice: "auto",
+              // Disable parallel tool calls for more reliable execution on free models
+              parallel_tool_calls: false,
               ...(args.reasoningEffort && args.reasoningType === "effort"
                 ? { reasoning: { effort: args.reasoningEffort } }
                 : args.reasoningEffort && args.reasoningType === "max_tokens"
@@ -408,6 +427,17 @@ export const streamAnswer = action({
                 continue;
               }
 
+              // Handle mid-stream errors (OpenRouter sends errors as SSE data after some tokens were sent)
+              if (data.error) {
+                console.error(`OpenRouter stream error: ${data.error.message}`);
+                isAborted = true;
+                controller.abort();
+                try {
+                  await reader.cancel();
+                } catch {}
+                break streamLoop;
+              }
+
               const delta = data.choices[0]?.delta;
               const chunkFinishReason = data.choices[0]?.finish_reason;
 
@@ -423,6 +453,19 @@ export const streamAnswer = action({
               // Handle Content - buffer tokens and flush periodically
               if (delta?.content) {
                 contentBuffer += delta.content;
+
+                // Check abort frequently during content accumulation
+                await checkAbortStatus();
+                if (isAborted) {
+                  console.log(
+                    "Aborting stream - user requested stop during content accumulation",
+                  );
+                  controller.abort();
+                  try {
+                    await reader.cancel();
+                  } catch {}
+                  break streamLoop;
+                }
 
                 // Flush if buffer is large enough or enough time has passed
                 const shouldFlush =
@@ -544,23 +587,55 @@ export const streamAnswer = action({
                     result =
                       "Error: SERPER_API_KEY not configured in environment variables.";
                   } else {
-                    const res = await fetch(
-                      "https://google.serper.dev/search",
-                      {
-                        method: "POST",
-                        headers: {
-                          "X-API-KEY": serperKey,
-                          "Content-Type": "application/json",
-                        },
-                        body: JSON.stringify({ q: argsObj.query }),
-                      },
+                    console.log(
+                      `[SEARCH_WEB] Executing search for query: ${argsObj.query}`,
                     );
+                    try {
+                      const res = await fetch(
+                        "https://google.serper.dev/search",
+                        {
+                          method: "POST",
+                          headers: {
+                            "X-API-KEY": serperKey,
+                            "Content-Type": "application/json",
+                          },
+                          body: JSON.stringify({
+                            q: argsObj.query,
+                            num: 5,
+                          }),
+                        },
+                      );
 
-                    if (!res.ok) {
-                      result = JSON.stringify({ error: res.statusText });
-                    } else {
-                      const data = await res.json();
-                      result = JSON.stringify(data.organic?.slice(0, 5) || []);
+                      console.log(
+                        `[SEARCH_WEB] Response status: ${res.status}`,
+                      );
+
+                      if (!res.ok) {
+                        const errorText = await res.text();
+                        console.error(`Serper API error: ${res.status}`);
+                        result = `Search API error: ${res.statusText}`;
+                      } else {
+                        const data = await res.json();
+                        console.log(
+                          `[SEARCH_WEB] Got ${data.organic?.length || 0} results`,
+                        );
+                        // Format results as a simple text list for the model
+                        const results =
+                          data.organic
+                            ?.slice(0, 5)
+                            .map(
+                              (item: any, i: number) =>
+                                `${i + 1}. ${item.title} - ${item.link}`,
+                            )
+                            .join("\n") || "No results found";
+
+                        result = `Search results for "${argsObj.query}":\n\n${results}`;
+                      }
+                    } catch (fetchError: any) {
+                      console.error(
+                        `Serper fetch error: ${fetchError.message}`,
+                      );
+                      result = `Search failed: ${fetchError.message}`;
                     }
                   }
                 } else if (name === "search_ebay") {
@@ -635,9 +710,12 @@ export const streamAnswer = action({
 
       // Final safety check: ensure message isn't left in streaming state
       if (currentSessionId) {
-        const status = await ctx.runQuery(internal.streamSessions.internalGetStatus, {
-          sessionId: currentSessionId,
-        });
+        const status = await ctx.runQuery(
+          internal.streamSessions.internalGetStatus,
+          {
+            sessionId: currentSessionId,
+          },
+        );
         if (status === "streaming") {
           await ctx.runMutation(internal.streamSessions.internalComplete, {
             sessionId: currentSessionId,

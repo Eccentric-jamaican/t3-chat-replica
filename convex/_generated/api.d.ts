@@ -10,6 +10,7 @@
 
 import type * as auth from "../auth.js";
 import type * as chat from "../chat.js";
+import type * as chatHttp from "../chatHttp.js";
 import type * as crons from "../crons.js";
 import type * as ebay from "../ebay.js";
 import type * as explore from "../explore.js";
@@ -49,6 +50,7 @@ import type {
 declare const fullApi: ApiFromModules<{
   auth: typeof auth;
   chat: typeof chat;
+  chatHttp: typeof chatHttp;
   crons: typeof crons;
   ebay: typeof ebay;
   explore: typeof explore;

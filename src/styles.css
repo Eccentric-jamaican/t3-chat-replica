@@ -309,3 +309,23 @@
   overflow-anchor: auto;
   height: 1px;
 }
+@keyframes cursor-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+.streaming-cursor {
+  display: inline-block;
+  width: 2px;
+  height: 1.1em;
+  background-color: var(--color-primary);
+  margin-left: 2px;
+  vertical-align: middle;
+  animation: cursor-blink 1s step-end infinite;
+  line-height: 1;
+}
+
+/* Prevent layout shift when cursor appears */
+.streaming-container {
+  min-height: 1.5em;
+}

@@ -95,14 +95,15 @@ function ChatPage() {
   const { isLoading: isConvexAuthLoading } = useConvexAuth();
 
   // Get sessionId for ownership verification
-  const sessionId = typeof window !== "undefined"
-    ? localStorage.getItem("t3_session_id") || undefined
-    : undefined;
+  const sessionId =
+    typeof window !== "undefined"
+      ? localStorage.getItem("sendcat_session_id") || undefined
+      : undefined;
 
   // Skip query while Convex auth is loading to prevent "Access denied" on reload
   const messages = useQuery(
     api.messages.list,
-    isConvexAuthLoading ? "skip" : { threadId: threadId as any, sessionId }
+    isConvexAuthLoading ? "skip" : { threadId: threadId as any, sessionId },
   );
   const deleteAfter = useMutation(api.messages.deleteAfter);
   const streamAnswer = useAction(api.chat.streamAnswer);
@@ -247,10 +248,10 @@ function ChatPage() {
       const userMessage = messagesToCopy[messageIndex];
 
       // Create a new thread - ensure sessionId is persisted
-      let branchSessionId = localStorage.getItem("t3_session_id");
+      let branchSessionId = localStorage.getItem("sendcat_session_id");
       if (!branchSessionId) {
         branchSessionId = uuidv4();
-        localStorage.setItem("t3_session_id", branchSessionId);
+        localStorage.setItem("sendcat_session_id", branchSessionId);
       }
       const newThreadId = await createThread({
         sessionId: branchSessionId,
@@ -539,6 +540,7 @@ function ChatPage() {
 
                                     {msg.content && (
                                       <StreamingMessage
+                                        messageId={msg._id}
                                         content={msg.content}
                                         isStreaming={msg.status === "streaming"}
                                       />

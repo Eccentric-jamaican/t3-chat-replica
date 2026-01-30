@@ -3,6 +3,7 @@ import { httpAction } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { authComponent, createAuth } from "./auth";
 import { encrypt, decrypt, hmacSha256Hex, timingSafeEqual } from "./integrations/crypto";
+import { chat } from "./chatHttp";
 
 const http = httpRouter();
 
@@ -17,23 +18,6 @@ const allowedOrigins = process.env.ALLOWED_ORIGINS
 authComponent.registerRoutes(http, createAuth, {
   cors: {
     allowedOrigins,
-  },
-  onRequest: (request) => {
-    const url = new URL(request.url);
-    console.log("[AUTH HTTP] Incoming request:", {
-      method: request.method,
-      path: url.pathname,
-      timestamp: new Date().toISOString(),
-    });
-  },
-  onResponse: (request, response) => {
-    const url = new URL(request.url);
-    console.log("[AUTH HTTP] Response:", {
-      method: request.method,
-      path: url.pathname,
-      status: response.status,
-      timestamp: new Date().toISOString(),
-    });
   },
 });
 
@@ -276,11 +260,11 @@ http.route({
   method: "GET",
   handler: httpAction(async (_ctx, request) => {
     const url = new URL(request.url);
-    const mode = url.searchParams.get("hub.mode");
+    const modeValue = url.searchParams.get("hub.mode");
     const token = url.searchParams.get("hub.verify_token");
     const challenge = url.searchParams.get("hub.challenge");
 
-    if (mode === "subscribe" && token === process.env.WHATSAPP_VERIFY_TOKEN) {
+    if (modeValue === "subscribe" && token === process.env.WHATSAPP_VERIFY_TOKEN) {
       return new Response(challenge, { status: 200 });
     }
     return new Response("Forbidden", { status: 403 });
@@ -323,6 +307,38 @@ http.route({
     );
 
     return new Response("OK", { status: 200 });
+  }),
+});
+
+// ── Chat: Streaming SSE ────────────────────────────────────────────────
+
+http.route({
+  path: "/api/chat",
+  method: "OPTIONS",
+  handler: httpAction(async (_, request) => {
+    const origin = request.headers.get("Origin");
+    const headers = new Headers();
+    if (origin && allowedOrigins.includes(origin)) {
+      headers.set("Access-Control-Allow-Origin", origin);
+      headers.set("Access-Control-Allow-Methods", "POST, GET, OPTIONS");
+      headers.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
+      headers.set("Access-Control-Allow-Credentials", "true");
+    }
+    return new Response(null, { status: 204, headers });
+  }),
+});
+
+http.route({
+  path: "/api/chat",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const response = await chat(ctx, request);
+    const origin = request.headers.get("Origin");
+    if (origin && allowedOrigins.includes(origin)) {
+      response.headers.set("Access-Control-Allow-Origin", origin);
+      response.headers.set("Access-Control-Allow-Credentials", "true");
+    }
+    return response;
   }),
 });
 

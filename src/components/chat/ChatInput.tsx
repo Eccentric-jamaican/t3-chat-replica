@@ -10,12 +10,13 @@ import { ArrowUp, Paperclip, Globe, StopCircle, X, Brain } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
-import { useMutation, useAction, useQuery, useConvexAuth } from "convex/react";
+import { useMutation, useAction, useQuery, useConvexAuth, useConvex } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import { v4 as uuidv4 } from "uuid";
 import { useNavigate } from "@tanstack/react-router";
 import { ModelPicker } from "./ModelPicker";
 import { useIsMobile } from "../../hooks/useIsMobile";
+import { toast } from "sonner";
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -80,10 +81,10 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
 
     const [sessionId] = useState(() => {
       if (typeof window === "undefined") return "";
-      const saved = localStorage.getItem("t3_session_id");
+      const saved = localStorage.getItem("sendcat_session_id");
       if (saved) return saved;
       const newId = uuidv4();
-      localStorage.setItem("t3_session_id", newId);
+      localStorage.setItem("sendcat_session_id", newId);
       return newId;
     });
     const [threadId, setThreadId] = useState<string | null>(
@@ -98,15 +99,10 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
       api.messages.initializeAssistantMessage,
     );
     const abortMessage = useMutation(api.messages.abort);
-    const startStreamSession = useMutation(api.streamSessions.start);
-    const abortStreamSession = useMutation(api.streamSessions.abort);
-    const abortLatestStreamSession = useMutation(
-      api.streamSessions.abortLatestByThread,
-    );
-    const streamAnswer = useAction(api.chat.streamAnswer);
     const abortLatestInThread = useMutation(api.messages.abortLatestInThread);
     const generateUploadUrl = useMutation(api.messages.generateUploadUrl);
     const { isLoading: isConvexAuthLoading } = useConvexAuth();
+    const convexClient = useConvex();
     const effectiveThreadId = threadId ?? existingThreadId ?? null;
     const isThreadStreaming = useQuery(
       api.messages.isThreadStreaming,
@@ -134,6 +130,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     const textareaRef = useRef<HTMLTextAreaElement>(null);
+    const abortControllerRef = useRef<AbortController | null>(null);
 
     const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
       const files = Array.from(e.target.files || []);
@@ -189,46 +186,14 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
 
     const handleStop = async () => {
       console.log("Stopping generation, threadId:", effectiveThreadId);
-      let aborted = false;
+      abortControllerRef.current?.abort();
+      abortControllerRef.current = null;
 
-      if (activeSessionId) {
-        try {
-          await abortStreamSession({ sessionId: activeSessionId as any, clientSessionId: sessionId });
-          console.log("Aborted active session:", activeSessionId);
-          aborted = true;
-        } catch (error) {
-          console.warn("Failed to abort active session, falling back", error);
-        }
-      }
-
-      if (!aborted && effectiveThreadId) {
-        try {
-          await abortLatestStreamSession({
-            threadId: effectiveThreadId as any,
-            sessionId,
-          });
-          console.log("Aborted latest stream session in thread");
-          aborted = true;
-        } catch (error) {
-          console.warn(
-            "Failed to abort latest stream session, falling back",
-            error,
-          );
-        }
-      }
-
-      if (!aborted && activeMessageId) {
-        try {
-          await abortMessage({ messageId: activeMessageId as any, sessionId });
-          console.log("Aborted active message:", activeMessageId);
-          aborted = true;
-        } catch (error) {
-          console.warn("Failed to abort active message, falling back", error);
-        }
-      }
-
-      if (!aborted && effectiveThreadId) {
-        await abortLatestInThread({ threadId: effectiveThreadId as any, sessionId });
+      if (effectiveThreadId) {
+        await abortLatestInThread({
+          threadId: effectiveThreadId as any,
+          sessionId,
+        });
         console.log("Aborted latest message in thread");
       }
       setIsGenerating(false);
@@ -289,38 +254,83 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
         });
         setAttachments([]);
 
-        const newMessageId = await initializeAssistantMessage({
-          threadId: currentThreadId as any,
-          modelId: selectedModelId,
-          sessionId,
-        });
-        setActiveMessageId(newMessageId);
+        // ── Production-Style SSE Streaming ──────────────────────────────
+        const convexSiteUrl = import.meta.env.VITE_CONVEX_SITE_URL;
+        console.log("[ChatInput] Starting SSE fetch to:", `${convexSiteUrl}/api/chat`);
+        const controller = new AbortController();
+        abortControllerRef.current = controller;
 
-        const newSessionId = await startStreamSession({
-          threadId: currentThreadId as any,
-          messageId: newMessageId as any,
-          sessionId,
+        const token = await (convexClient as any).getAuthToken?.() || null;
+        const response = await fetch(`${convexSiteUrl}/api/chat`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({
+            threadId: currentThreadId,
+            content: messageContent,
+            modelId: selectedModelId,
+            webSearch: searchEnabled,
+            sessionId: sessionId,
+          }),
+          signal: controller.signal,
         });
-        setActiveSessionId(newSessionId);
 
-        // Trigger LLM streaming
-        // Only pass reasoningEffort when the current model supports reasoning AND it's set
-        await streamAnswer({
-          threadId: currentThreadId as any,
-          messageId: newMessageId as any,
-          sessionId: newSessionId as any,
-          clientSessionId: sessionId,
-          modelId: selectedModelId,
-          reasoningEffort:
-            supportsReasoning && reasoningEffort ? reasoningEffort : undefined,
-          reasoningType:
-            supportsReasoning && reasoningEffort ? reasoningType : undefined,
-          webSearch: searchEnabled,
-        });
+        if (!response.ok) {
+          throw new Error("Failed to start stream");
+        }
+
+        const reader = response.body?.getReader();
+        const decoder = new TextDecoder();
+        let currentMessageId: string | null = null;
+        let buffer = "";
+
+        if (reader) {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split("\n");
+            buffer = lines.pop() || ""; // Keep the partial line in the buffer
+
+            for (const line of lines) {
+              const trimmedLine = line.trim();
+              if (trimmedLine.startsWith("data: ")) {
+                try {
+                  const data = JSON.parse(trimmedLine.slice(6));
+                  if (data.type === "start") {
+                    setActiveMessageId(data.messageId);
+                    currentMessageId = data.messageId;
+                  } else if (data.type === "content" && currentMessageId) {
+                    window.dispatchEvent(
+                      new CustomEvent("chat-streaming-content", {
+                        detail: {
+                          messageId: currentMessageId,
+                          content: data.content,
+                        },
+                      })
+                    );
+                  } else if (data.type === "error") {
+                    toast.error(data.error);
+                  }
+                } catch (e) {
+                  // Partial or corrupted data skip
+                }
+              }
+            }
+          }
+        }
 
         setIsGenerating(false);
-      } catch (error) {
-        console.error("Failed to send message:", error);
+      } catch (error: any) {
+        console.error("[ChatInput] Failed to send message:", {
+          message: error.message,
+          name: error.name,
+          stack: error.stack,
+          error: error
+        });
       } finally {
         setIsGenerating(false);
         setActiveMessageId(null);

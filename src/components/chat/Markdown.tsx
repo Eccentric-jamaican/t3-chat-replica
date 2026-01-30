@@ -15,7 +15,49 @@ import {
 interface MarkdownProps {
   content: string;
   enableHighlight?: boolean;
+  isStreaming?: boolean;
 }
+
+const renderCursor = () => (
+  <span className="streaming-cursor" aria-hidden="true" />
+);
+
+/**
+ * Recursively searches for the cursor sentinel in children and replaces it with the cursor component.
+ */
+const withCursor = (children: any): any => {
+  if (typeof children === "string") {
+    if (children.endsWith("▊")) {
+      return (
+        <>
+          {children.slice(0, -1)}
+          {renderCursor()}
+        </>
+      );
+    }
+    return children;
+  }
+
+  if (Array.isArray(children)) {
+    const lastIndex = children.length - 1;
+    return children.map((child, i) => {
+      if (i === lastIndex) return withCursor(child);
+      return child;
+    });
+  }
+
+  if (children?.props?.children) {
+    return {
+      ...children,
+      props: {
+        ...children.props,
+        children: withCursor(children.props.children),
+      },
+    };
+  }
+
+  return children;
+};
 
 const languageExtensions: Record<string, string> = {
   js: "js",
@@ -180,6 +222,7 @@ const MarkdownTable = ({ ...props }: any) => {
 export const Markdown = ({
   content,
   enableHighlight = true,
+  isStreaming = false,
 }: MarkdownProps) => {
   const [wrapEnabled, setWrapEnabled] = useState(false);
 
@@ -193,6 +236,9 @@ export const Markdown = ({
   useEffect(() => {
     localStorage.setItem("markdown.codeWrap", String(wrapEnabled));
   }, [wrapEnabled]);
+
+  // Append sentinel if streaming
+  const contentWithSentinel = isStreaming ? content + "▊" : content;
 
   return (
     <TooltipProvider delayDuration={150}>
@@ -214,13 +260,17 @@ export const Markdown = ({
               <th
                 className="px-4 py-2 text-left text-xs font-bold tracking-wider text-foreground/70 uppercase"
                 {...props}
-              />
+              >
+                {withCursor(props.children)}
+              </th>
             ),
             td: ({ node, ...props }) => (
               <td
                 className="border-t border-white/5 px-4 py-2 text-sm"
                 {...props}
-              />
+              >
+                {withCursor(props.children)}
+              </td>
             ),
             code: ({ className, children, ...props }: any) => {
               const match = /language-(\w+)/.exec(className || "");
@@ -288,7 +338,7 @@ export const Markdown = ({
                       style={{ fontFamily: "'JetBrains Mono', monospace" }}
                       {...props}
                     >
-                      {children}
+                      {withCursor(children)}
                     </code>
                   </div>
                 </div>
@@ -297,7 +347,7 @@ export const Markdown = ({
                   className="rounded-md border border-white/10 bg-white/10 px-1.5 py-0.5 text-[0.9em] font-medium"
                   {...props}
                 >
-                  {children}
+                  {withCursor(children)}
                 </code>
               );
             },
@@ -305,36 +355,52 @@ export const Markdown = ({
               <h1
                 className="mt-6 mb-2 text-[28px] leading-[36px] font-bold"
                 {...props}
-              />
+              >
+                {withCursor(props.children)}
+              </h1>
             ),
             h2: ({ node, ...props }) => (
               <h2
                 className="mt-5 mb-2 text-[24px] leading-[32px] font-bold"
                 {...props}
-              />
+              >
+                {withCursor(props.children)}
+              </h2>
             ),
             h3: ({ node, ...props }) => (
               <h3
                 className="mt-4 mb-2 text-[20px] leading-[32px] font-semibold"
                 {...props}
-              />
+              >
+                {withCursor(props.children)}
+              </h3>
             ),
             ul: ({ node, ...props }) => (
-              <ul className="mb-4 list-inside list-disc space-y-2" {...props} />
+              <ul className="mb-4 list-inside list-disc space-y-2" {...props}>
+                {withCursor(props.children)}
+              </ul>
             ),
             ol: ({ node, ...props }) => (
               <ol
                 className="mb-4 list-inside list-decimal space-y-2"
                 {...props}
-              />
+              >
+                {withCursor(props.children)}
+              </ol>
             ),
             p: ({ node, ...props }) => (
-              <p className="mb-4 last:mb-0" {...props} />
+              <p className="mb-4 last:mb-0" {...props}>
+                {withCursor(props.children)}
+              </p>
             ),
-            li: ({ node, ...props }) => <li className="" {...props} />,
+            li: ({ node, ...props }) => (
+              <li className="" {...props}>
+                {withCursor(props.children)}
+              </li>
+            ),
           }}
         >
-          {content}
+          {contentWithSentinel}
         </ReactMarkdown>
       </div>
     </TooltipProvider>

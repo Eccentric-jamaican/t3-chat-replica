@@ -409,7 +409,8 @@ export const Sidebar = ({ isOpen: externalOpen, onToggle }: SidebarProps) => {
   const [internalOpen, setInternalOpen] = useState(!isMobile); // Closed by default on mobile
   const hasSyncedMobileRef = useRef(false);
 
-  const { data: authSession, isPending: isAuthPending } = authClient.useSession();
+  const { data: authSession, isPending: isAuthPending } =
+    authClient.useSession();
   const { isLoading: isConvexAuthLoading } = useConvexAuth();
   const currentUserId = authSession?.user?.id ?? null;
 
@@ -448,10 +449,10 @@ export const Sidebar = ({ isOpen: externalOpen, onToggle }: SidebarProps) => {
   const [searchQuery, setSearchQuery] = useState("");
   const [sessionId] = useState(() => {
     if (typeof window === "undefined") return "";
-    const saved = localStorage.getItem("t3_session_id");
+    const saved = localStorage.getItem("sendcat_session_id");
     if (saved) return saved;
     const newId = uuidv4();
-    localStorage.setItem("t3_session_id", newId);
+    localStorage.setItem("sendcat_session_id", newId);
     return newId;
   });
 
@@ -480,10 +481,11 @@ export const Sidebar = ({ isOpen: externalOpen, onToggle }: SidebarProps) => {
   }, [isMobile, isOpen]);
 
   // Skip query during auth state transitions to prevent showing wrong user's threads
-  const shouldSkipQuery = isAuthPending || isConvexAuthLoading || isAuthTransitioning;
+  const shouldSkipQuery =
+    isAuthPending || isConvexAuthLoading || isAuthTransitioning;
   const threads = useQuery(
     api.threads.list,
-    shouldSkipQuery ? "skip" : { sessionId, search: searchQuery || undefined }
+    shouldSkipQuery ? "skip" : { sessionId, search: searchQuery || undefined },
   );
   const togglePinned = useMutation(api.threads.togglePinned);
   const removeThread = useMutation(api.threads.remove);
@@ -504,7 +506,11 @@ export const Sidebar = ({ isOpen: externalOpen, onToggle }: SidebarProps) => {
       setEditingId(null);
       return;
     }
-    await renameThread({ id, title: editingTitle.trim(), sessionId: sessionId || undefined });
+    await renameThread({
+      id,
+      title: editingTitle.trim(),
+      sessionId: sessionId || undefined,
+    });
     setEditingId(null);
   };
 
@@ -743,30 +749,49 @@ export const Sidebar = ({ isOpen: externalOpen, onToggle }: SidebarProps) => {
                   <button className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-[13.5px] font-bold text-foreground/60 transition-all hover:bg-black/5">
                     <div className="flex h-7 w-7 items-center justify-center rounded-full bg-primary/10 text-primary">
                       {authSession?.user?.image ? (
-                        <img src={authSession.user.image} className="h-full w-full rounded-full border border-black/5 object-cover" />
+                        <img
+                          src={authSession.user.image}
+                          className="h-full w-full rounded-full border border-black/5 object-cover"
+                        />
                       ) : (
                         <UserIcon size={14} />
                       )}
                     </div>
-                    <span className="flex-1 truncate text-left">{authSession?.user?.name}</span>
+                    <span className="flex-1 truncate text-left">
+                      {authSession?.user?.name}
+                    </span>
                   </button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent side="top" align="start" className="w-52" sideOffset={10}>
+                <DropdownMenuContent
+                  side="top"
+                  align="start"
+                  className="w-52"
+                  sideOffset={10}
+                >
                   <div className="flex items-center gap-2 px-3 py-2.5">
                     <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-primary">
                       {authSession?.user?.image ? (
-                        <img src={authSession.user.image} className="h-full w-full rounded-full border border-black/5 object-cover" />
+                        <img
+                          src={authSession.user.image}
+                          className="h-full w-full rounded-full border border-black/5 object-cover"
+                        />
                       ) : (
                         <UserIcon size={16} />
                       )}
                     </div>
                     <div className="flex flex-1 flex-col overflow-hidden">
-                      <span className="truncate text-xs font-semibold">{authSession?.user?.name}</span>
-                      <span className="truncate text-[10px] text-foreground/50">{authSession?.user?.email}</span>
+                      <span className="truncate text-xs font-semibold">
+                        {authSession?.user?.name}
+                      </span>
+                      <span className="truncate text-[10px] text-foreground/50">
+                        {authSession?.user?.email}
+                      </span>
                     </div>
                   </div>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem onSelect={() => navigate({ to: "/settings" })}>
+                  <DropdownMenuItem
+                    onSelect={() => navigate({ to: "/settings" })}
+                  >
                     <Settings size={15} />
                     <span>Settings</span>
                   </DropdownMenuItem>
@@ -1133,7 +1158,14 @@ const ThreadItem = ({
         </DropdownMenuTrigger>
         {!isEditing && (
           <DropdownMenuContent side="right" align="start" sideOffset={10}>
-            <DropdownMenuItem onSelect={() => togglePinned({ id: thread._id, sessionId: sessionId || undefined })}>
+            <DropdownMenuItem
+              onSelect={() =>
+                togglePinned({
+                  id: thread._id,
+                  sessionId: sessionId || undefined,
+                })
+              }
+            >
               <Pin size={15} />
               <span>{thread.isPinned ? "Unpin" : "Pin"}</span>
             </DropdownMenuItem>
@@ -1222,7 +1254,10 @@ const ThreadItem = ({
           <button
             onClick={(e) => {
               e.stopPropagation();
-              togglePinned({ id: thread._id, sessionId: sessionId || undefined });
+              togglePinned({
+                id: thread._id,
+                sessionId: sessionId || undefined,
+              });
             }}
             className="rounded p-1 text-foreground/40 transition-colors hover:bg-black/5 hover:text-foreground"
           >
