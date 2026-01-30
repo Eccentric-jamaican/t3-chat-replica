@@ -1,4 +1,3 @@
-import { v } from "convex/values";
 import { query, mutation, action } from "../../_generated/server";
 import { internal } from "../../_generated/api";
 import { getAuthUserId } from "../../auth";
@@ -93,15 +92,13 @@ export const startOAuth = action({
  */
 export const triggerSync = action({
   args: {},
-  handler: async (ctx) => {
+  handler: async (ctx): Promise<any> => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) throw new Error("Authentication required");
     const userId = identity.subject;
 
-    return await ctx.runAction(internal.integrations.gmail.sync.syncGmail, {
+    return await ctx.runAction(internal.integrations.gmail.sync.syncGmail as any, {
       userId,
-      // Manual sync: use a larger window so users can connect and then
-      // immediately find older receipts already in their inbox.
       daysBack: 30,
     });
   },
