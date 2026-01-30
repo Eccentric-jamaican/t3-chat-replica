@@ -637,20 +637,25 @@ export const Sidebar = ({ isOpen: externalOpen, onToggle }: SidebarProps) => {
                 />
                 <span>Explore</span>
               </Link>
-              <button className="group flex w-full items-center gap-3 rounded-lg px-3 py-2 text-[13.5px] font-medium text-foreground/75 transition-all hover:bg-black/[0.03] hover:text-foreground">
-                <Bookmark
+              <Link
+                to="/packages"
+                onClick={handleCloseSidebar}
+                className="group flex w-full items-center gap-3 rounded-lg px-3 py-2 text-[13.5px] font-medium text-foreground/75 transition-all hover:bg-black/[0.03] hover:text-foreground [&.active]:bg-black/[0.05] [&.active]:text-foreground"
+                activeProps={{ className: "active" }}
+              >
+                <Package
                   size={16}
-                  className="text-foreground/40 transition-colors group-hover:text-foreground"
+                  className="text-foreground/40 transition-colors group-hover:text-foreground group-[.active]:text-foreground"
                 />
-                <span>Saved items</span>
-              </button>
+                <span>Packages</span>
+              </Link>
               <Link
                 to="/pre-alerts"
                 onClick={handleCloseSidebar}
                 className="group flex w-full items-center gap-3 rounded-lg px-3 py-2 text-[13.5px] font-medium text-foreground/75 transition-all hover:bg-black/[0.03] hover:text-foreground [&.active]:bg-black/[0.05] [&.active]:text-foreground"
                 activeProps={{ className: "active" }}
               >
-                <Package
+                <Bookmark
                   size={16}
                   className="text-foreground/40 transition-colors group-hover:text-foreground group-[.active]:text-foreground"
                 />

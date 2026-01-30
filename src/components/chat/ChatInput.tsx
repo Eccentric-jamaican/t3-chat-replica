@@ -313,7 +313,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
                         },
                       })
                     );
-                  } else if (data.type === "tool-call" && currentMessageId) {
                     window.dispatchEvent(
                       new CustomEvent("chat-streaming-tool-call", {
                         detail: {
@@ -322,6 +321,42 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
                           toolName: data.tool,
                           args: "",
                           state: "streaming"
+                        },
+                      })
+                    );
+                  } else if (data.type === "tool-input-start" && currentMessageId) {
+                    window.dispatchEvent(
+                      new CustomEvent("chat-streaming-tool-call", {
+                        detail: {
+                          messageId: currentMessageId,
+                          toolCallId: data.toolCallId,
+                          toolName: data.toolName,
+                          args: "",
+                          state: "streaming"
+                        },
+                      })
+                    );
+                  } else if (data.type === "tool-input-delta" && currentMessageId) {
+                    window.dispatchEvent(
+                      new CustomEvent("chat-streaming-tool-input-update", {
+                        detail: {
+                          messageId: currentMessageId,
+                          toolCallId: data.toolCallId,
+                          argsSnapshot: data.argsSnapshot,
+                          argsDelta: data.inputTextDelta
+                        },
+                      })
+                    );
+                  } else if (data.type === "tool-input-available" && currentMessageId) {
+                     // Can either finish tool call or keep it streaming until "tool-call" event comes
+                     // for now we just make sure we save the final args
+                     window.dispatchEvent(
+                      new CustomEvent("chat-streaming-tool-input-update", {
+                        detail: {
+                          messageId: currentMessageId,
+                          toolCallId: data.toolCallId,
+                          argsSnapshot: typeof data.input === 'string' ? data.input : JSON.stringify(data.input),
+                          argsDelta: ""
                         },
                       })
                     );

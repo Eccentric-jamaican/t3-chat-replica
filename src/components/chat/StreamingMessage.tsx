@@ -74,15 +74,36 @@ export const StreamingMessage = ({
       }
     };
 
+    const handleToolInputUpdate = (event: CustomEvent) => {
+      if (event.detail.messageId === messageId) {
+        setStreamingToolCalls(prev => {
+          return prev.map(tc => {
+            if (tc.id === event.detail.toolCallId) {
+              return {
+                 ...tc,
+                 function: {
+                    ...tc.function,
+                    arguments: event.detail.argsSnapshot || (tc.function.arguments + event.detail.argsDelta)
+                 }
+              };
+            }
+            return tc;
+          });
+        });
+      }
+    };
+
     window.addEventListener("chat-streaming-content" as any, handleContent);
     window.addEventListener("chat-streaming-reasoning" as any, handleReasoning);
     window.addEventListener("chat-streaming-tool-call" as any, handleToolCall);
+    window.addEventListener("chat-streaming-tool-input-update" as any, handleToolInputUpdate);
     window.addEventListener("chat-streaming-tool-output" as any, handleToolOutput);
 
     return () => {
       window.removeEventListener("chat-streaming-content" as any, handleContent);
       window.removeEventListener("chat-streaming-reasoning" as any, handleReasoning);
       window.removeEventListener("chat-streaming-tool-call" as any, handleToolCall);
+      window.removeEventListener("chat-streaming-tool-input-update" as any, handleToolInputUpdate);
       window.removeEventListener("chat-streaming-tool-output" as any, handleToolOutput);
     };
   }, [messageId, isStreaming]);
@@ -167,7 +188,7 @@ export const StreamingMessage = ({
 
 const ToolCallRenderer = ({ toolCall, result }: { toolCall: any, result?: any }) => {
    if (toolCall.function?.name === "search_web") {
-       return <SearchToolResult isLoading={!result} result={result} />;
+       return <SearchToolResult isLoading={!result} result={result} args={toolCall.function?.arguments} />;
    }
    return (
       <ToolCallBlock 

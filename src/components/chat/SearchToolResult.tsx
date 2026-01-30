@@ -13,14 +13,25 @@ interface SearchToolResultProps {
   result?: any
 }
 
-export function SearchToolResult({ isLoading, result }: SearchToolResultProps) {
+export function SearchToolResult({ isLoading, result, args }: { isLoading: boolean, result?: any, args?: string }) {
   const [isOpen, setIsOpen] = useState(false)
+
+  // Parse query from args if available
+  let query = "";
+  if (args) {
+    try {
+      const parsed = JSON.parse(args);
+      if (parsed.query) query = parsed.query;
+    } catch (e) {
+      // Partial JSON
+    }
+  }
 
   if (isLoading) {
     return (
       <div className="flex items-center gap-2 text-sm text-foreground/60 py-2">
          <div className="w-4 h-4 rounded-full border-2 border-primary/20 border-t-primary animate-spin" />
-         <span>Searching the web...</span>
+         <span>{query ? `Searching for: "${query}"...` : "Searching the web..."}</span>
       </div>
     )
   }

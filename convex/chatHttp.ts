@@ -143,6 +143,15 @@ Assistant: [[SEARCH: price of bitcoin]]
 
 When you receive the search results, answer the user's question.`
              });
+          } else if (modelId.toLowerCase().includes("grok") || modelId.toLowerCase().includes("x-ai")) {
+             // [AGENTIC] Grok / xAI specific prompt to reduce verbosity
+             openRouterMessages.unshift({
+                role: "system",
+                content: `You are a helpful assistant with access to tools.
+When a user asks a question that requires a tool (like search_web), CALL THE TOOL DIRECTLY.
+DO NOT explain what you are going to do. DO NOT output "Assistant: ...". DO NOT output "I need to call...".
+Just output the tool call JSON.`
+             });
           }
 
           const abortController = new AbortController();
@@ -153,13 +162,16 @@ When you receive the search results, answer the user's question.`
               "Content-Type": "application/json",
             },
             body: JSON.stringify({
-              models: [modelId ?? "google/gemini-2.0-flash-exp:free"],
+              models: [modelId ?? "moonshotai/moonshot-v1-8k", "openai/gpt-5", "google/gemini-2.0-flash-exp:free"],
               messages: openRouterMessages,
               // [AGENTIC] Filter by capability
               tools: getModelCapabilities(modelId).supportsTools 
                 ? TOOLS.filter(t => t.function.name !== "search_web" || webSearch)
                 : undefined,
-              tool_choice: "auto",
+              ...(getModelCapabilities(modelId).supportsTools ? { 
+                tool_choice: "auto",
+                parallel_tool_calls: false,
+              } : {}),
               stream: true,
             }),
             signal: abortController.signal,
@@ -219,7 +231,51 @@ When you receive the search results, answer the user's question.`
               }
 
               if (delta?.tool_calls) {
-                accumulatedToolCalls = mergeToolCalls(accumulatedToolCalls, delta.tool_calls);
+                for (const toolDelta of delta.tool_calls) {
+                  const index = toolDelta.index;
+                  
+                  // Initialize if new
+                  if (!accumulatedToolCalls[index]) {
+                    accumulatedToolCalls[index] = {
+                      id: toolDelta.id || "",
+                      type: "function",
+                      function: { name: "", arguments: "" }, // Start empty, let update logic handle name
+                    };
+                    // Notify client of new tool call starting
+                    // Note: Name might be empty here if only ID came first, but typically name comes with ID or in first chunk
+                    // We can defer sending "tool-input-start" until we have a name, or send update later.
+                    // For now, if name is present in delta, it will be added below immediately.
+                  }
+
+                  // Update fields
+                  if (toolDelta.id && !accumulatedToolCalls[index].id) {
+                    accumulatedToolCalls[index].id = toolDelta.id;
+                  }
+                  if (toolDelta.function?.name) {
+                    accumulatedToolCalls[index].function.name += toolDelta.function.name;
+                    
+                    // If we just got the name (and it was empty before), we can emit the start event now if we haven't?
+                    // Or just emit it every time? The frontend dedupes by ID so it's fine.
+                    // But good practice:
+                    send({ 
+                      type: "tool-input-start", 
+                      toolCallId: accumulatedToolCalls[index].id, 
+                      toolName: accumulatedToolCalls[index].function.name 
+                    });
+                  }
+                  
+                  // Stream arguments delta
+                  if (toolDelta.function?.arguments) {
+                    const argDelta = toolDelta.function.arguments;
+                    accumulatedToolCalls[index].function.arguments += argDelta;
+                    send({ 
+                      type: "tool-input-delta", 
+                      toolCallId: accumulatedToolCalls[index].id, 
+                      inputTextDelta: argDelta,
+                      argsSnapshot: accumulatedToolCalls[index].function.arguments
+                    });
+                  }
+                }
               }
             }
           }
@@ -236,11 +292,21 @@ When you receive the search results, answer the user's question.`
             });
 
             for (const tc of accumulatedToolCalls) {
+              const argsObj = JSON.parse(tc.function.arguments);
+              
+              // Notify client input is complete and tool is ready to run
+              send({ 
+                type: "tool-input-available", 
+                toolCallId: tc.id, 
+                toolName: tc.function.name,
+                input: argsObj
+              });
+
+              // Also start the execution spinner (legacy event, kept for compatibility)
               send({ type: "tool-call", tool: tc.function.name, id: tc.id });
 
               let result = "Error";
               const name = tc.function.name;
-              const argsObj = JSON.parse(tc.function.arguments);
 
               if (name === "get_current_time") {
                 result = new Date().toLocaleString();

@@ -364,10 +364,11 @@ When you receive the search results, answer the user's question.
               ],
               messages: openRouterMessages,
               tools: activeTools.length > 0 ? activeTools : undefined,
-              // Tool choice control - let model decide but can override
-              tool_choice: "auto",
-              // Disable parallel tool calls for more reliable execution on free models
-              parallel_tool_calls: false,
+              // Tool choice & parallel calls - only if tools exist
+              ...(activeTools.length > 0 ? {
+                tool_choice: "auto",
+                parallel_tool_calls: false,
+              } : {}),
               ...(args.reasoningEffort && args.reasoningType === "effort"
                 ? { reasoning: { effort: args.reasoningEffort } }
                 : args.reasoningEffort && args.reasoningType === "max_tokens"

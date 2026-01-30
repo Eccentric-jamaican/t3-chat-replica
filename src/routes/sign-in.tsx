@@ -5,11 +5,20 @@ import { authClient } from '../lib/auth'
 import { Mail, Lock, ArrowRight, Loader2, AlertCircle } from 'lucide-react'
 import { toast } from 'sonner'
 
+import { z } from 'zod';
+import { useSearch } from '@tanstack/react-router';
+
+const signInSearchSchema = z.object({
+  redirect: z.string().optional(),
+});
+
 export const Route = createFileRoute('/sign-in')({
+  validateSearch: (search) => signInSearchSchema.parse(search),
   component: SignIn,
-})
+});
 
 function SignIn() {
+  const { redirect } = useSearch({ from: '/sign-in' });
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
@@ -22,25 +31,32 @@ function SignIn() {
     setError(null)
 
     try {
-      const { data, error: authError } = await authClient.signIn.email({
+      const { error: authError } = await authClient.signIn.email({
         email,
         password,
       })
 
       if (authError) {
-        if (import.meta.env.DEV) {
-          console.log('[AUTH CLIENT] Sign-in failed:', authError.message)
-        }
         setError(authError.message || 'Invalid email or password')
         return
       }
 
-      if (import.meta.env.DEV) {
-        console.log('[AUTH CLIENT] Sign-in success')
-      }
-
       toast.success('Successfully signed in!')
-      navigate({ to: '/' })
+      
+      // Redirect to the intended page or home
+      if (redirect) {
+        // If it's a full URL, we might need to be careful, 
+        // but TanStack Router location.href is usually a full URL string.
+        // However, navigate() prefers paths.
+        try {
+          const url = new URL(redirect);
+          navigate({ to: url.pathname + url.search });
+        } catch (e) {
+          navigate({ to: redirect as any });
+        }
+      } else {
+        navigate({ to: '/' })
+      }
     } catch (err) {
       if (import.meta.env.DEV) {
         console.error('[AUTH CLIENT] Sign-in error:', err)
@@ -56,6 +72,7 @@ function SignIn() {
     try {
       await authClient.signIn.social({
         provider: 'google',
+        callbackURL: redirect || window.location.origin,
       })
     } catch (err) {
       if (import.meta.env.DEV) {

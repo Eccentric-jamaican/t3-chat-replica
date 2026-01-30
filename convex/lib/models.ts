@@ -95,21 +95,39 @@ export const MODEL_CAPABILITIES: Record<string, ModelCapability> = {
     supportsTools: true,
     supportsStreaming: true,
     isThinking: false,
-  }
+  },
+
+  // === MOONSHOT (KIMI) ===
+  "moonshotai/moonshot-v1-8k": {
+    id: "moonshotai/moonshot-v1-8k",
+    supportsTools: true,
+    supportsStreaming: true,
+    isThinking: false,
+  },
+
+  // === OPENAI GPT-5 ===
+  "openai/gpt-5": {
+    id: "openai/gpt-5",
+    supportsTools: true,
+    supportsStreaming: true,
+    isThinking: false,
+  },
 };
 
 export function getModelCapabilities(modelId: string | undefined): ModelCapability {
   if (!modelId) {
-     return MODEL_CAPABILITIES["google/gemini-2.0-flash-exp:free"];
+     return MODEL_CAPABILITIES["moonshotai/moonshot-v1-8k"];
   }
+  const supportsTools = modelId.toLowerCase().includes("grok") || modelId.toLowerCase().includes("x-ai") ? true : false;
+  
   return MODEL_CAPABILITIES[modelId] || {
     id: modelId,
-    supportsTools: false, // Default to FALSE for safety
+    supportsTools, // Default to FALSE for safety
     supportsStreaming: true,
     isThinking: modelId.toLowerCase().includes("thinking") || 
                 modelId.toLowerCase().includes("r1") || 
                 modelId.toLowerCase().includes("o1") ||
                 modelId.toLowerCase().includes("kimi"),
-    toolFallback: "regex",
+    toolFallback: supportsTools ? undefined : "regex", // Only use regex if native tools aren't supported
   };
 }

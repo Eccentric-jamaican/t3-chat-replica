@@ -5,81 +5,90 @@ import { authClient } from '../lib/auth'
 import { User, Mail, Lock, ArrowRight, Loader2, AlertCircle, CheckCircle2 } from 'lucide-react'
 import { toast } from 'sonner'
 
+import { z } from 'zod';
+import { useSearch } from '@tanstack/react-router';
+
+const signUpSearchSchema = z.object({
+  redirect: z.string().optional(),
+});
+
 export const Route = createFileRoute('/sign-up')({
+  validateSearch: (search) => signUpSearchSchema.parse(search),
   component: SignUp,
-})
+});
 
 function SignUp() {
-  const [name, setName] = useState('')
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const navigate = useNavigate()
+  const { redirect } = useSearch({ from: '/sign-up' });
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const navigate = useNavigate();
 
   const handleEmailSignUp = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setLoading(true)
-    setError(null)
+    e.preventDefault();
+    setLoading(true);
+    setError(null);
 
     try {
-      const { data, error: authError } = await authClient.signUp.email({
+      const { error: authError } = await authClient.signUp.email({
         email,
         password,
         name,
-      })
+      });
 
       if (authError) {
-        if (import.meta.env.DEV) {
-          console.log('[AUTH CLIENT] Sign-up failed:', authError.message)
+        setError(authError.message || 'Failed to create account');
+        return;
+      }
+
+      toast.success('Account created successfully!');
+
+      // Redirect to intended page or home
+      if (redirect) {
+        try {
+          const url = new URL(redirect);
+          navigate({ to: url.pathname + url.search });
+        } catch (e) {
+          navigate({ to: redirect as any });
         }
-        setError(authError.message || 'Failed to create account')
-        return
+      } else {
+        navigate({ to: '/' });
       }
-
-      if (import.meta.env.DEV) {
-        console.log('[AUTH CLIENT] Sign-up success')
-      }
-
-      toast.success('Account created successfully!')
-      navigate({ to: '/' })
     } catch (err) {
       if (import.meta.env.DEV) {
-        console.error('[AUTH CLIENT] Sign-up error:', err)
+        console.error('[AUTH CLIENT] Sign-up error:', err);
       }
-      setError('An unexpected error occurred. Please try again.')
+      setError('An unexpected error occurred. Please try again.');
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
 
   const handleGoogleSignUp = async () => {
-    setLoading(true)
-    console.log('[AUTH CLIENT] Google sign-up attempt:', {
-      timestamp: new Date().toISOString(),
-    })
+    setLoading(true);
     try {
       await authClient.signIn.social({
         provider: 'google',
-      })
-      console.log('[AUTH CLIENT] Google sign-up redirect initiated')
+        callbackURL: redirect || window.location.origin,
+      });
     } catch (err) {
-      console.error('[AUTH CLIENT] Google sign-up error:', {
-        error: err,
-        timestamp: new Date().toISOString(),
-      })
-      toast.error('Google sign-up failed')
+      if (import.meta.env.DEV) {
+        console.error('[AUTH CLIENT] Google sign-up error:', err);
+      }
+      toast.error('Google sign-up failed');
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
 
   const passwordRequirements = [
     { text: 'At least 8 characters', met: password.length >= 8 },
     { text: 'Contains a number', met: /\d/.test(password) },
-  ]
+  ];
 
-  const isPasswordValid = passwordRequirements.every((req) => req.met)
+  const isPasswordValid = passwordRequirements.every((req) => req.met);
 
   return (
     <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-background p-4">
@@ -238,5 +247,5 @@ function SignUp() {
         </div>
       </motion.div>
     </div>
-  )
+  );
 }
