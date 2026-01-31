@@ -1,5 +1,6 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { Sidebar } from "../components/layout/Sidebar";
+import { NotFoundPage } from "../components/layout/NotFoundPage";
 import { useIsMobile } from "../hooks/useIsMobile";
 import { ChatInput, type ChatInputHandle } from "../components/chat/ChatInput";
 import { useQuery, useMutation, useAction, useConvexAuth } from "convex/react";
@@ -338,6 +339,10 @@ function ChatPage() {
                   chatInputRef.current?.setContentAndSend(text)
                 }
               />
+            </div>
+          ) : messages === null || thread === null ? (
+            <div className="flex h-full w-full flex-col items-center justify-center p-4">
+              <NotFoundPage />
             </div>
           ) : (
             <div className="scrollbar-hide message-scroll-area w-full max-w-5xl flex-1 overflow-x-hidden overflow-y-auto pt-16 pb-40 md:pt-20">
