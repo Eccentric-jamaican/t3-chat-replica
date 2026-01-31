@@ -1,4 +1,4 @@
-import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { Sidebar } from "../components/layout/Sidebar";
 import { useEffect, useState, useMemo } from "react";
 import { useQuery, useMutation } from "convex/react";
@@ -124,9 +124,12 @@ function PackagesPage() {
 
     // Sorting
     filtered.sort((a, b) => {
+      const tsA = Number(new Date(a.updatedAt ?? a._creationTime ?? 0));
+      const tsB = Number(new Date(b.updatedAt ?? b._creationTime ?? 0));
+
       switch (sortBy) {
         case "oldest":
-          return a.updatedAt - b.updatedAt;
+          return tsA - tsB;
         case "cost_high":
           return (b.cost || 0) - (a.cost || 0);
         case "cost_low":
@@ -137,7 +140,7 @@ function PackagesPage() {
           return (a.weight || 0) - (b.weight || 0);
         case "newest":
         default:
-          return b.updatedAt - a.updatedAt;
+          return tsB - tsA;
       }
     });
 
@@ -187,7 +190,7 @@ function PackagesPage() {
     const headers = ["Merchant", "Tracking Number", "Description", "Status", "Weight (lbs)", "Cost (JMD)", "Location", "Updated At"];
     
     // Proper CSV escaping function
-    const escape = (val: any) => {
+    const escapeCSV = (val: any) => {
       const str = String(val ?? "");
       // If it contains quotes, commas, or newlines, wrap in quotes and escape internal quotes
       if (/[",\n\r]/.test(str)) {
@@ -196,16 +199,19 @@ function PackagesPage() {
       return str;
     };
 
-    const rows = packages.map(p => [
-      escape(p.merchant),
-      escape(p.trackingNumber),
-      escape(p.description),
-      escape(STATUS_CONFIG[p.status as keyof typeof STATUS_CONFIG]?.label || p.status),
-      p.weight || 0,
-      p.cost || 0,
-      escape(p.location),
-      escape(new Date(p.updatedAt).toLocaleString())
-    ]);
+    const rows = packages.map(p => {
+      const ts = p.updatedAt ?? p._creationTime ?? 0;
+      return [
+        escapeCSV(p.merchant),
+        escapeCSV(p.trackingNumber),
+        escapeCSV(p.description),
+        escapeCSV(STATUS_CONFIG[p.status as keyof typeof STATUS_CONFIG]?.label || p.status),
+        p.weight || 0,
+        p.cost || 0,
+        escapeCSV(p.location),
+        escapeCSV(new Date(ts).toLocaleString())
+      ];
+    });
 
     // Calculate totals accurately
     const totalWeight = packages.reduce((sum, p) => sum + (p.weight || 0), 0);
@@ -224,6 +230,7 @@ function PackagesPage() {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    URL.revokeObjectURL(url);
     toast.success("CSV Exported successfully");
   };
 

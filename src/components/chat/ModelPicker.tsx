@@ -489,8 +489,7 @@ export const ModelPicker = ({ selectedModelId, onSelect }: ModelPickerProps) => 
               tabIndex={0}
             >
               {filteredModels.map((model, index) => (
-                <div
-                  role="button"
+                <button
                   key={model.id}
                   onClick={() => {
                     onSelect(model.id)
@@ -613,7 +612,7 @@ export const ModelPicker = ({ selectedModelId, onSelect }: ModelPickerProps) => 
                       <Star size={14} className={cn(favorites.includes(model.id) && "fill-current")} />
                     </button>
                   </div>
-                </div>
+                </button>
               ))}
 
               {filteredModels.length === 0 && (

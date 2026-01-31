@@ -64,7 +64,7 @@ export const MODEL_CAPABILITIES: Record<string, ModelCapability> = {
   },
   "openai/o1-mini": {
     id: "openai/o1-mini",
-    supportsTools: false, // o1 preview often limited
+    supportsTools: true,
     supportsStreaming: true,
     isThinking: true,
     toolFallback: "regex",
@@ -72,7 +72,7 @@ export const MODEL_CAPABILITIES: Record<string, ModelCapability> = {
   },
   "openai/o1-preview": {
     id: "openai/o1-preview",
-    supportsTools: false,
+    supportsTools: true,
     supportsStreaming: true,
     isThinking: true,
     toolFallback: "regex",
@@ -145,8 +145,8 @@ export const MODEL_CAPABILITIES: Record<string, ModelCapability> = {
   },
 
   // === OPENAI GPT-5 ===
-  "openai/gpt-5": {
-    id: "openai/gpt-5",
+  "openai/gpt-5.1-chat": {
+    id: "openai/gpt-5.1-chat",
     supportsTools: true,
     supportsStreaming: true,
     isThinking: false,
@@ -174,10 +174,10 @@ export function getModelCapabilities(modelId: string | undefined): ModelCapabili
 
   return {
     id: modelId,
-    supportsTools: true, // Defaulting to TRUE for modern Web LLM context
-    supportsStreaming: true,
+    supportsTools: false, // Default to false for tool safety
+    supportsStreaming: true, // Most modern models support streaming
     isThinking,
     promptStrategy: isThinking ? "reasoning" : "standard",
-    toolFallback: undefined,
+    toolFallback: "regex", // Fallback to parsing text for tool blocks if they occur
   };
 }

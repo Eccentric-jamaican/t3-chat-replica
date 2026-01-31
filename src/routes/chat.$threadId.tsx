@@ -150,6 +150,12 @@ function ChatPage() {
 
   const handleOpenExpanded = (products: Product[]) => {
     setExpandedProducts(products);
+    setIsExpandedOpen(true);
+  };
+
+  const handleCloseExpanded = () => {
+    setExpandedProducts(null);
+    setIsExpandedOpen(false);
   };
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [retryingMessageId, setRetryingMessageId] = useState<string | null>(
@@ -478,7 +484,7 @@ function ChatPage() {
                         >
                           <div className="relative flex w-full flex-col items-start w-full max-w-none px-4 py-1 text-foreground/90 md:px-2">
                             {/* Render ALL assistant messages in this group sequentially */}
-                            {groupMessages.map((msg: any, msgIndex: number) => (
+                            {groupMessages.map((msg: any) => (
                               <div key={msg._id} className="w-full">
                                 <StreamingMessage
                                   messageId={msg._id}
@@ -608,9 +614,8 @@ function ChatPage() {
       <AnimatePresence>
         {isExpandedOpen && (
           <ProductExpandedView
-            isOpen={!!expandedProducts}
             products={expandedProducts || []}
-            onClose={() => setExpandedProducts(null)}
+            onClose={handleCloseExpanded}
             onSelect={(id: string) => console.log("Selected:", id)}
             selectedIds={selectedProductIds}
             onToggleSelection={(id: string) => {

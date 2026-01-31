@@ -54,7 +54,10 @@ export async function chatHandler(ctx: any, request: Request) {
   }
 
   // 1. Auth check
-  await getAuthUserId(ctx);
+  const userId = await getAuthUserId(ctx);
+  if (!userId) {
+    return new Response("Unauthorized", { status: 401 });
+  }
 
   const body = await request.json();
   const { threadId, modelId, webSearch } = body;
@@ -97,6 +100,11 @@ export async function chatHandler(ctx: any, request: Request) {
         let shouldContinue = true;
         let fullContent = "";
         let fullReasoning = "";
+
+        let currentAbortController: AbortController | null = null;
+        request.signal.addEventListener("abort", () => {
+           currentAbortController?.abort();
+        });
 
         while (shouldContinue && cycle < MAX_CYCLES && !isAborted) {
           shouldContinue = false;
@@ -145,6 +153,7 @@ When you receive the search results, answer the user's question. DO NOT repeat t
           }
 
           const abortController = new AbortController();
+          currentAbortController = abortController;
           const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
             method: "POST",
             headers: {
@@ -167,8 +176,7 @@ When you receive the search results, answer the user's question. DO NOT repeat t
             signal: abortController.signal,
           });
 
-          // Cancel OpenRouter fetch if client aborts
-          request.signal.addEventListener("abort", () => abortController.abort());
+          // Controller is now handled by the outer listener
 
           if (!response.ok) throw new Error(`API error: ${response.status}`);
           if (!response.body) throw new Error("No response body");
@@ -283,7 +291,13 @@ When you receive the search results, answer the user's question. DO NOT repeat t
             });
 
             for (const tc of accumulatedToolCalls) {
-              const argsObj = JSON.parse(tc.function.arguments);
+              let argsObj: any = {};
+              try {
+                argsObj = JSON.parse(tc.function.arguments || "{}");
+              } catch (e) {
+                console.error("[TOOL ARG PARSE ERROR]", e, tc.function.arguments);
+                // Fallback to empty object to prevent crash
+              }
               
               // [AGENTIC] Notify client input is complete and tool is ready to run
               // We only emit tool-input-available to transition from streaming to a static "pending" state
@@ -440,7 +454,6 @@ When you receive the search results, answer the user's question. DO NOT repeat t
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache",
       "Connection": "keep-alive",
-      "Access-Control-Allow-Origin": "*",
     },
   });
 }

@@ -111,6 +111,15 @@ export function MessageEditInput({
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const previewUrlsRef = useRef<Set<string>>(new Set());
+
+  // Cleanup preview URLs on unmount
+  useEffect(() => {
+    return () => {
+      previewUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
+      previewUrlsRef.current.clear();
+    };
+  }, []);
 
   const messages = useQuery(api.messages.list, { threadId: threadId as any, sessionId });
   const currentThread = useQuery(api.threads.get, { id: threadId as any, sessionId: sessionId ?? "" });
@@ -154,12 +163,15 @@ export function MessageEditInput({
         });
         const { storageId } = await result.json();
 
+        const previewUrl = URL.createObjectURL(file);
+        previewUrlsRef.current.add(previewUrl);
+
         newAttachments.push({
           storageId,
           type: file.type,
           name: file.name,
           size: file.size,
-          previewUrl: URL.createObjectURL(file),
+          previewUrl,
         });
       }
       setAttachments((prev) => [...prev, ...newAttachments]);
@@ -172,6 +184,11 @@ export function MessageEditInput({
   };
 
   const removeAttachment = (index: number) => {
+    const attachment = attachments[index];
+    if (attachment?.previewUrl && previewUrlsRef.current.has(attachment.previewUrl)) {
+      URL.revokeObjectURL(attachment.previewUrl);
+      previewUrlsRef.current.delete(attachment.previewUrl);
+    }
     setAttachments((prev) => prev.filter((_, i) => i !== index));
   };
 
@@ -197,9 +214,17 @@ export function MessageEditInput({
         finalParentThreadId = currentThread.parentThreadId as any;
       }
 
+      // [AGENTIC] Unified Session Ownership
+      const storedSessionId = typeof window !== "undefined" ? localStorage.getItem("sendcat_session_id") : null;
+      const effectiveSessionId = storedSessionId || uuidv4();
+      
+      if (!storedSessionId && typeof window !== "undefined") {
+        localStorage.setItem("sendcat_session_id", effectiveSessionId);
+      }
+
       // Create new branched thread
       const newThreadId = await createThread({
-        sessionId: sessionId || uuidv4(),
+        sessionId: effectiveSessionId,
         modelId: selectedModelId,
         title: content.trim().slice(0, 40),
         parentThreadId: finalParentThreadId as any,
@@ -212,7 +237,7 @@ export function MessageEditInput({
             threadId: newThreadId,
             content: msg.content,
             role: msg.role,
-            sessionId,
+            sessionId: effectiveSessionId,
             attachments: msg.attachments?.map((a: any) => ({
               storageId: a.storageId,
               type: a.type,
@@ -228,7 +253,7 @@ export function MessageEditInput({
         threadId: newThreadId,
         content: content.trim(),
         role: "user",
-        sessionId,
+        sessionId: effectiveSessionId,
         attachments: attachments.map((a) => ({
           storageId: a.storageId as any,
           type: a.type,

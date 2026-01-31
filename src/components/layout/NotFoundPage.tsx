@@ -1,8 +1,18 @@
-import { Link } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { SearchX, Home } from "lucide-react";
 import { Button } from "../ui/button";
 
 export function NotFoundPage() {
+  const navigate = useNavigate();
+
+  const handleGoBack = () => {
+    if (window.history.length > 1) {
+      window.history.back();
+    } else {
+      navigate({ to: "/" });
+    }
+  };
+
   return (
     <div className="flex min-h-screen w-full flex-col items-center justify-center bg-background p-4 relative overflow-hidden">
       {/* Background Atmosphere */}
@@ -10,7 +20,7 @@ export function NotFoundPage() {
       <div className="edge-glow-bottom" />
       <div className="bg-noise" />
 
-      <div className="relative z-10 flex flex-col items-center max-w-md w-full text-center space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+      <div className="relative z-10 flex flex-col items-center max-md w-full text-center space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
         {/* Icon & Visual Wrapper */}
         <div className="relative">
           <div className="absolute inset-0 bg-primary/10 blur-3xl rounded-full" />
@@ -41,7 +51,7 @@ export function NotFoundPage() {
             variant="outline" 
             size="lg" 
             className="w-full sm:w-auto"
-            onClick={() => window.history.back()}
+            onClick={handleGoBack}
           >
             Go Back
           </Button>

@@ -10,10 +10,11 @@ interface SearchResult {
 
 interface SearchToolResultProps {
   isLoading: boolean
-  result?: any
+  result?: unknown
+  args?: string
 }
 
-export function SearchToolResult({ isLoading, result, args }: { isLoading: boolean, result?: any, args?: string }) {
+export function SearchToolResult({ isLoading, result, args }: SearchToolResultProps) {
   const [isOpen, setIsOpen] = useState(false)
 
   // Parse query from args if available
@@ -46,7 +47,7 @@ export function SearchToolResult({ isLoading, result, args }: { isLoading: boole
       // If it's pure text (legacy) or error
       return (
         <div className="text-xs bg-black/5 p-2 rounded font-mono text-foreground/60">
-          {result}
+          {String(result)}
         </div>
       )
     }

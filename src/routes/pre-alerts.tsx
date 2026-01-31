@@ -287,9 +287,9 @@ function DraftCard({
 }) {
   const [editing, setEditing] = useState(false);
   const [editValues, setEditValues] = useState({
-    orderNumber: draft.orderNumber || "",
-    valueUsd: draft.valueUsd ? (draft.valueUsd / 100).toFixed(2) : "",
-    itemsSummary: draft.itemsSummary || "",
+    orderNumber: draft.orderNumber !== null && draft.orderNumber !== undefined ? draft.orderNumber : "",
+    valueUsd: draft.valueUsd !== null && draft.valueUsd !== undefined ? (draft.valueUsd / 100).toFixed(2) : "",
+    itemsSummary: draft.itemsSummary !== null && draft.itemsSummary !== undefined ? draft.itemsSummary : "",
   });
 
   const updateDraft = useMutation(api.integrations.evidence.updateDraft);
@@ -366,7 +366,7 @@ function DraftCard({
           </div>
           <div>
             <p className="text-sm font-bold">{merchantDisplay}</p>
-            {draft.orderNumber && (
+            {draft.orderNumber !== null && draft.orderNumber !== undefined && (
               <p className="text-xs text-foreground/50">
                 Order #{draft.orderNumber}
               </p>
@@ -467,14 +467,15 @@ function DraftCard({
             <div>
               <p className="text-xs font-medium text-foreground/40">Value</p>
               <p className="text-sm font-bold">
-                {draft.valueUsd
+                {draft.valueUsd !== null && draft.valueUsd !== undefined
                   ? `$${(draft.valueUsd / 100).toFixed(2)}`
                   : "--"}
               </p>
             </div>
             <div>
               <p className="text-xs font-medium text-foreground/40">Items</p>
-              <p className="text-sm">{draft.itemsSummary || "--"}</p>
+              <p className="text-sm">                {draft.itemsSummary !== null && draft.itemsSummary !== undefined ? draft.itemsSummary : "--"}
+</p>
             </div>
             <div>
               <p className="text-xs font-medium text-foreground/40">Invoice</p>

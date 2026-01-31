@@ -229,9 +229,8 @@ export const StreamingMessage = ({
 };
 
 const ToolCallRenderer = ({ toolCall, result }: { toolCall: any, result?: any }) => {
-   // [AGENTIC] Robust Name Parsing: 
-   // Some models on OpenRouter might stream the entire function call JSON into the name field.
-   let name = toolCall.function?.name || "";
+   const originalName = toolCall.function?.name || "";
+   let name = originalName;
    let args = toolCall.function?.arguments || "";
 
    if (name.startsWith("{")) {
@@ -240,7 +239,7 @@ const ToolCallRenderer = ({ toolCall, result }: { toolCall: any, result?: any })
          // If name is valid JSON and has a 'query' but no name, it's likely a search tool
          if (parsed.query && !args) {
             name = "search_web";
-            args = name; // Pass the whole JSON as args
+            args = originalName; // Keep the whole JSON as args for downstream parsing
          }
       } catch (e) {}
    }

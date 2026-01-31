@@ -37,7 +37,7 @@ export function SelectionActionBar({ selectedCount, onClear, onAsk, onInquiry, o
 
             <div className="flex items-center gap-2">
               <button
-                onClick={() => onAskFollowUp?.("") || onAsk?.()}
+                onClick={() => onAskFollowUp ? onAskFollowUp("") : onAsk?.()}
                 className="flex items-center gap-2 px-4 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-sm font-semibold transition-colors"
               >
                 <MessageSquare size={16} />

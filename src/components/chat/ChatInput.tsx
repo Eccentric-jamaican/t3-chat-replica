@@ -8,7 +8,8 @@ import {
 import { fetchOpenRouterModels, type AppModel } from "../../lib/openrouter";
 import { ArrowUp, Paperclip, Globe, X, Brain, StopCircle } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { useMutation, useQuery, useConvexAuth, useConvex } from "convex/react";
+import { useMutation, useQuery, useConvexAuth } from "convex/react";
+import { convex } from "../../lib/convex";
 import { Id } from "../../../convex/_generated/dataModel";
 import { api } from "../../../convex/_generated/api";
 import { v4 as uuidv4 } from "uuid";
@@ -92,7 +93,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
     const abortLatestInThread = useMutation(api.messages.abortLatestInThread);
     const generateUploadUrl = useMutation(api.messages.generateUploadUrl);
     const { isLoading: isConvexAuthLoading } = useConvexAuth();
-    const convexClient = useConvex();
     const effectiveThreadId = threadId ?? existingThreadId ?? null;
     const isThreadStreaming = useQuery(
       api.messages.isThreadStreaming,
@@ -205,6 +205,9 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
       }
 
       try {
+        const tokenResult = await (convex as any).getAuthToken?.();
+        const effectiveToken = typeof tokenResult === 'string' ? tokenResult : null;
+        
         let currentThreadId = threadId;
 
         if (!currentThreadId) {
@@ -246,13 +249,12 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
         console.log("[ChatInput] Starting SSE fetch to:", `${convexSiteUrl}/api/chat`);
         const controller = new AbortController();
         abortControllerRef.current = controller;
-
-        const token = await (convexClient as any).getAuthToken?.() || null;
+ 
         const response = await fetch(`${convexSiteUrl}/api/chat`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            ...(effectiveToken ? { Authorization: `Bearer ${effectiveToken}` } : {}),
           },
           body: JSON.stringify({
             threadId: currentThreadId,
@@ -368,6 +370,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
 
         setIsGenerating(false);
       } catch (error: any) {
+        toast.error(error?.message || "Failed to send message");
         console.error("[ChatInput] Failed to send message:", {
           message: error.message,
           name: error.name,
