@@ -79,6 +79,7 @@ export const create = mutation({
   args: {
     title: v.optional(v.string()),
     modelId: v.string(),
+    parentThreadId: v.optional(v.id("threads")),
     sessionId: v.string()
   },
   handler: async (ctx, args) => {
@@ -107,6 +108,14 @@ export const create = mutation({
     }
 
     return threadId;
+  },
+});
+
+export const get = query({
+  args: { id: v.id("threads"), sessionId: v.optional(v.string()) },
+  handler: async (ctx, args) => {
+    const { thread } = await verifyThreadAccess(ctx, args.id, args.sessionId);
+    return thread;
   },
 });
 

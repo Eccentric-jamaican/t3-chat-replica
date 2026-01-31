@@ -1,85 +1,89 @@
-import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
-import { useState } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
-import { authClient } from '../lib/auth'
-import { User, Mail, Lock, ArrowRight, Loader2, AlertCircle, CheckCircle2 } from 'lucide-react'
-import { toast } from 'sonner'
+import { createFileRoute, Link, useNavigate, useSearch } from '@tanstack/react-router';
+import { useState } from 'react';
+import { authClient } from '../lib/auth';
+import { cn, resolveRedirect } from '../lib/utils';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Mail, Lock, User, ArrowRight, Loader2, AlertCircle, Check } from 'lucide-react';
+import { Button } from '../components/ui/button';
+import { toast } from 'sonner';
+import { z } from 'zod';
+
+const signUpSearchSchema = z.object({
+  redirect: z.string().optional(),
+});
 
 export const Route = createFileRoute('/sign-up')({
+  validateSearch: (search) => signUpSearchSchema.parse(search),
   component: SignUp,
-})
+});
 
 function SignUp() {
-  const [name, setName] = useState('')
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const navigate = useNavigate()
+  const { redirect } = useSearch({ from: '/sign-up' });
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const navigate = useNavigate();
 
   const handleEmailSignUp = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setLoading(true)
-    setError(null)
+    e.preventDefault();
+    setLoading(true);
+    setError(null);
 
     try {
-      const { data, error: authError } = await authClient.signUp.email({
+      const { error: authError } = await authClient.signUp.email({
         email,
         password,
         name,
-      })
+      });
 
       if (authError) {
-        if (import.meta.env.DEV) {
-          console.log('[AUTH CLIENT] Sign-up failed:', authError.message)
-        }
-        setError(authError.message || 'Failed to create account')
-        return
+        setError(authError.message || 'Failed to create account');
+        return;
       }
 
-      if (import.meta.env.DEV) {
-        console.log('[AUTH CLIENT] Sign-up success')
+      toast.success('Account created successfully!');
+      
+      const resolvedRedirect = resolveRedirect(redirect);
+      if (resolvedRedirect) {
+        navigate({ to: resolvedRedirect.pathname + resolvedRedirect.search });
+      } else {
+        navigate({ to: '/' });
       }
-
-      toast.success('Account created successfully!')
-      navigate({ to: '/' })
     } catch (err) {
       if (import.meta.env.DEV) {
-        console.error('[AUTH CLIENT] Sign-up error:', err)
+        console.error('[AUTH CLIENT] Sign-up error:', err);
       }
-      setError('An unexpected error occurred. Please try again.')
+      setError('An unexpected error occurred. Please try again.');
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
 
   const handleGoogleSignUp = async () => {
-    setLoading(true)
-    console.log('[AUTH CLIENT] Google sign-up attempt:', {
-      timestamp: new Date().toISOString(),
-    })
+    setLoading(true);
     try {
       await authClient.signIn.social({
         provider: 'google',
-      })
-      console.log('[AUTH CLIENT] Google sign-up redirect initiated')
+        callbackURL: redirect || window.location.origin,
+      });
     } catch (err) {
-      console.error('[AUTH CLIENT] Google sign-up error:', {
-        error: err,
-        timestamp: new Date().toISOString(),
-      })
-      toast.error('Google sign-up failed')
+      if (import.meta.env.DEV) {
+        console.error('[AUTH CLIENT] Google sign-up error:', err);
+      }
+      toast.error('Google sign-up failed');
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
 
   const passwordRequirements = [
     { text: 'At least 8 characters', met: password.length >= 8 },
     { text: 'Contains a number', met: /\d/.test(password) },
-  ]
+  ];
 
-  const isPasswordValid = passwordRequirements.every((req) => req.met)
+  const isPasswordValid = passwordRequirements.every((req) => req.met);
 
   return (
     <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-background p-4">
@@ -155,7 +159,7 @@ function SignUp() {
                 {passwordRequirements.map((req, i) => (
                   <div key={i} className="flex items-center gap-2 text-[10px]">
                     <span className={req.met ? "text-green-500" : "text-muted-foreground"}>
-                      {req.met ? <CheckCircle2 className="h-3 w-3" /> : <div className="h-1 w-1 rounded-full bg-current ml-1" />}
+                      {req.met ? <Check className="h-3 w-3" /> : <div className="h-1 w-1 rounded-full bg-current ml-1" />}
                     </span>
                     <span className={req.met ? "text-green-500/80" : "text-muted-foreground/60"}>
                       {req.text}
@@ -238,5 +242,5 @@ function SignUp() {
         </div>
       </motion.div>
     </div>
-  )
+  );
 }

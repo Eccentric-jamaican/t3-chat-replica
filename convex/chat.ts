@@ -6,6 +6,7 @@ import {
   searchEbayItems,
   getEbayItemDetails as fetchEbayDetails,
 } from "./ebay";
+import { getModelCapabilities } from "./lib/models";
 
 const TOOLS = [
   {
@@ -96,10 +97,10 @@ export const streamAnswer = action({
     webSearch: v.optional(v.boolean()),
   },
   handler: async (ctx, args): Promise<Id<"messages"> | null> => {
-    const ABORT_POLL_MS = 100; // Reduced from 250ms for snappier response
+    const ABORT_POLL_MS = 50; // More frequent abort checks for faster stop response
     const MAX_CYCLES = 5;
-    const BUFFER_FLUSH_SIZE = 1; // Flush every chunk (t3.chat-style)
-    const BUFFER_FLUSH_MS = 0; // No time-based buffering
+    const BUFFER_FLUSH_SIZE = 50; // Flush every 50 chars for balance of speed and responsiveness
+    const BUFFER_FLUSH_MS = 30; // Also flush every 30ms for smoother updates
 
     let cycle = 0;
     let currentMessageId: Id<"messages"> | null = null;
@@ -168,9 +169,20 @@ export const streamAnswer = action({
       }
     };
 
-    // Filter tools based on user preference
+    // Detect Model Capabilities
+    const capabilities = getModelCapabilities(args.modelId);
+    
+    // Filter tools based on user preference AND model capability
     const activeTools = TOOLS.filter((t) => {
-      if (t.function.name === "search_web" && !args.webSearch) return false;
+      // If model DOES NOT support native tools, we filter them all out
+      // We will handle them via Regex Fallback if configured
+      if (!capabilities.supportsTools) {
+        return false;
+      }
+
+      if (t.function.name === "search_web" && !args.webSearch) {
+        return false;
+      }
       return true;
     });
 
@@ -198,9 +210,12 @@ export const streamAnswer = action({
       if (args.messageId) {
         currentMessageId = args.messageId;
         if (currentSessionId) {
-          const status = await ctx.runQuery(internal.streamSessions.internalGetStatus, {
-            sessionId: currentSessionId,
-          });
+          const status = await ctx.runQuery(
+            internal.streamSessions.internalGetStatus,
+            {
+              sessionId: currentSessionId,
+            },
+          );
           if (status === "aborted") return currentMessageId;
         } else {
           const status = await ctx.runQuery(
@@ -309,6 +324,23 @@ export const streamAnswer = action({
             return msg;
           });
 
+        // [AGENTIC LOGIC] Inject System Prompt for Fallback Tools
+        if (capabilities.toolFallback === "regex" && args.webSearch) {
+          const systemPrompt = {
+            role: "system",
+            content: `You currently lack native tool support. To search the web, you MUST output a search command in this EXACT format:
+[[SEARCH: your search query here]]
+
+Example:
+User: What is the price of bitcoin?
+Assistant: [[SEARCH: price of bitcoin]]
+
+When you receive the search results, answer the user's question.
+`
+          };
+          openRouterMessages.unshift(systemPrompt);
+        }
+
         // Create AbortController to cancel the fetch if user aborts
         const controller = new AbortController();
         activeController = controller;
@@ -320,14 +352,23 @@ export const streamAnswer = action({
             headers: {
               Authorization: `Bearer ${apiKey}`,
               "Content-Type": "application/json",
-              "HTTP-Referer": "https://Sendcat",
-              "X-Title": "T3 Chat Replica",
+              "HTTP-Referer": "https://sendcat.app",
+              "X-Title": "Sendcat",
             },
             body: JSON.stringify({
-              model: args.modelId ?? "google/gemini-2.0-flash-exp:free",
+              // Use models array for automatic fallback on errors
+              models: [
+                args.modelId ?? "google/gemini-2.0-flash-exp:free",
+                "anthropic/claude-sonnet-4",
+                "google/gemini-2.0-flash-001",
+              ],
               messages: openRouterMessages,
               tools: activeTools.length > 0 ? activeTools : undefined,
-              // Note: tool_choice is not supported by all OpenRouter providers, so we omit it
+              // Tool choice & parallel calls - only if tools exist
+              ...(activeTools.length > 0 ? {
+                tool_choice: "auto",
+                parallel_tool_calls: false,
+              } : {}),
               ...(args.reasoningEffort && args.reasoningType === "effort"
                 ? { reasoning: { effort: args.reasoningEffort } }
                 : args.reasoningEffort && args.reasoningType === "max_tokens"
@@ -408,6 +449,17 @@ export const streamAnswer = action({
                 continue;
               }
 
+              // Handle mid-stream errors (OpenRouter sends errors as SSE data after some tokens were sent)
+              if (data.error) {
+                console.error(`OpenRouter stream error: ${data.error.message}`);
+                isAborted = true;
+                controller.abort();
+                try {
+                  await reader.cancel();
+                } catch {}
+                break streamLoop;
+              }
+
               const delta = data.choices[0]?.delta;
               const chunkFinishReason = data.choices[0]?.finish_reason;
 
@@ -423,6 +475,43 @@ export const streamAnswer = action({
               // Handle Content - buffer tokens and flush periodically
               if (delta?.content) {
                 contentBuffer += delta.content;
+
+                // [AGENTIC LOGIC] Regex Tool Parsing Fallback
+                // Only check if enabled for this model to avoid perf hit on all models
+                if (capabilities.toolFallback === "regex") {
+                  const searchRegex = /\[\[SEARCH: (.*?)\]\]/;
+                  const match = contentBuffer.match(searchRegex);
+                  if (match) {
+                    const query = match[1];
+                    console.log(`[AGENTIC] Detected manual search command: ${query}`);
+
+                    // Synthesize a tool call
+                    accumulatedToolCalls.push({
+                      id: `call_${Date.now()}`,
+                      type: "function",
+                      function: {
+                        name: "search_web",
+                        arguments: JSON.stringify({ query }),
+                      },
+                    });
+
+                    // We treat this as a "stop" event to execute the tool immediately
+                    break streamLoop;
+                  }
+                }
+
+                // Check abort frequently during content accumulation
+                await checkAbortStatus();
+                if (isAborted) {
+                  console.log(
+                    "Aborting stream - user requested stop during content accumulation",
+                  );
+                  controller.abort();
+                  try {
+                    await reader.cancel();
+                  } catch {}
+                  break streamLoop;
+                }
 
                 // Flush if buffer is large enough or enough time has passed
                 const shouldFlush =
@@ -544,23 +633,55 @@ export const streamAnswer = action({
                     result =
                       "Error: SERPER_API_KEY not configured in environment variables.";
                   } else {
-                    const res = await fetch(
-                      "https://google.serper.dev/search",
-                      {
-                        method: "POST",
-                        headers: {
-                          "X-API-KEY": serperKey,
-                          "Content-Type": "application/json",
-                        },
-                        body: JSON.stringify({ q: argsObj.query }),
-                      },
+                    console.log(
+                      `[SEARCH_WEB] Executing search for query: ${argsObj.query}`,
                     );
+                    try {
+                      const res = await fetch(
+                        "https://google.serper.dev/search",
+                        {
+                          method: "POST",
+                          headers: {
+                            "X-API-KEY": serperKey,
+                            "Content-Type": "application/json",
+                          },
+                          body: JSON.stringify({
+                            q: argsObj.query,
+                            num: 5,
+                          }),
+                        },
+                      );
 
-                    if (!res.ok) {
-                      result = JSON.stringify({ error: res.statusText });
-                    } else {
-                      const data = await res.json();
-                      result = JSON.stringify(data.organic?.slice(0, 5) || []);
+                      console.log(
+                        `[SEARCH_WEB] Response status: ${res.status}`,
+                      );
+
+                      if (!res.ok) {
+                        await res.text(); // Consume the body to prevent resource leaks
+                        console.error(`Serper API error: ${res.status}`);
+                        result = `Search API error: ${res.statusText}`;
+                      } else {
+                        const data = await res.json();
+                        console.log(
+                          `[SEARCH_WEB] Got ${data.organic?.length || 0} results`,
+                        );
+                        // Format results as a simple text list for the model
+                        const results =
+                          data.organic
+                            ?.slice(0, 5)
+                            .map(
+                              (item: any, i: number) =>
+                                `${i + 1}. ${item.title} - ${item.link}`,
+                            )
+                            .join("\n") || "No results found";
+
+                        result = `Search results for "${argsObj.query}":\n\n${results}`;
+                      }
+                    } catch (fetchError: any) {
+                      console.error(
+                        `Serper fetch error: ${fetchError.message}`,
+                      );
+                      result = `Search failed: ${fetchError.message}`;
                     }
                   }
                 } else if (name === "search_ebay") {
@@ -635,9 +756,12 @@ export const streamAnswer = action({
 
       // Final safety check: ensure message isn't left in streaming state
       if (currentSessionId) {
-        const status = await ctx.runQuery(internal.streamSessions.internalGetStatus, {
-          sessionId: currentSessionId,
-        });
+        const status = await ctx.runQuery(
+          internal.streamSessions.internalGetStatus,
+          {
+            sessionId: currentSessionId,
+          },
+        );
         if (status === "streaming") {
           await ctx.runMutation(internal.streamSessions.internalComplete, {
             sessionId: currentSessionId,

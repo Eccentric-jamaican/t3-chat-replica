@@ -55,8 +55,7 @@ export async function fetchOpenRouterModels(): Promise<AppModel[]> {
       const supportsEffort = 
         modelIdLower.includes('/o1') || 
         modelIdLower.includes('/o3') || 
-        modelIdLower.includes('/gpt-5') ||
-        modelIdLower.includes('grok');
+        modelIdLower.includes('/gpt-5');
       
       const supportsMaxTokens = 
         (modelIdLower.includes('gemini') && modelIdLower.includes('thinking')) ||
@@ -64,7 +63,8 @@ export async function fetchOpenRouterModels(): Promise<AppModel[]> {
         modelIdLower.includes('claude-sonnet-4') ||
         modelIdLower.includes('claude-4') ||
         (modelIdLower.includes('qwen') && modelIdLower.includes('thinking')) ||
-        modelIdLower.includes('deepseek-r1');
+        modelIdLower.includes('deepseek-r1') ||
+        modelIdLower.includes('kimi');
       
       if (supportsEffort) reasoningType = 'effort'
       else if (supportsMaxTokens) reasoningType = 'max_tokens'
@@ -89,6 +89,8 @@ export async function fetchOpenRouterModels(): Promise<AppModel[]> {
           modelIdLower.includes('mixtral') ||
           modelIdLower.includes('command-r') ||
           modelIdLower.includes('deepseek') ||
+          modelIdLower.includes('grok') ||
+          modelIdLower.includes('x-ai') ||
           descLower.includes('function calling') ||
           descLower.includes('tool use')
         supportsTools = knownToolModels

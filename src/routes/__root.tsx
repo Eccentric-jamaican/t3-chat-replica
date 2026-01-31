@@ -1,6 +1,8 @@
 import { HeadContent, Scripts, createRootRoute } from "@tanstack/react-router";
 import { TanStackRouterDevtoolsPanel } from "@tanstack/react-router-devtools";
 import { TanStackDevtools } from "@tanstack/react-devtools";
+import { ErrorPage } from "../components/layout/ErrorPage";
+import { NotFoundPage } from "../components/layout/NotFoundPage";
 
 import appCss from "../styles.css?url";
 
@@ -77,6 +79,8 @@ export const Route = createRootRoute({
   }),
 
   shellComponent: RootDocument,
+  errorComponent: (props) => <ErrorPage error={props.error} />,
+  notFoundComponent: () => <NotFoundPage />,
 });
 
 import { useEffect } from "react";

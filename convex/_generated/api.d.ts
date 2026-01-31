@@ -10,6 +10,7 @@
 
 import type * as auth from "../auth.js";
 import type * as chat from "../chat.js";
+import type * as chatHttp from "../chatHttp.js";
 import type * as crons from "../crons.js";
 import type * as ebay from "../ebay.js";
 import type * as explore from "../explore.js";
@@ -35,7 +36,9 @@ import type * as integrations_types from "../integrations/types.js";
 import type * as integrations_whatsapp from "../integrations/whatsapp.js";
 import type * as integrations_whatsapp_messaging from "../integrations/whatsapp/messaging.js";
 import type * as integrations_whatsapp_verify from "../integrations/whatsapp/verify.js";
+import type * as lib_models from "../lib/models.js";
 import type * as messages from "../messages.js";
+import type * as packages from "../packages.js";
 import type * as profiles from "../profiles.js";
 import type * as streamSessions from "../streamSessions.js";
 import type * as threads from "../threads.js";
@@ -49,6 +52,7 @@ import type {
 declare const fullApi: ApiFromModules<{
   auth: typeof auth;
   chat: typeof chat;
+  chatHttp: typeof chatHttp;
   crons: typeof crons;
   ebay: typeof ebay;
   explore: typeof explore;
@@ -74,7 +78,9 @@ declare const fullApi: ApiFromModules<{
   "integrations/whatsapp": typeof integrations_whatsapp;
   "integrations/whatsapp/messaging": typeof integrations_whatsapp_messaging;
   "integrations/whatsapp/verify": typeof integrations_whatsapp_verify;
+  "lib/models": typeof lib_models;
   messages: typeof messages;
+  packages: typeof packages;
   profiles: typeof profiles;
   streamSessions: typeof streamSessions;
   threads: typeof threads;

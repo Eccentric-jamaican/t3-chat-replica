@@ -1,15 +1,24 @@
-import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
+import { createFileRoute, Link, useNavigate, useSearch } from '@tanstack/react-router'
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { authClient } from '../lib/auth'
-import { Mail, Lock, ArrowRight, Loader2, AlertCircle } from 'lucide-react'
+import { cn, resolveRedirect } from '../lib/utils'
 import { toast } from 'sonner'
+import { Mail, Lock, ArrowRight, Loader2, AlertCircle } from 'lucide-react'
+import { Button } from '../components/ui/button'
+import { z } from 'zod'
+
+const signInSearchSchema = z.object({
+  redirect: z.string().optional(),
+});
 
 export const Route = createFileRoute('/sign-in')({
+  validateSearch: (search) => signInSearchSchema.parse(search),
   component: SignIn,
-})
+});
 
 function SignIn() {
+  const { redirect } = useSearch({ from: '/sign-in' });
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
@@ -22,25 +31,24 @@ function SignIn() {
     setError(null)
 
     try {
-      const { data, error: authError } = await authClient.signIn.email({
+      const { error: authError } = await authClient.signIn.email({
         email,
         password,
       })
 
       if (authError) {
-        if (import.meta.env.DEV) {
-          console.log('[AUTH CLIENT] Sign-in failed:', authError.message)
-        }
         setError(authError.message || 'Invalid email or password')
         return
       }
 
-      if (import.meta.env.DEV) {
-        console.log('[AUTH CLIENT] Sign-in success')
-      }
-
       toast.success('Successfully signed in!')
-      navigate({ to: '/' })
+      
+      const resolvedRedirect = resolveRedirect(redirect);
+      if (resolvedRedirect) {
+        navigate({ to: resolvedRedirect.pathname + resolvedRedirect.search });
+      } else {
+        navigate({ to: '/' });
+      }
     } catch (err) {
       if (import.meta.env.DEV) {
         console.error('[AUTH CLIENT] Sign-in error:', err)
@@ -56,6 +64,7 @@ function SignIn() {
     try {
       await authClient.signIn.social({
         provider: 'google',
+        callbackURL: redirect || window.location.origin,
       })
     } catch (err) {
       if (import.meta.env.DEV) {

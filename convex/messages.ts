@@ -551,6 +551,7 @@ export const internalSend = internalMutation({
     ),
     toolCallId: v.optional(v.string()),
     name: v.optional(v.string()),
+    modelId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const messageId = await ctx.db.insert('messages', {

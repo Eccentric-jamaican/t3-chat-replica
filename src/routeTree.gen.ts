@@ -13,6 +13,7 @@ import { Route as SignUpRouteImport } from './routes/sign-up'
 import { Route as SignInRouteImport } from './routes/sign-in'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as PreAlertsRouteImport } from './routes/pre-alerts'
+import { Route as PackagesRouteImport } from './routes/packages'
 import { Route as ExploreRouteImport } from './routes/explore'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ExploreIndexRouteImport } from './routes/explore.index'
@@ -48,6 +49,11 @@ const SettingsRoute = SettingsRouteImport.update({
 const PreAlertsRoute = PreAlertsRouteImport.update({
   id: '/pre-alerts',
   path: '/pre-alerts',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PackagesRoute = PackagesRouteImport.update({
+  id: '/packages',
+  path: '/packages',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ExploreRoute = ExploreRouteImport.update({
@@ -137,6 +143,7 @@ const DemoStartSsrDataOnlyRoute = DemoStartSsrDataOnlyRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/explore': typeof ExploreRouteWithChildren
+  '/packages': typeof PackagesRoute
   '/pre-alerts': typeof PreAlertsRoute
   '/settings': typeof SettingsRoute
   '/sign-in': typeof SignInRoute
@@ -158,6 +165,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/packages': typeof PackagesRoute
   '/pre-alerts': typeof PreAlertsRoute
   '/settings': typeof SettingsRoute
   '/sign-in': typeof SignInRoute
@@ -180,6 +188,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/explore': typeof ExploreRouteWithChildren
+  '/packages': typeof PackagesRoute
   '/pre-alerts': typeof PreAlertsRoute
   '/settings': typeof SettingsRoute
   '/sign-in': typeof SignInRoute
@@ -204,6 +213,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/explore'
+    | '/packages'
     | '/pre-alerts'
     | '/settings'
     | '/sign-in'
@@ -225,6 +235,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/packages'
     | '/pre-alerts'
     | '/settings'
     | '/sign-in'
@@ -246,6 +257,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/explore'
+    | '/packages'
     | '/pre-alerts'
     | '/settings'
     | '/sign-in'
@@ -269,6 +281,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   ExploreRoute: typeof ExploreRouteWithChildren
+  PackagesRoute: typeof PackagesRoute
   PreAlertsRoute: typeof PreAlertsRoute
   SettingsRoute: typeof SettingsRoute
   SignInRoute: typeof SignInRoute
@@ -312,6 +325,13 @@ declare module '@tanstack/react-router' {
       path: '/pre-alerts'
       fullPath: '/pre-alerts'
       preLoaderRoute: typeof PreAlertsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/packages': {
+      id: '/packages'
+      path: '/packages'
+      fullPath: '/packages'
+      preLoaderRoute: typeof PackagesRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/explore': {
@@ -464,6 +484,7 @@ const ExploreRouteWithChildren =
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   ExploreRoute: ExploreRouteWithChildren,
+  PackagesRoute: PackagesRoute,
   PreAlertsRoute: PreAlertsRoute,
   SettingsRoute: SettingsRoute,
   SignInRoute: SignInRoute,

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Globe, ChevronDown, ChevronUp, ExternalLink } from 'lucide-react'
+import { Globe, ChevronDown, ChevronUp } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 
 interface SearchResult {
@@ -10,31 +10,47 @@ interface SearchResult {
 
 interface SearchToolResultProps {
   isLoading: boolean
-  result?: string
+  result?: unknown
+  args?: string
 }
 
-export function SearchToolResult({ isLoading, result }: SearchToolResultProps) {
+export function SearchToolResult({ isLoading, result, args }: SearchToolResultProps) {
   const [isOpen, setIsOpen] = useState(false)
+
+  // Parse query from args if available
+  let query = "";
+  if (args) {
+    try {
+      const parsed = JSON.parse(args);
+      if (parsed.query) query = parsed.query;
+    } catch (e) {
+      // Partial JSON
+    }
+  }
 
   if (isLoading) {
     return (
       <div className="flex items-center gap-2 text-sm text-foreground/60 py-2">
          <div className="w-4 h-4 rounded-full border-2 border-primary/20 border-t-primary animate-spin" />
-         <span>Searching the web...</span>
+         <span>{query ? `Searching for: "${query}"...` : "Searching the web..."}</span>
       </div>
     )
   }
 
   let parsedResults: SearchResult[] = []
-  try {
-    if (result) parsedResults = JSON.parse(result)
-  } catch (e) {
-    // If it's pure text (legacy) or error
-    return (
-      <div className="text-xs bg-black/5 p-2 rounded font-mono text-foreground/60">
-        {result}
-      </div>
-    )
+  if (Array.isArray(result)) {
+    parsedResults = result;
+  } else {
+    try {
+      if (result && typeof result === "string") parsedResults = JSON.parse(result)
+    } catch (e) {
+      // If it's pure text (legacy) or error
+      return (
+        <div className="text-xs bg-black/5 p-2 rounded font-mono text-foreground/60">
+          {String(result)}
+        </div>
+      )
+    }
   }
 
   if (!parsedResults || parsedResults.length === 0) return null

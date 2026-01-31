@@ -1,31 +1,33 @@
-import { useState, useRef, useEffect } from 'react'
-import { ArrowUp, Paperclip, Globe, X, Brain } from 'lucide-react'
-import { motion, AnimatePresence } from 'framer-motion'
-import { clsx, type ClassValue } from 'clsx'
-import { twMerge } from 'tailwind-merge'
-import { useMutation, useAction } from "convex/react"
-import { api } from "../../../convex/_generated/api"
-import { ModelPicker } from './ModelPicker'
-import { fetchOpenRouterModels, type AppModel } from '../../lib/openrouter'
-import { useIsMobile } from '../../hooks/useIsMobile'
+import { useState, useRef, useEffect } from "react";
+import { ArrowUp, Paperclip, Globe, X, Brain } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
+import { clsx, type ClassValue } from "clsx";
+import { twMerge } from "tailwind-merge";
+import { useMutation, useAction, useQuery } from "convex/react";
+import { api } from "../../../convex/_generated/api";
+import { ModelPicker } from "./ModelPicker";
+import { fetchOpenRouterModels, type AppModel } from "../../lib/openrouter";
+import { useIsMobile } from "../../hooks/useIsMobile";
+import { useNavigate } from "@tanstack/react-router";
+import { v4 as uuidv4 } from "uuid";
 
 function cn(...inputs: ClassValue[]) {
-  return twMerge(clsx(inputs))
+  return twMerge(clsx(inputs));
 }
 
 interface MessageEditInputProps {
-  messageId: string
-  threadId: string
-  initialContent: string
+  messageId: string;
+  threadId: string;
+  initialContent: string;
   initialAttachments?: Array<{
-    storageId: string
-    type: string
-    name: string
-    size: number
-    url?: string
-  }>
-  onCancel: () => void
-  onSubmit: () => void
+    storageId: string;
+    type: string;
+    name: string;
+    size: number;
+    url?: string;
+  }>;
+  onCancel: () => void;
+  onSubmit: () => void;
 }
 
 export function MessageEditInput({
@@ -34,220 +36,315 @@ export function MessageEditInput({
   initialContent,
   initialAttachments = [],
   onCancel,
-  onSubmit
+  onSubmit,
 }: MessageEditInputProps) {
-  const isMobile = useIsMobile()
-  const [content, setContent] = useState(initialContent)
-  const [isSubmitting, setIsSubmitting] = useState(false)
+  const isMobile = useIsMobile();
+  const [content, setContent] = useState(initialContent);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Get sessionId for ownership verification
-  const sessionId = typeof window !== "undefined"
-    ? localStorage.getItem("t3_session_id") || undefined
-    : undefined
+  const sessionId =
+    typeof window !== "undefined"
+      ? localStorage.getItem("sendcat_session_id") || undefined
+      : undefined;
 
   const [selectedModelId, setSelectedModelId] = useState(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('t3_selected_model')
-      if (saved) return saved
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("t3_selected_model");
+      if (saved) return saved;
     }
-    return "google/gemini-2.0-flash-exp:free"
-  })
+    return "google/gemini-2.0-flash-exp:free";
+  });
 
-  const [searchEnabled, setSearchEnabled] = useState(false)
+  const [searchEnabled, setSearchEnabled] = useState(false);
   const [reasoningEffort, setReasoningEffort] = useState<string | null>(() => {
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('t3_reasoning_effort')
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("t3_reasoning_effort");
     }
-    return null
-  })
-  const [models, setModels] = useState<AppModel[]>([])
+    return null;
+  });
+  const [models, setModels] = useState<AppModel[]>([]);
 
   useEffect(() => {
-    fetchOpenRouterModels().then(setModels)
-  }, [])
+    fetchOpenRouterModels().then(setModels);
+  }, []);
 
-  const currentModel = models.find(m => m.id === selectedModelId)
-  const reasoningType = currentModel?.reasoningType // 'effort' | 'max_tokens' | null
-  const supportsReasoning = reasoningType != null
+  const currentModel = models.find((m) => m.id === selectedModelId);
+  const reasoningType = currentModel?.reasoningType; // 'effort' | 'max_tokens' | null
+  const supportsReasoning = reasoningType != null;
 
   const toggleReasoning = () => {
     // Cycle through effort levels appropriate for the reasoning type
-    if (reasoningType === 'effort') {
-      const levels: (string | null)[] = [null, 'low', 'medium', 'high']
-      const currentIndex = levels.indexOf(reasoningEffort)
-      const nextIndex = (currentIndex + 1) % levels.length
-      const newEffort = levels[nextIndex]
-      setReasoningEffort(newEffort)
+    if (reasoningType === "effort") {
+      const levels: (string | null)[] = [null, "low", "medium", "high"];
+      const currentIndex = levels.indexOf(reasoningEffort);
+      const nextIndex = (currentIndex + 1) % levels.length;
+      const newEffort = levels[nextIndex];
+      setReasoningEffort(newEffort);
       if (newEffort) {
-        localStorage.setItem('t3_reasoning_effort', newEffort)
+        localStorage.setItem("t3_reasoning_effort", newEffort);
       } else {
-        localStorage.removeItem('t3_reasoning_effort')
+        localStorage.removeItem("t3_reasoning_effort");
       }
-    } else if (reasoningType === 'max_tokens') {
+    } else if (reasoningType === "max_tokens") {
       // For max_tokens models, just toggle on/off with a sensible default
-      const newEffort = reasoningEffort ? null : 'medium'
-      setReasoningEffort(newEffort)
+      const newEffort = reasoningEffort ? null : "medium";
+      setReasoningEffort(newEffort);
       if (newEffort) {
-        localStorage.setItem('t3_reasoning_effort', newEffort)
+        localStorage.setItem("t3_reasoning_effort", newEffort);
       } else {
-        localStorage.removeItem('t3_reasoning_effort')
+        localStorage.removeItem("t3_reasoning_effort");
       }
     }
-  }
+  };
 
-  const [attachments, setAttachments] = useState<{
-    storageId: string
-    type: string
-    name: string
-    size: number
-    previewUrl: string
-  }[]>(initialAttachments.map(a => ({ ...a, previewUrl: a.url || '' })))
+  const [attachments, setAttachments] = useState<
+    {
+      storageId: string;
+      type: string;
+      name: string;
+      size: number;
+      previewUrl: string;
+    }[]
+  >(initialAttachments.map((a) => ({ ...a, previewUrl: a.url || "" })));
 
-  const [uploading, setUploading] = useState(false)
-  const fileInputRef = useRef<HTMLInputElement>(null)
-  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const previewUrlsRef = useRef<Set<string>>(new Set());
 
-  const updateMessage = useMutation(api.messages.update)
-  const deleteAfter = useMutation(api.messages.deleteAfter)
-  const streamAnswer = useAction(api.chat.streamAnswer)
-  const generateUploadUrl = useMutation(api.messages.generateUploadUrl)
+  // Cleanup preview URLs on unmount
+  useEffect(() => {
+    return () => {
+      previewUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
+      previewUrlsRef.current.clear();
+    };
+  }, []);
+
+  const messages = useQuery(api.messages.list, { threadId: threadId as any, sessionId });
+  const currentThread = useQuery(api.threads.get, { id: threadId as any, sessionId: sessionId ?? "" });
+  const navigate = useNavigate();
+  const createThread = useMutation(api.threads.create);
+  const sendMessage = useMutation(api.messages.send);
+  const streamAnswer = useAction(api.chat.streamAnswer);
+  const generateUploadUrl = useMutation(api.messages.generateUploadUrl);
 
   useEffect(() => {
-    const textarea = textareaRef.current
+    const textarea = textareaRef.current;
     if (textarea) {
-      textarea.style.height = 'auto'
-      textarea.style.height = `${Math.min(textarea.scrollHeight, 200)}px`
+      textarea.style.height = "auto";
+      textarea.style.height = `${Math.min(textarea.scrollHeight, 200)}px`;
     }
-  }, [content])
+  }, [content]);
 
   // Focus textarea on mount
   useEffect(() => {
-    textareaRef.current?.focus()
+    textareaRef.current?.focus();
     // Move cursor to end
     if (textareaRef.current) {
-      textareaRef.current.selectionStart = textareaRef.current.value.length
-      textareaRef.current.selectionEnd = textareaRef.current.value.length
+      textareaRef.current.selectionStart = textareaRef.current.value.length;
+      textareaRef.current.selectionEnd = textareaRef.current.value.length;
     }
-  }, [])
+  }, []);
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || [])
-    if (files.length === 0) return
-    setUploading(true)
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+    setUploading(true);
 
     try {
-      const newAttachments: typeof attachments = []
+      const newAttachments: typeof attachments = [];
       for (const file of files) {
-        const postUrl = await generateUploadUrl()
+        const postUrl = await generateUploadUrl();
         const result = await fetch(postUrl, {
           method: "POST",
           headers: { "Content-Type": file.type },
           body: file,
-        })
-        const { storageId } = await result.json()
+        });
+        const { storageId } = await result.json();
+
+        const previewUrl = URL.createObjectURL(file);
+        previewUrlsRef.current.add(previewUrl);
 
         newAttachments.push({
           storageId,
           type: file.type,
           name: file.name,
           size: file.size,
-          previewUrl: URL.createObjectURL(file)
-        })
+          previewUrl,
+        });
       }
-      setAttachments(prev => [...prev, ...newAttachments])
+      setAttachments((prev) => [...prev, ...newAttachments]);
     } catch (error) {
-      console.error("Upload failed", error)
+      console.error("Upload failed", error);
     } finally {
-      setUploading(false)
-      if (fileInputRef.current) fileInputRef.current.value = ''
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
     }
-  }
+  };
 
   const removeAttachment = (index: number) => {
-    setAttachments(prev => prev.filter((_, i) => i !== index))
-  }
+    const attachment = attachments[index];
+    if (attachment?.previewUrl && previewUrlsRef.current.has(attachment.previewUrl)) {
+      URL.revokeObjectURL(attachment.previewUrl);
+      previewUrlsRef.current.delete(attachment.previewUrl);
+    }
+    setAttachments((prev) => prev.filter((_, i) => i !== index));
+  };
 
   const handleSubmit = async () => {
-    if (!content.trim() || isSubmitting) return
-    setIsSubmitting(true)
+    if (!content.trim() || isSubmitting || !messages) return;
+    setIsSubmitting(true);
 
     try {
-      // Update the message content
-      await updateMessage({ id: messageId as any, content: content.trim(), sessionId })
+      // Find the message index
+      const messageIndex = messages.findIndex((m: any) => m._id === messageId);
+      if (messageIndex === -1) return;
 
-      // Delete all messages after this one
-      await deleteAfter({
-        threadId: threadId as any,
-        afterMessageId: messageId as any,
-        sessionId
-      })
+      const messagesToCopy = messages.slice(0, messageIndex); // Copy all messages BEFORE this one
+      
+      // Determine the correct parent thread ID (avoid unnecessary nesting)
+      // If we are editing a message that exists in the parent thread, the new branch should be a sibling.
+      let finalParentThreadId = threadId;
+      if (currentThread?.parentThreadId) {
+        // Simple heuristic: if we are editing an' earlier part of the conversation, 
+        // we might want a sibling branch.
+        // For now, if it's already a branch, we favor sibling branches for clarity unless specified otherwise.
+        // t3.chat handles this by making forks flat under the original root usually.
+        finalParentThreadId = currentThread.parentThreadId as any;
+      }
+
+      // [AGENTIC] Unified Session Ownership
+      const storedSessionId = typeof window !== "undefined" ? localStorage.getItem("sendcat_session_id") : null;
+      const effectiveSessionId = storedSessionId || uuidv4();
+      
+      if (!storedSessionId && typeof window !== "undefined") {
+        localStorage.setItem("sendcat_session_id", effectiveSessionId);
+      }
+
+      // Create new branched thread
+      const newThreadId = await createThread({
+        sessionId: effectiveSessionId,
+        modelId: selectedModelId,
+        title: content.trim().slice(0, 40),
+        parentThreadId: finalParentThreadId as any,
+      });
+
+      // Copy messages before
+      for (const msg of messagesToCopy) {
+        if (msg.role === "user" || msg.role === "assistant") {
+          await sendMessage({
+            threadId: newThreadId,
+            content: msg.content,
+            role: msg.role,
+            sessionId: effectiveSessionId,
+            attachments: msg.attachments?.map((a: any) => ({
+              storageId: a.storageId,
+              type: a.type,
+              name: a.name,
+              size: a.size,
+            })),
+          });
+        }
+      }
+
+      // Send the EDITED message as the last user message
+      await sendMessage({
+        threadId: newThreadId,
+        content: content.trim(),
+        role: "user",
+        sessionId: effectiveSessionId,
+        attachments: attachments.map((a) => ({
+          storageId: a.storageId as any,
+          type: a.type,
+          name: a.name,
+          size: a.size,
+        })),
+      });
 
       // Save model selection
-      localStorage.setItem('t3_selected_model', selectedModelId)
+      localStorage.setItem("t3_selected_model", selectedModelId);
 
-      // Regenerate response with the selected model
-      // Only pass reasoningEffort when the current model supports reasoning
+      // CRITICAL: Close UI and Navigate IMMEDIATELY before starting the slow stream
+      onSubmit();
+      navigate({ to: "/chat/$threadId", params: { threadId: newThreadId } });
+
+      // Regenerate response in the new thread (fire and forget on the server)
       await streamAnswer({
-        threadId: threadId as any,
+        threadId: newThreadId,
         modelId: selectedModelId,
-        reasoningEffort: supportsReasoning && reasoningEffort ? reasoningEffort : undefined,
-        reasoningType: supportsReasoning && reasoningEffort ? reasoningType : undefined,
-        webSearch: searchEnabled
-      })
-
-      onSubmit()
+        reasoningEffort:
+          supportsReasoning && reasoningEffort ? reasoningEffort : undefined,
+        reasoningType:
+          supportsReasoning && reasoningEffort ? (reasoningType as any) : undefined,
+        webSearch: searchEnabled,
+      });
     } catch (error) {
-      console.error("Failed to update and regenerate:", error)
+      console.error("Failed to edit and branch:", error);
     } finally {
-      setIsSubmitting(false)
+      setIsSubmitting(false);
     }
-  }
+  };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      handleSubmit()
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSubmit();
     }
-    if (e.key === 'Escape') {
-      onCancel()
+    if (e.key === "Escape") {
+      onCancel();
     }
-  }
+  };
 
   return (
     <div className={cn("w-full", isMobile ? "max-w-full" : "max-w-[768px]")}>
-      <div className={cn(
-        "relative rounded-2xl transition-all duration-300 border border-fuchsia-200/50 bg-white/80 backdrop-blur-sm overflow-hidden shadow-lg",
-        "focus-within:ring-[4px] focus-within:ring-primary/10"
-      )}>
+      <div
+        className={cn(
+          "relative overflow-hidden rounded-2xl border border-fuchsia-200/50 bg-white/80 shadow-lg backdrop-blur-sm transition-all duration-300",
+          "focus-within:ring-[4px] focus-within:ring-primary/10",
+        )}
+      >
         {/* Attachment Previews */}
         <AnimatePresence>
           {attachments.length > 0 && (
             <motion.div
               initial={{ height: 0, opacity: 0 }}
-              animate={{ height: 'auto', opacity: 1 }}
+              animate={{ height: "auto", opacity: 1 }}
               exit={{ height: 0, opacity: 0 }}
-              className="border-b border-black/5 overflow-hidden"
+              className="overflow-hidden border-b border-black/5"
             >
-              <div className="p-3 flex flex-wrap gap-2">
+              <div className="flex flex-wrap gap-2 p-3">
                 {attachments.map((att, i) => (
-                  <div key={i} className="relative group">
-                    {att.type.startsWith('image/') ? (
+                  <div key={i} className="group relative">
+                    {att.type.startsWith("image/") ? (
                       <img
                         src={att.previewUrl}
                         alt={att.name}
-                        className="h-16 w-16 object-cover rounded-lg border border-black/10"
+                        className="h-16 w-16 rounded-lg border border-black/10 object-cover"
                       />
                     ) : (
-                      <div className="h-16 px-3 flex items-center gap-2 bg-black/5 rounded-lg border border-black/10">
-                        <svg className="w-5 h-5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      <div className="flex h-16 items-center gap-2 rounded-lg border border-black/10 bg-black/5 px-3">
+                        <svg
+                          className="h-5 w-5 text-gray-500"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                          />
                         </svg>
-                        <span className="text-xs font-medium truncate max-w-[100px]">{att.name}</span>
+                        <span className="max-w-[100px] truncate text-xs font-medium">
+                          {att.name}
+                        </span>
                       </div>
                     )}
                     <button
                       onClick={() => removeAttachment(i)}
-                      className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-sm"
+                      className="absolute -top-1.5 -right-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-white opacity-0 shadow-sm transition-opacity group-hover:opacity-100"
                     >
                       <X size={12} />
                     </button>
@@ -259,9 +356,7 @@ export function MessageEditInput({
         </AnimatePresence>
 
         {/* Text Input */}
-        <div className={cn(
-          isMobile ? "px-3 pt-2 pb-1" : "px-5 pt-4 pb-2"
-        )}>
+        <div className={cn(isMobile ? "px-3 pt-2 pb-1" : "px-5 pt-4 pb-2")}>
           <textarea
             ref={textareaRef}
             value={content}
@@ -269,24 +364,28 @@ export function MessageEditInput({
             onKeyDown={handleKeyDown}
             placeholder="Edit your message..."
             className={cn(
-              "w-full bg-transparent border-none outline-none resize-none text-[15px] placeholder-foreground/30 min-h-[24px] max-h-[200px]",
-              isMobile ? "leading-normal" : "leading-relaxed"
+              "max-h-[200px] min-h-[24px] w-full resize-none border-none bg-transparent text-[15px] placeholder-foreground/30 outline-none",
+              isMobile ? "leading-normal" : "leading-relaxed",
             )}
-            style={{ height: 'auto' }}
+            style={{ height: "auto" }}
           />
         </div>
 
         {/* Bottom Action Row - Responsive layout */}
-        <div className={cn(
-          "border-t border-black/5 bg-black/[0.02]",
-          isMobile ? "px-2 pt-1 pb-2" : "px-4 pt-1 pb-3"
-        )}>
-          <div className={cn(
-            "flex items-center gap-1.5 justify-between",
-            isMobile && "flex-wrap"
-          )}>
+        <div
+          className={cn(
+            "border-t border-black/5 bg-black/[0.02]",
+            isMobile ? "px-2 pt-1 pb-2" : "px-4 pt-1 pb-3",
+          )}
+        >
+          <div
+            className={cn(
+              "flex items-center justify-between gap-1.5",
+              isMobile && "flex-wrap",
+            )}
+          >
             {/* Left side: Model picker and toggles */}
-            <div className="flex items-center gap-1.5 flex-wrap">
+            <div className="flex flex-wrap items-center gap-1.5">
               {/* Model Picker */}
               <ModelPicker
                 selectedModelId={selectedModelId}
@@ -298,15 +397,22 @@ export function MessageEditInput({
                 <button
                   onClick={toggleReasoning}
                   className={cn(
-                    "flex items-center gap-1 px-2 py-1.5 rounded-lg text-[11px] font-semibold transition-all",
-                    !reasoningEffort && "bg-black/5 text-foreground/40 hover:bg-black/10",
-                    reasoningEffort === 'low' && "bg-fuchsia-100/30 text-fuchsia-600/80",
-                    reasoningEffort === 'medium' && "bg-fuchsia-100/60 text-fuchsia-800/80",
-                    reasoningEffort === 'high' && "bg-fuchsia-600/80 text-white"
+                    "flex items-center gap-1 rounded-lg px-2 py-1.5 text-[11px] font-semibold transition-all",
+                    !reasoningEffort &&
+                      "bg-black/5 text-foreground/40 hover:bg-black/10",
+                    reasoningEffort === "low" &&
+                      "bg-fuchsia-100/30 text-fuchsia-600/80",
+                    reasoningEffort === "medium" &&
+                      "bg-fuchsia-100/60 text-fuchsia-800/80",
+                    reasoningEffort === "high" &&
+                      "bg-fuchsia-600/80 text-white",
                   )}
                 >
-                  <Brain size={isMobile ? 12 : 14} className={reasoningEffort ? "fill-current" : ""} />
-                  <span className="capitalize">{reasoningEffort || 'Off'}</span>
+                  <Brain
+                    size={isMobile ? 12 : 14}
+                    className={reasoningEffort ? "fill-current" : ""}
+                  />
+                  <span className="capitalize">{reasoningEffort || "Off"}</span>
                 </button>
               )}
 
@@ -314,10 +420,10 @@ export function MessageEditInput({
               <button
                 onClick={() => setSearchEnabled(!searchEnabled)}
                 className={cn(
-                  "flex items-center gap-1 px-2 py-1.5 rounded-lg text-[11px] font-semibold transition-all",
+                  "flex items-center gap-1 rounded-lg px-2 py-1.5 text-[11px] font-semibold transition-all",
                   searchEnabled
-                    ? "bg-blue-500/10 text-blue-600 border border-blue-500/20"
-                    : "bg-black/5 text-foreground/40 hover:bg-black/10"
+                    ? "border border-blue-500/20 bg-blue-500/10 text-blue-600"
+                    : "bg-black/5 text-foreground/40 hover:bg-black/10",
                 )}
               >
                 <Globe size={isMobile ? 12 : 14} />
@@ -336,10 +442,10 @@ export function MessageEditInput({
               <button
                 onClick={() => fileInputRef.current?.click()}
                 disabled={uploading}
-                className="p-1.5 rounded-lg hover:bg-black/5 text-foreground/40 hover:text-foreground/60 transition-colors disabled:opacity-50"
+                className="rounded-lg p-1.5 text-foreground/40 transition-colors hover:bg-black/5 hover:text-foreground/60 disabled:opacity-50"
               >
                 {uploading ? (
-                  <div className="w-4 h-4 border-2 border-foreground/20 border-t-foreground/60 rounded-full animate-spin" />
+                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-foreground/20 border-t-foreground/60" />
                 ) : (
                   <Paperclip size={isMobile ? 14 : 16} />
                 )}
@@ -347,14 +453,13 @@ export function MessageEditInput({
             </div>
 
             {/* Right side: Cancel and Submit */}
-            <div className={cn(
-              "flex items-center gap-1.5",
-              isMobile && "ml-auto"
-            )}>
+            <div
+              className={cn("flex items-center gap-1.5", isMobile && "ml-auto")}
+            >
               {/* Cancel Button */}
               <button
                 onClick={onCancel}
-                className="px-2 py-1.5 text-[11px] font-medium text-foreground/50 hover:text-foreground/70 transition-colors"
+                className="px-2 py-1.5 text-[11px] font-medium text-foreground/50 transition-colors hover:text-foreground/70"
               >
                 Cancel
               </button>
@@ -364,14 +469,14 @@ export function MessageEditInput({
                 onClick={handleSubmit}
                 disabled={!content.trim() || isSubmitting}
                 className={cn(
-                  "w-7 h-7 rounded-lg flex items-center justify-center transition-all",
+                  "flex h-7 w-7 items-center justify-center rounded-lg transition-all",
                   content.trim() && !isSubmitting
                     ? "bg-t3-berry text-white shadow-sm hover:bg-t3-berry-deep"
-                    : "bg-black/10 text-foreground/30 cursor-not-allowed"
+                    : "cursor-not-allowed bg-black/10 text-foreground/30",
                 )}
               >
                 {isSubmitting ? (
-                  <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/30 border-t-white" />
                 ) : (
                   <ArrowUp size={14} strokeWidth={2.5} />
                 )}
@@ -383,10 +488,18 @@ export function MessageEditInput({
 
       {/* Keyboard hint - hide on mobile */}
       {!isMobile && (
-        <div className="text-[11px] text-foreground/40 mt-2 text-center">
-          Press <kbd className="px-1.5 py-0.5 bg-black/5 rounded text-[10px] font-mono">Enter</kbd> to submit, <kbd className="px-1.5 py-0.5 bg-black/5 rounded text-[10px] font-mono">Esc</kbd> to cancel
+        <div className="mt-2 text-center text-[11px] text-foreground/40">
+          Press{" "}
+          <kbd className="rounded bg-black/5 px-1.5 py-0.5 font-mono text-[10px]">
+            Enter
+          </kbd>{" "}
+          to submit,{" "}
+          <kbd className="rounded bg-black/5 px-1.5 py-0.5 font-mono text-[10px]">
+            Esc
+          </kbd>{" "}
+          to cancel
         </div>
       )}
     </div>
-  )
+  );
 }

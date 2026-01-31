@@ -13,6 +13,7 @@ export default defineSchema({
     userId: v.optional(v.string()), // For logged in users (Better Auth)
     lastMessageAt: v.optional(v.number()),
     isPinned: v.optional(v.boolean()),
+    parentThreadId: v.optional(v.id('threads')),
   })
     .index('by_session', ['sessionId'])
     .index('by_user', ['userId']),
@@ -236,4 +237,24 @@ export default defineSchema({
     whatsappSyncEnabled: v.boolean(),
   })
     .index("by_user", ["userId"]),
+
+  packages: defineTable({
+    userId: v.string(), // Better Auth user ID
+    trackingNumber: v.string(),
+    merchant: v.string(),
+    description: v.string(),
+    status: v.union(
+      v.literal("warehouse"), // Arrived at US warehouse
+      v.literal("in_transit"), // On the way to Jamaica
+      v.literal("ready_for_pickup"), // Ready in Jamaica
+      v.literal("delivered"), // Already picked up
+    ),
+    weight: v.optional(v.number()), // weight in lbs
+    cost: v.optional(v.number()), // cost in JMD
+    location: v.optional(v.string()), // Pick up location / Branch
+    updatedAt: v.number(),
+  })
+    .index("by_user", ["userId"])
+    .index("by_status", ["status"])
+    .index("by_user_status", ["userId", "status"]),
 })

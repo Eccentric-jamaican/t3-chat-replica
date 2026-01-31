@@ -11,6 +11,21 @@ interface EbayTokenResponse {
 }
 
 /**
+ * Redacts or truncates error bodies for safe logging in production.
+ * Only shows full details if DEBUG_EBAY or DEBUG env flag is set.
+ */
+function logEbayError(context: string, status: number, body: string) {
+  const isDebug = process.env.DEBUG_EBAY === "true" || process.env.DEBUG === "true";
+  const redactedBody = isDebug ? body : (body.length > 100 ? body.substring(0, 100) + "..." : body);
+  
+  if (isDebug) {
+    console.error(`[DEBUG] ${context} Error (Full):`, body);
+  }
+  
+  return `eBay ${context} failed: ${status} ${redactedBody}`;
+}
+
+/**
  * Gets a fresh Application Access Token from eBay.
  * Uses the Client Credentials grant flow.
  */
@@ -38,7 +53,9 @@ async function getApplicationToken() {
 
   if (!response.ok) {
     const errorBody = await response.text();
-    throw new Error(`Failed to get eBay token: ${response.status} ${errorBody}`);
+    const errorMessage = logEbayError("OAuth Token", response.status, errorBody);
+    console.error(`[eBay OAuth Error] Status: ${response.status} (Redacted)`);
+    throw new Error(errorMessage);
   }
 
   const data = await response.json() as EbayTokenResponse;
@@ -60,6 +77,8 @@ export async function searchEbayItems(query: string, limit: number = 6) {
   // Optional: filter for Fixed Price (Buy It Now) items for better UI experience
   url.searchParams.set("filter", "buyingOptions:{FIXED_PRICE}");
 
+  console.log(`[eBay Search] Query: "${query}", URL: ${url.toString()}`);
+
   const response = await fetch(url.toString(), {
     method: "GET",
     headers: {
@@ -71,8 +90,9 @@ export async function searchEbayItems(query: string, limit: number = 6) {
 
   if (!response.ok) {
     const errorBody = await response.text();
-    console.error("eBay Search Error:", errorBody);
-    throw new Error(`eBay API Search failed: ${response.status} ${errorBody}`);
+    const errorMessage = logEbayError("Search", response.status, errorBody);
+    console.error(`[eBay Search Error] Status: ${response.status} (Redacted)`);
+    throw new Error(errorMessage);
   }
 
   const data = await response.json();
@@ -114,7 +134,8 @@ export async function getEbayItemDetails(itemId: string) {
 
   if (!response.ok) {
      const errorBody = await response.text();
-     throw new Error(`Failed to get eBay item details: ${response.status} ${errorBody}`);
+     const errorMessage = logEbayError("Item Details", response.status, errorBody);
+     throw new Error(errorMessage);
   }
 
   return await response.json();
