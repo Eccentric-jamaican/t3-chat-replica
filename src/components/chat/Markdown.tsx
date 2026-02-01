@@ -11,6 +11,13 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "../ui/tooltip";
+import {
+  Dialog,
+  DialogContent,
+  DialogTitle,
+  DialogDescription,
+  DialogClose,
+} from "../ui/dialog";
 
 interface MarkdownProps {
   content: string;
@@ -225,6 +232,7 @@ export const Markdown = ({
   isStreaming = false,
 }: MarkdownProps) => {
   const [wrapEnabled, setWrapEnabled] = useState(false);
+  const [pendingUrl, setPendingUrl] = useState<string | null>(null);
 
   useEffect(() => {
     const stored = localStorage.getItem("markdown.codeWrap");
@@ -398,11 +406,66 @@ export const Markdown = ({
                 {withCursor(props.children)}
               </li>
             ),
+            a: ({ node, href, children, ...props }) => (
+              <a
+                href={href}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="prose-link"
+                onClick={(e) => {
+                  e.preventDefault();
+                  if (href) setPendingUrl(href);
+                }}
+                {...props}
+              >
+                {withCursor(children)}
+              </a>
+            ),
           }}
         >
           {contentWithSentinel}
         </ReactMarkdown>
       </div>
+
+      <Dialog
+        open={pendingUrl !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingUrl(null);
+        }}
+      >
+        <DialogContent>
+          <DialogTitle>Leaving the app</DialogTitle>
+          <DialogDescription>
+            You're about to navigate to an external site. Make sure you trust
+            this link before continuing.
+          </DialogDescription>
+          <p className="mt-3 truncate rounded-lg bg-fuchsia-50 px-3 py-2 font-mono text-xs text-fuchsia-900/70">
+            {pendingUrl}
+          </p>
+          <div className="mt-5 flex justify-end gap-3">
+            <DialogClose asChild>
+              <button
+                type="button"
+                className="rounded-lg border border-fuchsia-100/80 px-4 py-2 text-sm font-medium text-fuchsia-900/70 transition-colors hover:bg-fuchsia-50"
+              >
+                Cancel
+              </button>
+            </DialogClose>
+            <button
+              type="button"
+              className="rounded-lg bg-fuchsia-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-fuchsia-700"
+              onClick={() => {
+                if (pendingUrl) {
+                  window.open(pendingUrl, "_blank", "noopener,noreferrer");
+                }
+                setPendingUrl(null);
+              }}
+            >
+              Continue
+            </button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </TooltipProvider>
   );
 };

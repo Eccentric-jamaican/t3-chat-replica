@@ -7,6 +7,7 @@ import {
   getEbayItemDetails as fetchEbayDetails,
 } from "./ebay";
 import { getModelCapabilities } from "./lib/models";
+import { getBasePrompt, getRegexFallbackPrompt } from "./lib/prompts";
 
 const TOOLS = [
   {
@@ -112,6 +113,15 @@ export const streamAnswer = action({
     let lastAbortCheck = Date.now();
     const toolResultsCache = new Map<string, string>();
     const toolUsageCounts = new Map<string, number>();
+    let toolLimitsReached = false;
+
+    // [COST CONTROL] Per-turn tool usage counters (reset each assistant turn)
+    let webSearchCount = 0;
+    let timeCheckCount = 0;
+    let ebaySearchCount = 0;
+    const MAX_WEB_SEARCH_PER_TURN = 2;
+    const MAX_TIME_CHECK_PER_TURN = 1;
+    const MAX_EBAY_SEARCH_PER_TURN = 2;
 
     // Verify thread ownership once before any internal reads
     await ctx.runQuery(internal.threads.internalVerifyThreadAccess, {
@@ -171,7 +181,7 @@ export const streamAnswer = action({
 
     // Detect Model Capabilities
     const capabilities = getModelCapabilities(args.modelId);
-    
+
     // Filter tools based on user preference AND model capability
     const activeTools = TOOLS.filter((t) => {
       // If model DOES NOT support native tools, we filter them all out
@@ -292,8 +302,10 @@ export const streamAnswer = action({
             }
 
             // Tool related fields
-            if (m.toolCalls) {
+            if (m.toolCalls && m.toolCalls.length > 0) {
               msg.tool_calls = m.toolCalls;
+              // Tool call messages should have null content per OpenRouter spec
+              msg.content = null;
             }
             if (m.role === "tool") {
               msg.tool_call_id = m.toolCallId;
@@ -324,21 +336,21 @@ export const streamAnswer = action({
             return msg;
           });
 
-        // [AGENTIC LOGIC] Inject System Prompt for Fallback Tools
+        // [AGENTIC] Inject Base System Prompt (Sendcat Assistant identity & guidelines)
+        openRouterMessages.unshift({
+          role: "system",
+          content: getBasePrompt(),
+        });
+
+        // [AGENTIC LOGIC] Inject Regex Fallback Prompt for models without native tool support
         if (capabilities.toolFallback === "regex" && args.webSearch) {
-          const systemPrompt = {
-            role: "system",
-            content: `You currently lack native tool support. To search the web, you MUST output a search command in this EXACT format:
-[[SEARCH: your search query here]]
-
-Example:
-User: What is the price of bitcoin?
-Assistant: [[SEARCH: price of bitcoin]]
-
-When you receive the search results, answer the user's question.
-`
-          };
-          openRouterMessages.unshift(systemPrompt);
+          const fallbackPrompt = getRegexFallbackPrompt(capabilities);
+          if (fallbackPrompt) {
+            openRouterMessages.unshift({
+              role: "system",
+              content: fallbackPrompt,
+            });
+          }
         }
 
         // Create AbortController to cancel the fetch if user aborts
@@ -365,10 +377,12 @@ When you receive the search results, answer the user's question.
               messages: openRouterMessages,
               tools: activeTools.length > 0 ? activeTools : undefined,
               // Tool choice & parallel calls - only if tools exist
-              ...(activeTools.length > 0 ? {
-                tool_choice: "auto",
-                parallel_tool_calls: false,
-              } : {}),
+              ...(activeTools.length > 0
+                ? {
+                    tool_choice: toolLimitsReached ? "none" : "auto",
+                    parallel_tool_calls: false,
+                  }
+                : {}),
               ...(args.reasoningEffort && args.reasoningType === "effort"
                 ? { reasoning: { effort: args.reasoningEffort } }
                 : args.reasoningEffort && args.reasoningType === "max_tokens"
@@ -483,7 +497,9 @@ When you receive the search results, answer the user's question.
                   const match = contentBuffer.match(searchRegex);
                   if (match) {
                     const query = match[1];
-                    console.log(`[AGENTIC] Detected manual search command: ${query}`);
+                    console.log(
+                      `[AGENTIC] Detected manual search command: ${query}`,
+                    );
 
                     // Synthesize a tool call
                     accumulatedToolCalls.push({
@@ -625,69 +641,89 @@ When you receive the search results, answer the user's question.
                 const usageCount = (toolUsageCounts.get(name) ?? 0) + 1;
                 toolUsageCounts.set(name, usageCount);
                 const argsObj = JSON.parse(argsStr);
+
                 if (name === "get_current_time") {
-                  result = new Date().toLocaleString();
-                } else if (name === "search_web") {
-                  const serperKey = process.env.SERPER_API_KEY;
-                  if (!serperKey) {
-                    result =
-                      "Error: SERPER_API_KEY not configured in environment variables.";
+                  // [COST CONTROL] Check per-turn limit for time checks
+                  if (timeCheckCount >= MAX_TIME_CHECK_PER_TURN) {
+                    toolLimitsReached = true;
+                    result = `Time check limit reached (${MAX_TIME_CHECK_PER_TURN} per turn). Use existing information to answer.`;
                   } else {
-                    console.log(
-                      `[SEARCH_WEB] Executing search for query: ${argsObj.query}`,
-                    );
-                    try {
-                      const res = await fetch(
-                        "https://google.serper.dev/search",
-                        {
-                          method: "POST",
-                          headers: {
-                            "X-API-KEY": serperKey,
-                            "Content-Type": "application/json",
-                          },
-                          body: JSON.stringify({
-                            q: argsObj.query,
-                            num: 5,
-                          }),
-                        },
-                      );
-
+                    timeCheckCount++;
+                    result = new Date().toLocaleString();
+                  }
+                } else if (name === "search_web") {
+                  // [COST CONTROL] Check per-turn limit for web searches
+                  if (webSearchCount >= MAX_WEB_SEARCH_PER_TURN) {
+                    toolLimitsReached = true;
+                    result = `Web search limit reached (${MAX_WEB_SEARCH_PER_TURN} per turn). Use existing information to answer.`;
+                  } else {
+                    webSearchCount++;
+                    const serperKey = process.env.SERPER_API_KEY;
+                    if (!serperKey) {
+                      result =
+                        "Error: SERPER_API_KEY not configured in environment variables.";
+                    } else {
                       console.log(
-                        `[SEARCH_WEB] Response status: ${res.status}`,
+                        `[SEARCH_WEB] Executing search for query: ${argsObj.query}`,
                       );
-
-                      if (!res.ok) {
-                        await res.text(); // Consume the body to prevent resource leaks
-                        console.error(`Serper API error: ${res.status}`);
-                        result = `Search API error: ${res.statusText}`;
-                      } else {
-                        const data = await res.json();
-                        console.log(
-                          `[SEARCH_WEB] Got ${data.organic?.length || 0} results`,
+                      try {
+                        const res = await fetch(
+                          "https://google.serper.dev/search",
+                          {
+                            method: "POST",
+                            headers: {
+                              "X-API-KEY": serperKey,
+                              "Content-Type": "application/json",
+                            },
+                            body: JSON.stringify({
+                              q: argsObj.query,
+                              num: 5,
+                            }),
+                          },
                         );
-                        // Format results as a simple text list for the model
-                        const results =
-                          data.organic
-                            ?.slice(0, 5)
-                            .map(
-                              (item: any, i: number) =>
-                                `${i + 1}. ${item.title} - ${item.link}`,
-                            )
-                            .join("\n") || "No results found";
 
-                        result = `Search results for "${argsObj.query}":\n\n${results}`;
+                        console.log(
+                          `[SEARCH_WEB] Response status: ${res.status}`,
+                        );
+
+                        if (!res.ok) {
+                          await res.text(); // Consume the body to prevent resource leaks
+                          console.error(`Serper API error: ${res.status}`);
+                          result = `Search API error: ${res.statusText}`;
+                        } else {
+                          const data = await res.json();
+                          console.log(
+                            `[SEARCH_WEB] Got ${data.organic?.length || 0} results`,
+                          );
+                          // Format results as a simple text list for the model
+                          const results =
+                            data.organic
+                              ?.slice(0, 5)
+                              .map(
+                                (item: any, i: number) =>
+                                  `${i + 1}. ${item.title} - ${item.link}`,
+                              )
+                              .join("\n") || "No results found";
+
+                          result = `Search results for "${argsObj.query}":\n\n${results}`;
+                        }
+                      } catch (fetchError: any) {
+                        console.error(
+                          `Serper fetch error: ${fetchError.message}`,
+                        );
+                        result = `Search failed: ${fetchError.message}`;
                       }
-                    } catch (fetchError: any) {
-                      console.error(
-                        `Serper fetch error: ${fetchError.message}`,
-                      );
-                      result = `Search failed: ${fetchError.message}`;
                     }
                   }
                 } else if (name === "search_ebay") {
-                  if (usageCount > 1) {
+                  // [COST CONTROL] Check per-turn limit for eBay searches
+                  if (ebaySearchCount >= MAX_EBAY_SEARCH_PER_TURN) {
+                    toolLimitsReached = true;
+                    result = `eBay search limit reached (${MAX_EBAY_SEARCH_PER_TURN} per turn). Use existing information to answer.`;
+                  } else if (usageCount > 1) {
                     result = "Skipped duplicate eBay search to control costs.";
                   } else {
+                    ebaySearchCount++;
                     const parsedLimit = Number.parseInt(
                       String(argsObj.limit),
                       10,
@@ -732,6 +768,37 @@ When you receive the search results, answer the user's question.
               content: result,
               toolCallId: tc.id,
               name: name,
+            });
+          }
+
+          // [COST CONTROL] Inject system messages if tool limits reached
+          if (webSearchCount >= MAX_WEB_SEARCH_PER_TURN) {
+            await ctx.runMutation(internal.messages.internalSend, {
+              threadId: args.threadId,
+              role: "system",
+              content: `You have reached the maximum web search limit (${MAX_WEB_SEARCH_PER_TURN}) for this turn. Stop searching and provide a comprehensive answer based on the information you already have. Do not attempt additional web searches.`,
+              toolCallId: "limit-warning-web",
+              name: "system",
+            });
+          }
+
+          if (timeCheckCount >= MAX_TIME_CHECK_PER_TURN) {
+            await ctx.runMutation(internal.messages.internalSend, {
+              threadId: args.threadId,
+              role: "system",
+              content: `You have already checked the time. Provide your answer without additional time checks.`,
+              toolCallId: "limit-warning-time",
+              name: "system",
+            });
+          }
+
+          if (ebaySearchCount >= MAX_EBAY_SEARCH_PER_TURN) {
+            await ctx.runMutation(internal.messages.internalSend, {
+              threadId: args.threadId,
+              role: "system",
+              content: `You have reached the maximum eBay search limit (${MAX_EBAY_SEARCH_PER_TURN}) for this turn. Stop searching and provide a comprehensive answer based on the information you already have.`,
+              toolCallId: "limit-warning-ebay",
+              name: "system",
             });
           }
 

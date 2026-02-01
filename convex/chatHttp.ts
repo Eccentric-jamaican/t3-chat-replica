@@ -1,10 +1,13 @@
 import { httpAction } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { getAuthUserId } from "./auth";
-import {
-  searchEbayItems,
-} from "./ebay";
+import { searchEbayItems } from "./ebay";
 import { getModelCapabilities } from "./lib/models";
+import {
+  getBasePrompt,
+  getStrategyPrompt,
+  getRegexFallbackPrompt,
+} from "./lib/prompts";
 
 const TOOLS = [
   {
@@ -88,93 +91,139 @@ export async function chatHandler(ctx: any, request: Request) {
       };
 
       try {
-        let messageId = await ctx.runMutation(internal.messages.internalInitializeAssistantMessage, {
-          threadId,
-          modelId,
-        });
+        let messageId = await ctx.runMutation(
+          internal.messages.internalInitializeAssistantMessage,
+          {
+            threadId,
+            modelId,
+          },
+        );
 
         send({ type: "start", messageId });
 
         let cycle = 0;
-        const MAX_CYCLES = 2; // Cap tool-calling iterations to prevent excessive searches
+        const MAX_CYCLES = 10; // Safety ceiling, real limits are per-tool below
         let shouldContinue = true;
         let fullContent = "";
         let fullReasoning = "";
 
+        // [COST CONTROL] Per-turn tool usage counters
+        let webSearchCount = 0;
+        let timeCheckCount = 0;
+        let ebaySearchCount = 0;
+        let toolLimitsReached = false;
+        const MAX_WEB_SEARCH_PER_TURN = 2;
+        const MAX_TIME_CHECK_PER_TURN = 1;
+        const MAX_EBAY_SEARCH_PER_TURN = 2;
+
         let currentAbortController: AbortController | null = null;
         request.signal.addEventListener("abort", () => {
-           currentAbortController?.abort();
+          currentAbortController?.abort();
         });
 
         while (shouldContinue && cycle < MAX_CYCLES && !isAborted) {
           shouldContinue = false;
           cycle++;
 
-          const messages = await ctx.runQuery(internal.messages.internalList, { threadId });
+          const messages = await ctx.runQuery(internal.messages.internalList, {
+            threadId,
+          });
           const capabilities = getModelCapabilities(modelId);
-          const openRouterMessages = messages.map((m: any) => {
-            const msg: any = { role: m.role };
-            msg.content = m.content;
-            if (m.toolCalls && m.toolCalls.length > 0) {
-              msg.tool_calls = m.toolCalls;
-              // [AGENTIC] Sanitize History: If message has tools, strip conversational filler content
-              // This prevents "I don't have info" text from confusing the model in the next turn
-              msg.content = ""; 
-            }
-            if (m.role === "tool") msg.tool_call_id = m.toolCallId;
-            return msg;
+          const openRouterMessages = messages
+            .filter((m: any) => {
+              // Exclude current empty assistant message from history
+              // (it was just created for this cycle and has no content yet)
+              if (m._id === messageId) {
+                return !!(
+                  m.content ||
+                  m.toolCalls?.length ||
+                  m.reasoningContent
+                );
+              }
+              return true;
+            })
+            .map((m: any) => {
+              const msg: any = { role: m.role };
+
+              if (m.role === "tool") {
+                msg.tool_call_id = m.toolCallId;
+                msg.content = m.content ?? "";
+                return msg;
+              }
+
+              if (m.toolCalls && m.toolCalls.length > 0) {
+                msg.tool_calls = m.toolCalls;
+                // Tool call messages should have null content per OpenRouter spec
+                msg.content = null;
+                return msg;
+              }
+
+              msg.content = m.content;
+              return msg;
+            });
+
+          // [AGENTIC] Inject Base System Prompt (Sendcat Assistant identity & guidelines)
+          openRouterMessages.unshift({
+            role: "system",
+            content: getBasePrompt(),
           });
 
-          // [AGENTIC] Strategy-Based System Prompt Injection
-          if (capabilities.promptStrategy === "standard") {
-             openRouterMessages.unshift({
-                role: "system",
-                content: `When you decide to use a tool, DO NOT output any text content (like "I will search..." or "Let me check..."). Just output the tool call directly.`
-             });
-          } else if (capabilities.promptStrategy === "reasoning") {
-             openRouterMessages.unshift({
-                role: "system",
-                content: `You are a reasoning model. Output your internal thought process within <think> tags. When you decide to use a tool, output the tool call JSON immediately after the thinking block. Do not output conversational filler outside the <think> tags.`
-             });
+          // [AGENTIC] Add strategy-specific overlay (standard vs reasoning models)
+          const strategyPrompt = getStrategyPrompt(capabilities);
+          if (strategyPrompt) {
+            openRouterMessages.unshift({
+              role: "system",
+              content: strategyPrompt,
+            });
           }
 
+          // [AGENTIC] Add regex fallback for models without native tool support
           if (capabilities.toolFallback === "regex" && webSearch) {
-             openRouterMessages.unshift({
-               role: "system",
-               content: `You currently lack native tool support. To search the web, you MUST output a search command in this EXACT format and NOTHING ELSE:
-[[SEARCH: your search query here]]
-
-Example:
-User: What is the price of bitcoin?
-Assistant: [[SEARCH: price of bitcoin]]
-
-When you receive the search results, answer the user's question. DO NOT repeat the [[SEARCH: ...]] command once you have results.`
-             });
+            const fallbackPrompt = getRegexFallbackPrompt(capabilities);
+            if (fallbackPrompt) {
+              openRouterMessages.unshift({
+                role: "system",
+                content: fallbackPrompt,
+              });
+            }
           }
+
+          // Regex fallback prompt is handled by getRegexFallbackPrompt above
 
           const abortController = new AbortController();
           currentAbortController = abortController;
-          const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${apiKey}`,
-              "Content-Type": "application/json",
+          const response = await fetch(
+            "https://openrouter.ai/api/v1/chat/completions",
+            {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${apiKey}`,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                models: [
+                  modelId ?? "moonshotai/moonshot-v1-8k",
+                  "openai/gpt-5",
+                  "google/gemini-2.0-flash-exp:free",
+                ],
+                messages: openRouterMessages,
+                // [AGENTIC] Filter by capability
+                tools: getModelCapabilities(modelId).supportsTools
+                  ? TOOLS.filter(
+                      (t) => t.function.name !== "search_web" || webSearch,
+                    )
+                  : undefined,
+                ...(getModelCapabilities(modelId).supportsTools
+                  ? {
+                      tool_choice: toolLimitsReached ? "none" : "auto",
+                      parallel_tool_calls: false,
+                    }
+                  : {}),
+                stream: true,
+              }),
+              signal: abortController.signal,
             },
-            body: JSON.stringify({
-              models: [modelId ?? "moonshotai/moonshot-v1-8k", "openai/gpt-5", "google/gemini-2.0-flash-exp:free"],
-              messages: openRouterMessages,
-              // [AGENTIC] Filter by capability
-              tools: getModelCapabilities(modelId).supportsTools 
-                ? TOOLS.filter(t => t.function.name !== "search_web" || webSearch)
-                : undefined,
-              ...(getModelCapabilities(modelId).supportsTools ? { 
-                tool_choice: "auto",
-                parallel_tool_calls: false,
-              } : {}),
-              stream: true,
-            }),
-            signal: abortController.signal,
-          });
+          );
 
           // Controller is now handled by the outer listener
 
@@ -184,23 +233,46 @@ When you receive the search results, answer the user's question. DO NOT repeat t
           const reader = response.body.getReader();
           const decoder = new TextDecoder();
           let accumulatedToolCalls: any[] = [];
+          let finishReason: string | null = null;
 
           readLoop: while (!isAborted) {
             const { done, value } = await reader.read();
             if (done) break;
 
             const chunk = decoder.decode(value, { stream: true });
-            const lines = chunk.split("\n").filter(l => l.trim().startsWith("data: "));
+            const lines = chunk
+              .split("\n")
+              .filter((l) => l.trim().startsWith("data: "));
 
             for (const line of lines) {
               const dataStr = line.replace("data: ", "");
-              if (dataStr === "[DONE]") break;
+              if (dataStr === "[DONE]") break readLoop;
 
               let data;
-              try { data = JSON.parse(dataStr); } catch { continue; }
+              try {
+                data = JSON.parse(dataStr);
+              } catch {
+                continue;
+              }
 
-              const delta = data.choices[0]?.delta;
-              
+              // Handle mid-stream errors from OpenRouter
+              if (data.error) {
+                console.error(`OpenRouter stream error: ${data.error.message}`);
+                isAborted = true;
+                try {
+                  await reader.cancel();
+                } catch {}
+                break readLoop;
+              }
+
+              const choice = data.choices?.[0];
+              const delta = choice?.delta;
+              const chunkFinishReason = choice?.finish_reason;
+
+              if (chunkFinishReason) {
+                finishReason = chunkFinishReason;
+              }
+
               if (delta?.content) {
                 fullContent += delta.content;
                 send({ type: "content", content: delta.content });
@@ -208,30 +280,33 @@ When you receive the search results, answer the user's question. DO NOT repeat t
 
               // [AGENTIC] Stream Reasoning
               if (delta?.reasoning) {
-                 fullReasoning += delta.reasoning;
-                 send({ type: "reasoning", content: delta.reasoning });
+                fullReasoning += delta.reasoning;
+                send({ type: "reasoning", content: delta.reasoning });
               }
-              
+
               // [AGENTIC] Regex Fallback
               if (capabilities.toolFallback === "regex" && delta?.content) {
-                 const searchRegex = /\[\[SEARCH: (.*?)\]\]/;
-                 const match = fullContent.match(searchRegex);
-                 if (match) {
-                    const query = match[1];
-                    accumulatedToolCalls.push({
-                      id: `call_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
-                      type: "function",
-                      function: { name: "search_web", arguments: JSON.stringify({ query }) }
-                    });
-                    // Break reader loop to execute tool
-                    break readLoop; 
-                 }
+                const searchRegex = /\[\[SEARCH: (.*?)\]\]/;
+                const match = fullContent.match(searchRegex);
+                if (match) {
+                  const query = match[1];
+                  accumulatedToolCalls.push({
+                    id: `call_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
+                    type: "function",
+                    function: {
+                      name: "search_web",
+                      arguments: JSON.stringify({ query }),
+                    },
+                  });
+                  // Break reader loop to execute tool
+                  break readLoop;
+                }
               }
 
               if (delta?.tool_calls) {
                 for (const toolDelta of delta.tool_calls) {
                   const index = toolDelta.index;
-                  
+
                   // Initialize if new
                   if (!accumulatedToolCalls[index]) {
                     accumulatedToolCalls[index] = {
@@ -250,31 +325,38 @@ When you receive the search results, answer the user's question. DO NOT repeat t
                     accumulatedToolCalls[index].id = toolDelta.id;
                   }
                   if (toolDelta.function?.name) {
-                    accumulatedToolCalls[index].function.name += toolDelta.function.name;
-                    
+                    accumulatedToolCalls[index].function.name +=
+                      toolDelta.function.name;
+
                     // If we just got the name (and it was empty before), we can emit the start event now if we haven't?
                     // Or just emit it every time? The frontend dedupes by ID so it's fine.
                     // But good practice:
-                    send({ 
-                      type: "tool-input-start", 
-                      toolCallId: accumulatedToolCalls[index].id, 
+                    send({
+                      type: "tool-input-start",
+                      toolCallId: accumulatedToolCalls[index].id,
                       toolName: accumulatedToolCalls[index].function.name,
-                      state: "streaming"
+                      state: "streaming",
                     });
                   }
-                  
+
                   // Stream arguments delta
                   if (toolDelta.function?.arguments) {
                     const argDelta = toolDelta.function.arguments;
                     accumulatedToolCalls[index].function.arguments += argDelta;
-                    send({ 
-                      type: "tool-input-delta", 
-                      toolCallId: accumulatedToolCalls[index].id, 
+                    send({
+                      type: "tool-input-delta",
+                      toolCallId: accumulatedToolCalls[index].id,
                       inputTextDelta: argDelta,
-                      argsSnapshot: accumulatedToolCalls[index].function.arguments
+                      argsSnapshot:
+                        accumulatedToolCalls[index].function.arguments,
                     });
                   }
                 }
+              }
+
+              // Stop reading once the model signals completion
+              if (finishReason === "tool_calls" || finishReason === "stop") {
+                break readLoop;
               }
             }
           }
@@ -295,63 +377,103 @@ When you receive the search results, answer the user's question. DO NOT repeat t
               try {
                 argsObj = JSON.parse(tc.function.arguments || "{}");
               } catch (e) {
-                console.error("[TOOL ARG PARSE ERROR]", e, tc.function.arguments);
+                console.error(
+                  "[TOOL ARG PARSE ERROR]",
+                  e,
+                  tc.function.arguments,
+                );
                 // Fallback to empty object to prevent crash
               }
-              
+
               // [AGENTIC] Notify client input is complete and tool is ready to run
               // We only emit tool-input-available to transition from streaming to a static "pending" state
-              send({ 
-                type: "tool-input-available", 
-                toolCallId: tc.id, 
+              send({
+                type: "tool-input-available",
+                toolCallId: tc.id,
                 toolName: tc.function.name,
                 input: argsObj,
-                state: "completed"
+                state: "completed",
               });
 
               let result = "Error";
               const name = tc.function.name;
 
+              // [COST CONTROL] Check per-turn limits before executing tools
               if (name === "get_current_time") {
-                result = new Date().toLocaleString();
-              } else if (name === "search_web") {
-                const serperKey = process.env.SERPER_API_KEY;
-                if (!serperKey) {
-                   result = "Serper API key missing";
+                if (timeCheckCount >= MAX_TIME_CHECK_PER_TURN) {
+                  toolLimitsReached = true;
+                  result =
+                    "Time check limit reached for this turn. Use existing information to answer.";
                 } else {
-                  const res = await fetch("https://google.serper.dev/search", {
-                    method: "POST",
-                    headers: { "X-API-KEY": serperKey, "Content-Type": "application/json" },
-                    body: JSON.stringify({ q: argsObj.query, num: 5 }),
-                  });
-                  const searchData = await res.json();
-                  
-                  const searchResults = searchData.organic?.map((item: any) => ({
-                      title: item.title,
-                      link: item.link,
-                      snippet: item.snippet
-                  }));
+                  timeCheckCount++;
+                  result = new Date().toLocaleString();
+                }
+              } else if (name === "search_web") {
+                if (webSearchCount >= MAX_WEB_SEARCH_PER_TURN) {
+                  toolLimitsReached = true;
+                  result =
+                    "Maximum web searches reached for this turn. Use existing information to answer.";
+                } else {
+                  webSearchCount++;
+                  const serperKey = process.env.SERPER_API_KEY;
+                  if (!serperKey) {
+                    result = "Serper API key missing";
+                  } else {
+                    const res = await fetch(
+                      "https://google.serper.dev/search",
+                      {
+                        method: "POST",
+                        headers: {
+                          "X-API-KEY": serperKey,
+                          "Content-Type": "application/json",
+                        },
+                        body: JSON.stringify({ q: argsObj.query, num: 5 }),
+                      },
+                    );
+                    const searchData = await res.json();
 
-                  send({ 
-                    type: "tool-output-partially-available", 
-                    toolCallId: tc.id,
-                    output: searchResults
-                  });
+                    const searchResults = searchData.organic?.map(
+                      (item: any) => ({
+                        title: item.title,
+                        link: item.link,
+                        snippet: item.snippet,
+                      }),
+                    );
 
-                  // Save JSON for Rich UI and LLM structure
-                  result = JSON.stringify(searchResults);
+                    send({
+                      type: "tool-output-partially-available",
+                      toolCallId: tc.id,
+                      output: searchResults,
+                    });
+
+                    // Save JSON for Rich UI and LLM structure
+                    result = JSON.stringify(searchResults);
+                  }
                 }
               } else if (name === "search_ebay") {
-                 try {
-                   const items = await searchEbayItems(argsObj.query, argsObj.limit || 8);
-                   result = `Found ${items.length} items on eBay: ${JSON.stringify(items.map((i: any) => ({ title: i.title, price: i.price })))}`;
-                   await ctx.runMutation(internal.messages.internalSaveProducts, {
-                      messageId,
-                      products: items,
-                   });
-                 } catch (err: any) {
-                   result = `eBay Search Error: ${err.message}`;
-                 }
+                if (ebaySearchCount >= MAX_EBAY_SEARCH_PER_TURN) {
+                  toolLimitsReached = true;
+                  result =
+                    "Maximum eBay searches reached for this turn. Use existing information to answer.";
+                } else {
+                  ebaySearchCount++;
+                  try {
+                    const items = await searchEbayItems(
+                      argsObj.query,
+                      argsObj.limit || 8,
+                    );
+                    result = `Found ${items.length} items on eBay: ${JSON.stringify(items.map((i: any) => ({ title: i.title, price: i.price })))}`;
+                    await ctx.runMutation(
+                      internal.messages.internalSaveProducts,
+                      {
+                        messageId,
+                        products: items,
+                      },
+                    );
+                  } catch (err: any) {
+                    result = `eBay Search Error: ${err.message}`;
+                  }
+                }
               }
 
               // Update the persistent database
@@ -365,10 +487,13 @@ When you receive the search results, answer the user's question. DO NOT repeat t
               });
             }
 
+            // [COST CONTROL] No system messages persisted; enforce limits via tool_choice below
+
             // [AGENTIC] Extract <think> tags from content to reasoning (for models that mix them)
             const thinkMatch = fullContent.match(/<think>([\s\S]*?)<\/think>/);
             if (thinkMatch) {
-               fullReasoning = (fullReasoning || "") + "\n" + thinkMatch[1].trim();
+              fullReasoning =
+                (fullReasoning || "") + "\n" + thinkMatch[1].trim();
             }
 
             // [LATENCY FIX] Run independent mutations in parallel
@@ -381,10 +506,13 @@ When you receive the search results, answer the user's question. DO NOT repeat t
               }),
               // Save reasoning if present
               fullReasoning
-                ? ctx.runMutation(internal.messages.internalSaveReasoningContent, {
-                    messageId,
-                    reasoningContent: fullReasoning,
-                  })
+                ? ctx.runMutation(
+                    internal.messages.internalSaveReasoningContent,
+                    {
+                      messageId,
+                      reasoningContent: fullReasoning,
+                    },
+                  )
                 : Promise.resolve(),
               // Mark current message as completed
               ctx.runMutation(internal.messages.internalUpdateStatus, {
@@ -392,17 +520,20 @@ When you receive the search results, answer the user's question. DO NOT repeat t
                 status: "completed",
               }),
               // Create NEXT assistant message for the response/answer (in parallel!)
-              ctx.runMutation(internal.messages.internalInitializeAssistantMessage, {
-                threadId,
-                modelId,
-              }),
+              ctx.runMutation(
+                internal.messages.internalInitializeAssistantMessage,
+                {
+                  threadId,
+                  modelId,
+                },
+              ),
             ]);
-            
+
             // Switch context to the new message
             messageId = newMessageId;
             fullContent = "";
             fullReasoning = "";
-            
+
             // Notify client to start listening to the new message
             send({ type: "start", messageId: newMessageId });
 
@@ -423,10 +554,13 @@ When you receive the search results, answer the user's question. DO NOT repeat t
               content: fullContent,
             }),
             fullReasoning
-              ? ctx.runMutation(internal.messages.internalSaveReasoningContent, {
-                  messageId,
-                  reasoningContent: fullReasoning,
-                })
+              ? ctx.runMutation(
+                  internal.messages.internalSaveReasoningContent,
+                  {
+                    messageId,
+                    reasoningContent: fullReasoning,
+                  },
+                )
               : Promise.resolve(),
             ctx.runMutation(internal.messages.internalUpdateStatus, {
               messageId,
@@ -453,7 +587,7 @@ When you receive the search results, answer the user's question. DO NOT repeat t
     headers: {
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache",
-      "Connection": "keep-alive",
+      Connection: "keep-alive",
     },
   });
 }

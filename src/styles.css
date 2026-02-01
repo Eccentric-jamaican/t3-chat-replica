@@ -265,6 +265,20 @@
   letter-spacing: 0.05em;
 }
 
+.prose-link {
+  color: var(--color-t3-berry);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--color-t3-berry) 40%, transparent);
+  text-underline-offset: 2px;
+  transition: color 0.15s ease, text-decoration-color 0.15s ease;
+  font-weight: 500;
+}
+
+.prose-link:hover {
+  color: var(--color-t3-berry-deep);
+  text-decoration-color: var(--color-t3-berry-deep);
+}
+
 .prose blockquote {
   border-left: 3px solid var(--color-t3-berry);
   padding-left: 1.25em;

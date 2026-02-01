@@ -206,8 +206,25 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
 
       try {
         const tokenResult = await (convex as any).getAuthToken?.();
-        const effectiveToken = typeof tokenResult === 'string' ? tokenResult : null;
-        
+        let effectiveToken =
+          typeof tokenResult === "string" ? tokenResult : null;
+
+        if (!effectiveToken) {
+          try {
+            const tokenResponse = await fetch("/api/auth/convex/token", {
+              credentials: "include",
+            });
+            if (tokenResponse.ok) {
+              const data = await tokenResponse.json();
+              if (typeof data?.token === "string") {
+                effectiveToken = data.token;
+              }
+            }
+          } catch (error) {
+            console.warn("[ChatInput] Failed to fetch Convex token", error);
+          }
+        }
+
         let currentThreadId = threadId;
 
         if (!currentThreadId) {
@@ -246,15 +263,20 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
 
         // ── Production-Style SSE Streaming ──────────────────────────────
         const convexSiteUrl = import.meta.env.VITE_CONVEX_SITE_URL;
-        console.log("[ChatInput] Starting SSE fetch to:", `${convexSiteUrl}/api/chat`);
+        console.log(
+          "[ChatInput] Starting SSE fetch to:",
+          `${convexSiteUrl}/api/chat`,
+        );
         const controller = new AbortController();
         abortControllerRef.current = controller;
- 
+
         const response = await fetch(`${convexSiteUrl}/api/chat`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            ...(effectiveToken ? { Authorization: `Bearer ${effectiveToken}` } : {}),
+            ...(effectiveToken
+              ? { Authorization: `Bearer ${effectiveToken}` }
+              : {}),
           },
           body: JSON.stringify({
             threadId: currentThreadId,
@@ -299,7 +321,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
                           messageId: currentMessageId,
                           content: data.content,
                         },
-                      })
+                      }),
                     );
                   } else if (data.type === "reasoning" && currentMessageId) {
                     window.dispatchEvent(
@@ -308,10 +330,12 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
                           messageId: currentMessageId,
                           content: data.content,
                         },
-                      })
+                      }),
                     );
-
-                  } else if (data.type === "tool-input-start" && currentMessageId) {
+                  } else if (
+                    data.type === "tool-input-start" &&
+                    currentMessageId
+                  ) {
                     window.dispatchEvent(
                       new CustomEvent("chat-streaming-tool-call", {
                         detail: {
@@ -319,35 +343,47 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
                           toolCallId: data.toolCallId,
                           toolName: data.toolName,
                           args: "",
-                          state: "streaming"
+                          state: "streaming",
                         },
-                      })
+                      }),
                     );
-                  } else if (data.type === "tool-input-delta" && currentMessageId) {
+                  } else if (
+                    data.type === "tool-input-delta" &&
+                    currentMessageId
+                  ) {
                     window.dispatchEvent(
                       new CustomEvent("chat-streaming-tool-input-update", {
                         detail: {
                           messageId: currentMessageId,
                           toolCallId: data.toolCallId,
                           argsSnapshot: data.argsSnapshot,
-                          argsDelta: data.inputTextDelta
+                          argsDelta: data.inputTextDelta,
                         },
-                      })
+                      }),
                     );
-                  } else if (data.type === "tool-input-available" && currentMessageId) {
-                     // Can either finish tool call or keep it streaming until "tool-call" event comes
-                     // for now we just make sure we save the final args
-                     window.dispatchEvent(
+                  } else if (
+                    data.type === "tool-input-available" &&
+                    currentMessageId
+                  ) {
+                    // Can either finish tool call or keep it streaming until "tool-call" event comes
+                    // for now we just make sure we save the final args
+                    window.dispatchEvent(
                       new CustomEvent("chat-streaming-tool-input-update", {
                         detail: {
                           messageId: currentMessageId,
                           toolCallId: data.toolCallId,
-                          argsSnapshot: typeof data.input === 'string' ? data.input : JSON.stringify(data.input),
-                          argsDelta: ""
+                          argsSnapshot:
+                            typeof data.input === "string"
+                              ? data.input
+                              : JSON.stringify(data.input),
+                          argsDelta: "",
                         },
-                      })
+                      }),
                     );
-                  } else if (data.type === "tool-output-partially-available" && currentMessageId) {
+                  } else if (
+                    data.type === "tool-output-partially-available" &&
+                    currentMessageId
+                  ) {
                     window.dispatchEvent(
                       new CustomEvent("chat-streaming-tool-output", {
                         detail: {
@@ -355,7 +391,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
                           toolCallId: data.toolCallId,
                           output: data.output,
                         },
-                      })
+                      }),
                     );
                   } else if (data.type === "error") {
                     toast.error(data.error);
@@ -375,7 +411,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
           message: error.message,
           name: error.name,
           stack: error.stack,
-          error: error
+          error: error,
         });
       } finally {
         setIsGenerating(false);
@@ -519,11 +555,11 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
                     >
                       <div className="relative flex items-center gap-1.5">
                         <Brain
-                           size={isMobile ? 14 : 15}
-                           className={cn(
-                             "transition-transform duration-500 group-hover/thinking:scale-110",
-                             reasoningEffort ? "fill-current" : "fill-none",
-                           )}
+                          size={isMobile ? 14 : 15}
+                          className={cn(
+                            "transition-transform duration-500 group-hover/thinking:scale-110",
+                            reasoningEffort ? "fill-current" : "fill-none",
+                          )}
                         />
                         <span className="hidden text-[11px] font-semibold tracking-wide uppercase sm:inline md:text-[12px]">
                           {reasoningEffort ? reasoningEffort : "Off"}

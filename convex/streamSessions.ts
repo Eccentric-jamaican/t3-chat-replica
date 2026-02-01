@@ -1,4 +1,9 @@
-import { mutation, internalMutation, internalQuery, MutationCtx } from "./_generated/server";
+import {
+  mutation,
+  internalMutation,
+  internalQuery,
+  MutationCtx,
+} from "./_generated/server";
 import { v } from "convex/values";
 import { Id } from "./_generated/dataModel";
 import { getAuthUserId } from "./auth";
@@ -9,7 +14,7 @@ import { getAuthUserId } from "./auth";
 async function verifyThreadAccess(
   ctx: MutationCtx,
   threadId: Id<"threads">,
-  sessionId?: string
+  sessionId?: string,
 ): Promise<void> {
   const thread = await ctx.db.get(threadId);
   if (!thread) {
@@ -20,10 +25,14 @@ async function verifyThreadAccess(
 
   if (thread.userId) {
     if (!userId || thread.userId !== userId) {
-      throw new Error("Access denied: You don't have permission to access this thread");
+      throw new Error(
+        "Access denied: You don't have permission to access this thread",
+      );
     }
   } else if (!sessionId || thread.sessionId !== sessionId) {
-    throw new Error("Access denied: You don't have permission to access this thread");
+    throw new Error(
+      "Access denied: You don't have permission to access this thread",
+    );
   }
 }
 
@@ -47,7 +56,9 @@ export const start = mutation({
       throw new Error(`Thread not found: ${args.threadId}`);
     }
     if (message.threadId !== args.threadId) {
-      throw new Error(`Message ${args.messageId} does not belong to thread ${args.threadId}`);
+      throw new Error(
+        `Message ${args.messageId} does not belong to thread ${args.threadId}`,
+      );
     }
 
     const streamSessionId = await ctx.db.insert("streamSessions", {
@@ -73,7 +84,10 @@ export const internalGetStatus = internalQuery({
 });
 
 export const abort = mutation({
-  args: { sessionId: v.id("streamSessions"), clientSessionId: v.optional(v.string()) },
+  args: {
+    sessionId: v.id("streamSessions"),
+    clientSessionId: v.optional(v.string()),
+  },
   handler: async (ctx, args) => {
     const session = await ctx.db.get(args.sessionId);
     if (!session) return;
@@ -162,6 +176,14 @@ export const internalStart = internalMutation({
     messageId: v.id("messages"),
   },
   handler: async (ctx, args) => {
+    const message = await ctx.db.get(args.messageId);
+    // If message doesn't exist (e.g., was deleted or request was cancelled), skip
+    if (!message) {
+      console.log(
+        `[internalStart] Message ${args.messageId} not found, skipping stream session creation`,
+      );
+      return null;
+    }
     const streamSessionId = await ctx.db.insert("streamSessions", {
       threadId: args.threadId,
       messageId: args.messageId,
