@@ -34,17 +34,44 @@ export function ProductExpandedView({
 }: ProductExpandedViewProps) {
   const [view, setView] = useState<"grid" | "table">("grid");
   const [page, setPage] = useState(1);
+  const [sourceFilter, setSourceFilter] = useState<
+    "all" | "ebay" | "global"
+  >("all");
   const pageSize = view === "grid" ? 12 : 10;
-  const totalPages = Math.max(1, Math.ceil(products.length / pageSize));
+  const hasSource = useMemo(
+    () => products.some((product) => !!product.source),
+    [products],
+  );
+  const filteredProducts = useMemo(() => {
+    if (!hasSource || sourceFilter === "all") return products;
+    return products.filter((product) => product.source === sourceFilter);
+  }, [products, hasSource, sourceFilter]);
+  const totalPages = Math.max(
+    1,
+    Math.ceil(filteredProducts.length / pageSize),
+  );
 
   useEffect(() => {
     setPage(1);
-  }, [view, products.length]);
+  }, [view, sourceFilter, products.length]);
+
+  useEffect(() => {
+    if (!hasSource) {
+      if (sourceFilter !== "all") setSourceFilter("all");
+      return;
+    }
+    if (
+      sourceFilter !== "all" &&
+      !products.some((product) => product.source === sourceFilter)
+    ) {
+      setSourceFilter("all");
+    }
+  }, [hasSource, products, sourceFilter]);
 
   const paginatedProducts = useMemo(() => {
     const start = (page - 1) * pageSize;
-    return products.slice(start, start + pageSize);
-  }, [page, pageSize, products]);
+    return filteredProducts.slice(start, start + pageSize);
+  }, [page, pageSize, filteredProducts]);
 
   const paginationItems = useMemo(() => {
     if (totalPages <= 7) {
@@ -104,6 +131,30 @@ export function ProductExpandedView({
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto pb-32">
+        {hasSource && (
+          <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-2 px-6 pt-4">
+            {[
+              { id: "all", label: "All" },
+              { id: "ebay", label: "eBay" },
+              { id: "global", label: "Global sites" },
+            ].map((chip) => (
+              <button
+                key={chip.id}
+                onClick={() =>
+                  setSourceFilter(chip.id as "all" | "ebay" | "global")
+                }
+                className={`rounded-full border px-3 py-1.5 text-[11px] font-semibold transition-colors ${
+                  sourceFilter === chip.id
+                    ? "border-t3-berry/30 bg-t3-berry/10 text-t3-berry"
+                    : "border-black/5 bg-black/5 text-gray-600 hover:bg-black/10"
+                }`}
+              >
+                {chip.label}
+              </button>
+            ))}
+          </div>
+        )}
+
         {view === "grid" ? (
           <div className="mx-auto max-w-7xl p-6">
             <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">

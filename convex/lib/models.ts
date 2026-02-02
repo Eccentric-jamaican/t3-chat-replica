@@ -16,6 +16,20 @@ export const MODEL_CAPABILITIES: Record<string, ModelCapability> = {
     isThinking: false,
     promptStrategy: "standard",
   },
+  "google/gemini-3.0-flash-preview": {
+    id: "google/gemini-3.0-flash-preview",
+    supportsTools: true,
+    supportsStreaming: true,
+    isThinking: false,
+    promptStrategy: "standard",
+  },
+  "google/gemini-3-flash-preview": {
+    id: "google/gemini-3-flash-preview",
+    supportsTools: true,
+    supportsStreaming: true,
+    isThinking: false,
+    promptStrategy: "standard",
+  },
   "google/gemini-flash-1.5": {
     id: "google/gemini-flash-1.5",
     supportsTools: true,
@@ -41,6 +55,13 @@ export const MODEL_CAPABILITIES: Record<string, ModelCapability> = {
   },
   "anthropic/claude-3-haiku": {
     id: "anthropic/claude-3-haiku",
+    supportsTools: true,
+    supportsStreaming: true,
+    isThinking: false,
+    promptStrategy: "standard",
+  },
+  "anthropic/claude-haiku-4.5": {
+    id: "anthropic/claude-haiku-4.5",
     supportsTools: true,
     supportsStreaming: true,
     isThinking: false,

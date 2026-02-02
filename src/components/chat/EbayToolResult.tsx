@@ -92,7 +92,9 @@ export function EbayToolResult({
       <div className="flex items-center gap-2 py-2 text-sm text-foreground/60">
         <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary/20 border-t-primary" />
         <span>
-          {query ? `Searching eBay for: "${query}"...` : "Searching eBay..."}
+          {query
+            ? `Searching products for: "${query}"...`
+            : "Searching products..."}
         </span>
       </div>
     );
@@ -102,6 +104,19 @@ export function EbayToolResult({
 
   const countMatch = resultText.match(/found\s+(\d+)\s+items?/i);
   const count = countMatch ? Number.parseInt(countMatch[1], 10) : null;
+  const ebayCountMatch = resultText.match(
+    /(\d+)\s+(?:items\s+on\s+eBay|eBay items)/i,
+  );
+  const globalCountMatch = resultText.match(/(\d+)\s+global/i);
+  const ebayCount = ebayCountMatch
+    ? Number.parseInt(ebayCountMatch[1], 10)
+    : undefined;
+  const globalCount = globalCountMatch
+    ? Number.parseInt(globalCountMatch[1], 10)
+    : undefined;
+  const combinedCount =
+    (typeof ebayCount === "number" ? ebayCount : 0) +
+    (typeof globalCount === "number" ? globalCount : 0);
 
   let summary = resultText;
   if (/limit reached/i.test(resultText)) {
@@ -110,6 +125,8 @@ export function EbayToolResult({
     summary = "Duplicate eBay search skipped to reduce costs.";
   } else if (/^error:/i.test(resultText)) {
     summary = resultText.replace(/^error:\s*/i, "");
+  } else if (combinedCount > 0) {
+    summary = `Found ${combinedCount} items. Showing product cards below.`;
   } else if (count !== null) {
     summary = `Found ${count} items. Showing product cards below.`;
   }
@@ -122,7 +139,7 @@ export function EbayToolResult({
       >
         <div className="flex items-center gap-2 font-medium text-foreground/80">
           <ShoppingBag size={14} className="text-amber-500" />
-          <span>Searched eBay</span>
+          <span>Searched products</span>
         </div>
         {isOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
       </button>

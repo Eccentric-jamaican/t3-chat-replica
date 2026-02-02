@@ -2,6 +2,7 @@ import { httpAction } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { getAuthUserId } from "./auth";
 import { searchEbayItems } from "./ebay";
+import { searchGlobalItems } from "./global";
 import { getModelCapabilities } from "./lib/models";
 import { normalizeEbaySearchArgs } from "./lib/ebaySearch";
 import {
@@ -9,6 +10,73 @@ import {
   getStrategyPrompt,
   getRegexFallbackPrompt,
 } from "./lib/prompts";
+
+function dedupeProducts(items: any[]) {
+  const seen = new Set<string>();
+  return items.filter((item) => {
+    const key =
+      typeof item?.url === "string"
+        ? item.url
+        : typeof item?.productUrl === "string"
+          ? item.productUrl
+          : typeof item?.id === "string"
+            ? item.id
+            : "";
+    if (!key) return true;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function parseFunctionCallsFromContent(content: string) {
+  if (!content.includes("<function_calls")) {
+    return { toolCalls: [] as any[], cleaned: content, hasOpenTag: false };
+  }
+
+  const hasOpenTag =
+    content.includes("<function_calls") && !content.includes("</function_calls>");
+  const regex = /<function_calls>([\s\S]*?)<\/function_calls>/gi;
+  const toolCalls: any[] = [];
+  let cleaned = content;
+  let match: RegExpExecArray | null;
+
+  while ((match = regex.exec(content)) !== null) {
+    const raw = match[1]?.trim();
+    if (!raw) {
+      cleaned = cleaned.replace(match[0], "");
+      continue;
+    }
+    try {
+      const parsed = JSON.parse(raw);
+      const items = Array.isArray(parsed) ? parsed : [parsed];
+      for (const item of items) {
+        if (!item || typeof item !== "object") continue;
+        const name =
+          typeof item.name === "string"
+            ? item.name
+            : typeof item.type === "string"
+              ? item.type
+              : "";
+        if (!name) continue;
+        const args = { ...item };
+        delete args.name;
+        delete args.type;
+        toolCalls.push({
+          id: `call_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
+          type: "function",
+          function: {
+            name,
+            arguments: JSON.stringify(args),
+          },
+        });
+      }
+    } catch {}
+    cleaned = cleaned.replace(match[0], "");
+  }
+
+  return { toolCalls, cleaned, hasOpenTag };
+}
 
 const TOOLS = [
   {
@@ -34,8 +102,9 @@ const TOOLS = [
   {
     type: "function",
     function: {
-      name: "search_ebay",
-      description: "Search for real items on eBay to buy",
+      name: "search_products",
+      description:
+        "Search for products across eBay and global retailers to compare options",
       parameters: {
         type: "object",
         properties: {
@@ -75,7 +144,7 @@ const TOOLS = [
           },
           location: {
             type: "string",
-            description: "Item location country code (e.g., US)",
+            description: "Optional location (eBay country code or city/region)",
           },
         },
         required: ["query"],
@@ -138,16 +207,19 @@ export async function chatHandler(ctx: any, request: Request) {
         const MAX_CYCLES = 10; // Safety ceiling, real limits are per-tool below
         let shouldContinue = true;
         let fullContent = "";
+        let contentBuffer = "";
         let fullReasoning = "";
 
         // [COST CONTROL] Per-turn tool usage counters
         let webSearchCount = 0;
         let timeCheckCount = 0;
-        let ebaySearchCount = 0;
+        let globalSearchCount = 0;
+        let productSearchCount = 0;
         let toolLimitsReached = false;
         const MAX_WEB_SEARCH_PER_TURN = 2;
         const MAX_TIME_CHECK_PER_TURN = 1;
-        const MAX_EBAY_SEARCH_PER_TURN = 2;
+        const MAX_GLOBAL_SEARCH_PER_TURN = 2;
+        const MAX_PRODUCT_SEARCH_PER_TURN = 2;
 
         let currentAbortController: AbortController | null = null;
         request.signal.addEventListener("abort", () => {
@@ -336,8 +408,25 @@ export async function chatHandler(ctx: any, request: Request) {
               }
 
               if (delta?.content) {
-                fullContent += delta.content;
-                send({ type: "content", content: delta.content });
+                contentBuffer += delta.content;
+                const functionCallParse =
+                  parseFunctionCallsFromContent(contentBuffer);
+                if (functionCallParse.toolCalls.length > 0) {
+                  accumulatedToolCalls.push(...functionCallParse.toolCalls);
+                  contentBuffer = "";
+                  break readLoop;
+                }
+                if (functionCallParse.cleaned !== contentBuffer) {
+                  contentBuffer = functionCallParse.cleaned;
+                }
+                if (functionCallParse.hasOpenTag) {
+                  continue;
+                }
+                if (contentBuffer) {
+                  fullContent += contentBuffer;
+                  send({ type: "content", content: contentBuffer });
+                  contentBuffer = "";
+                }
               }
 
               // [AGENTIC] Stream Reasoning
@@ -512,17 +601,17 @@ export async function chatHandler(ctx: any, request: Request) {
                     result = JSON.stringify(searchResults);
                   }
                 }
-              } else if (name === "search_ebay") {
-                if (ebaySearchCount >= MAX_EBAY_SEARCH_PER_TURN) {
+              } else if (name === "search_products") {
+                if (productSearchCount >= MAX_PRODUCT_SEARCH_PER_TURN) {
                   toolLimitsReached = true;
                   result =
-                    "Maximum eBay searches reached for this turn. Use existing information to answer.";
+                    "Maximum product searches reached for this turn. Use existing information to answer.";
                 } else {
-                  ebaySearchCount++;
+                  productSearchCount++;
                   try {
                     const normalized = normalizeEbaySearchArgs(argsObj);
                     if (!normalized.query) {
-                      result = "Error: Missing eBay search query.";
+                      result = "Error: Missing product search query.";
                     } else {
                       const marketplaceId =
                         process.env.EBAY_MARKETPLACE_ID || "EBAY_US";
@@ -539,18 +628,128 @@ export async function chatHandler(ctx: any, request: Request) {
                           categoryId = resolvedCategoryId;
                         }
                       }
-                      const items = await searchEbayItems(normalized.query, {
-                        limit: normalized.limit,
-                        categoryId,
-                        minPrice: normalized.minPrice,
-                        maxPrice: normalized.maxPrice,
-                        condition: normalized.condition,
-                        shipping: normalized.shipping,
-                        minSellerRating: normalized.sellerRating,
-                        location: normalized.location,
-                        marketplaceId,
+
+                      let ebayItems: any[] = [];
+                      let globalItems: any[] = [];
+                      let ebayError: string | null = null;
+                      let globalError: string | null = null;
+                      let globalSkipped = false;
+
+                      try {
+                        ebayItems = await searchEbayItems(normalized.query, {
+                          limit: normalized.limit,
+                          categoryId,
+                          minPrice: normalized.minPrice,
+                          maxPrice: normalized.maxPrice,
+                          condition: normalized.condition,
+                          shipping: normalized.shipping,
+                          minSellerRating: normalized.sellerRating,
+                          location: normalized.location,
+                          marketplaceId,
+                        });
+                      } catch (err: any) {
+                        ebayError = err?.message || "Unknown eBay error";
+                      }
+
+                      if (globalSearchCount >= MAX_GLOBAL_SEARCH_PER_TURN) {
+                        toolLimitsReached = true;
+                        globalSkipped = true;
+                      } else {
+                        globalSearchCount++;
+                        const globalLimit = Math.min(
+                          12,
+                          normalized.limit ?? 12,
+                        );
+                        try {
+                          globalItems = await searchGlobalItems(
+                            normalized.query,
+                            {
+                              limit: globalLimit,
+                              location: normalized.location,
+                            },
+                          );
+                        } catch (err: any) {
+                          globalError =
+                            err?.message || "Unknown global search error";
+                        }
+                      }
+
+                      const combined = dedupeProducts([
+                        ...ebayItems,
+                        ...globalItems,
+                      ]);
+
+                      const summaryParts: string[] = [];
+                      if (!ebayError) {
+                        summaryParts.push(`${ebayItems.length} eBay items`);
+                      }
+                      if (!globalError && !globalSkipped) {
+                        summaryParts.push(
+                          `${globalItems.length} global items`,
+                        );
+                      }
+                      if (summaryParts.length === 0) {
+                        summaryParts.push("no items");
+                      }
+
+                      result = `Found ${summaryParts.join(
+                        " and ",
+                      )}: ${JSON.stringify(
+                        combined.map((i: any) => ({
+                          title: i.title,
+                          price: i.price,
+                        })),
+                      )}`;
+
+                      if (globalSkipped) {
+                        result += ` Global search limit reached (${MAX_GLOBAL_SEARCH_PER_TURN} per turn).`;
+                      }
+                      if (globalError) {
+                        result += ` Global search failed: ${globalError}.`;
+                      }
+                      if (ebayError) {
+                        result += ` eBay search failed: ${ebayError}.`;
+                      }
+
+                      if (combined.length > 0) {
+                        await ctx.runMutation(
+                          internal.messages.internalSaveProducts,
+                          {
+                            messageId,
+                            products: combined,
+                          },
+                        );
+                      }
+                    }
+                  } catch (err: any) {
+                    result = `Product Search Error: ${err.message}`;
+                  }
+                }
+              } else if (name === "search_global") {
+                // Legacy tool support for older messages
+                if (globalSearchCount >= MAX_GLOBAL_SEARCH_PER_TURN) {
+                  toolLimitsReached = true;
+                  result =
+                    "Maximum global searches reached for this turn. Use existing information to answer.";
+                } else {
+                  globalSearchCount++;
+                  try {
+                    const query =
+                      typeof argsObj.query === "string" ? argsObj.query : "";
+                    const limit =
+                      typeof argsObj.limit === "number" ? argsObj.limit : 12;
+                    const location =
+                      typeof argsObj.location === "string"
+                        ? argsObj.location
+                        : undefined;
+                    if (!query) {
+                      result = "Error: Missing global search query.";
+                    } else {
+                      const items = await searchGlobalItems(query, {
+                        limit,
+                        location,
                       });
-                      result = `Found ${items.length} items on eBay: ${JSON.stringify(items.map((i: any) => ({ title: i.title, price: i.price })))}`;
+                      result = `Found ${items.length} global items: ${JSON.stringify(items.map((i: any) => ({ title: i.title, price: i.price })))}`;
                       await ctx.runMutation(
                         internal.messages.internalSaveProducts,
                         {
@@ -560,7 +759,7 @@ export async function chatHandler(ctx: any, request: Request) {
                       );
                     }
                   } catch (err: any) {
-                    result = `eBay Search Error: ${err.message}`;
+                    result = `Global Search Error: ${err.message}`;
                   }
                 }
               }
@@ -622,6 +821,7 @@ export async function chatHandler(ctx: any, request: Request) {
             messageId = newMessageId;
             fullContent = "";
             fullReasoning = "";
+            contentBuffer = "";
 
             // Notify client to start listening to the new message
             send({ type: "start", messageId: newMessageId });
@@ -636,6 +836,11 @@ export async function chatHandler(ctx: any, request: Request) {
 
         // Finalize
         if (!isAborted) {
+          if (contentBuffer) {
+            fullContent += contentBuffer;
+            send({ type: "content", content: contentBuffer });
+            contentBuffer = "";
+          }
           // [LATENCY FIX] Run final save mutations in parallel
           await Promise.all([
             ctx.runMutation(internal.messages.internalAppendContent, {

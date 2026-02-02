@@ -63,3 +63,23 @@ Likely files to touch
 - `convex/chat.ts` (build multimodal payload for audio/video)
 - `convex/chatHttp.ts` (HTTP stream payload for audio/video)
 - `convex/schema.ts` (attachment metadata updates if needed)
+
+## Agent labels + agentic sourcing loop
+
+Goal: simplify model selection with high-level labels (e.g., "Fast" and "Agent") and add an agentic loop so sourcing can iteratively refine queries, broaden coverage, and improve result quality.
+
+Key behaviors
+
+- Replace long model lists with a small set of labels (e.g., Fast, Agent, Balanced) that map to curated model IDs.
+- Preserve direct model selection behind an advanced toggle (optional).
+- Agentic loop can: reformulate queries, run multiple product searches, merge + dedupe results, and stop on coverage thresholds.
+- Keep a clear cap on calls per turn and surface a concise summary of what was tried.
+
+Likely files to touch
+
+- `src/components/chat/ModelPicker.tsx` (label-based model UI + optional advanced toggle)
+- `src/components/chat/ChatInput.tsx` (store label selection, map to modelId)
+- `convex/lib/models.ts` (label-to-model mapping helpers)
+- `convex/chat.ts` (agentic loop orchestration for product sourcing)
+- `convex/chatHttp.ts` (agentic loop orchestration for SSE path)
+- `convex/messages.ts` (optional: store agentic loop metadata)

@@ -2,10 +2,15 @@ export type Product = {
   id: string;
   title: string;
   priceRange: string;
+  price?: string;
   image: string;
   url?: string;
+  productUrl?: string;
   moq?: string;
   badge?: string;
+  source?: "ebay" | "global";
+  merchantName?: string;
+  merchantDomain?: string;
   supplier?: {
     name: string;
     logo: string;

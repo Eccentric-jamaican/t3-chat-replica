@@ -177,6 +177,7 @@ export async function searchEbayItems(
     price: `${item.price.currency} ${item.price.value}`,
     image: item.image?.imageUrl || item.additionalImages?.[0]?.imageUrl || "",
     url: item.itemWebUrl,
+    source: "ebay",
     sellerName: item.seller?.username,
     sellerFeedback: item.seller?.feedbackPercentage
       ? `${item.seller.feedbackPercentage}%`

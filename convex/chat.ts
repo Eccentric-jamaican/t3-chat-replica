@@ -6,6 +6,7 @@ import {
   searchEbayItems,
   getEbayItemDetails as fetchEbayDetails,
 } from "./ebay";
+import { searchGlobalItems } from "./global";
 import { getModelCapabilities } from "./lib/models";
 import { normalizeEbaySearchArgs } from "./lib/ebaySearch";
 import { getBasePrompt, getRegexFallbackPrompt } from "./lib/prompts";
@@ -34,8 +35,9 @@ const TOOLS = [
   {
     type: "function",
     function: {
-      name: "search_ebay",
-      description: "Search for real items on eBay to buy",
+      name: "search_products",
+      description:
+        "Search for products across eBay and global retailers to compare options",
       parameters: {
         type: "object",
         properties: {
@@ -75,7 +77,7 @@ const TOOLS = [
           },
           location: {
             type: "string",
-            description: "Item location country code (e.g., US)",
+            description: "Optional location (eBay country code or city/region)",
           },
         },
         required: ["query"],
@@ -117,6 +119,73 @@ function getMaxTokensForEffort(effort: string): number {
   }
 }
 
+function dedupeProducts(items: any[]) {
+  const seen = new Set<string>();
+  return items.filter((item) => {
+    const key =
+      typeof item?.url === "string"
+        ? item.url
+        : typeof item?.productUrl === "string"
+          ? item.productUrl
+          : typeof item?.id === "string"
+            ? item.id
+            : "";
+    if (!key) return true;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function parseFunctionCallsFromContent(content: string) {
+  if (!content.includes("<function_calls")) {
+    return { toolCalls: [] as any[], cleaned: content, hasOpenTag: false };
+  }
+
+  const hasOpenTag =
+    content.includes("<function_calls") && !content.includes("</function_calls>");
+  const regex = /<function_calls>([\s\S]*?)<\/function_calls>/gi;
+  const toolCalls: any[] = [];
+  let cleaned = content;
+  let match: RegExpExecArray | null;
+
+  while ((match = regex.exec(content)) !== null) {
+    const raw = match[1]?.trim();
+    if (!raw) {
+      cleaned = cleaned.replace(match[0], "");
+      continue;
+    }
+    try {
+      const parsed = JSON.parse(raw);
+      const items = Array.isArray(parsed) ? parsed : [parsed];
+      for (const item of items) {
+        if (!item || typeof item !== "object") continue;
+        const name =
+          typeof item.name === "string"
+            ? item.name
+            : typeof item.type === "string"
+              ? item.type
+              : "";
+        if (!name) continue;
+        const args = { ...item };
+        delete args.name;
+        delete args.type;
+        toolCalls.push({
+          id: `call_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
+          type: "function",
+          function: {
+            name,
+            arguments: JSON.stringify(args),
+          },
+        });
+      }
+    } catch {}
+    cleaned = cleaned.replace(match[0], "");
+  }
+
+  return { toolCalls, cleaned, hasOpenTag };
+}
+
 export const streamAnswer = action({
   args: {
     threadId: v.id("threads"),
@@ -151,10 +220,12 @@ export const streamAnswer = action({
     // [COST CONTROL] Per-turn tool usage counters (reset each assistant turn)
     let webSearchCount = 0;
     let timeCheckCount = 0;
-    let ebaySearchCount = 0;
+    let globalSearchCount = 0;
+    let productSearchCount = 0;
     const MAX_WEB_SEARCH_PER_TURN = 2;
     const MAX_TIME_CHECK_PER_TURN = 1;
-    const MAX_EBAY_SEARCH_PER_TURN = 2;
+    const MAX_GLOBAL_SEARCH_PER_TURN = 2;
+    const MAX_PRODUCT_SEARCH_PER_TURN = 2;
 
     // Verify thread ownership once before any internal reads
     await ctx.runQuery(internal.threads.internalVerifyThreadAccess, {
@@ -531,6 +602,21 @@ export const streamAnswer = action({
               if (delta?.content) {
                 contentBuffer += delta.content;
 
+                const functionCallParse =
+                  parseFunctionCallsFromContent(contentBuffer);
+                if (functionCallParse.toolCalls.length > 0) {
+                  accumulatedToolCalls.push(...functionCallParse.toolCalls);
+                  contentBuffer = "";
+                  break streamLoop;
+                }
+                if (functionCallParse.cleaned !== contentBuffer) {
+                  contentBuffer = functionCallParse.cleaned;
+                }
+                if (functionCallParse.hasOpenTag) {
+                  // Wait for the closing tag before emitting anything
+                  continue;
+                }
+
                 // [AGENTIC LOGIC] Regex Tool Parsing Fallback
                 // Only check if enabled for this model to avoid perf hit on all models
                 if (capabilities.toolFallback === "regex") {
@@ -756,18 +842,19 @@ export const streamAnswer = action({
                       }
                     }
                   }
-                } else if (name === "search_ebay") {
-                  // [COST CONTROL] Check per-turn limit for eBay searches
-                  if (ebaySearchCount >= MAX_EBAY_SEARCH_PER_TURN) {
+                } else if (name === "search_products") {
+                  // [COST CONTROL] Check per-turn limit for product searches
+                  if (productSearchCount >= MAX_PRODUCT_SEARCH_PER_TURN) {
                     toolLimitsReached = true;
-                    result = `eBay search limit reached (${MAX_EBAY_SEARCH_PER_TURN} per turn). Use existing information to answer.`;
+                    result = `Product search limit reached (${MAX_PRODUCT_SEARCH_PER_TURN} per turn). Use existing information to answer.`;
                   } else if (usageCount > 1) {
-                    result = "Skipped duplicate eBay search to control costs.";
+                    result =
+                      "Skipped duplicate product search to control costs.";
                   } else {
-                    ebaySearchCount++;
+                    productSearchCount++;
                     const normalized = normalizeEbaySearchArgs(argsObj);
                     if (!normalized.query) {
-                      result = "Error: Missing eBay search query.";
+                      result = "Error: Missing product search query.";
                     } else {
                       const marketplaceId =
                         process.env.EBAY_MARKETPLACE_ID || "EBAY_US";
@@ -785,25 +872,126 @@ export const streamAnswer = action({
                         }
                       }
 
-                      const items = await searchEbayItems(normalized.query, {
-                        limit: normalized.limit,
-                        categoryId,
-                        minPrice: normalized.minPrice,
-                        maxPrice: normalized.maxPrice,
-                        condition: normalized.condition,
-                        shipping: normalized.shipping,
-                        minSellerRating: normalized.sellerRating,
-                        location: normalized.location,
-                        marketplaceId,
-                      });
+                      let ebayItems: any[] = [];
+                      let globalItems: any[] = [];
+                      let ebayError: string | null = null;
+                      let globalError: string | null = null;
+                      let globalSkipped = false;
+
+                      try {
+                        ebayItems = await searchEbayItems(normalized.query, {
+                          limit: normalized.limit,
+                          categoryId,
+                          minPrice: normalized.minPrice,
+                          maxPrice: normalized.maxPrice,
+                          condition: normalized.condition,
+                          shipping: normalized.shipping,
+                          minSellerRating: normalized.sellerRating,
+                          location: normalized.location,
+                          marketplaceId,
+                        });
+                      } catch (err: any) {
+                        ebayError = err?.message || "Unknown eBay error";
+                      }
+
+                      if (globalSearchCount >= MAX_GLOBAL_SEARCH_PER_TURN) {
+                        toolLimitsReached = true;
+                        globalSkipped = true;
+                      } else {
+                        globalSearchCount++;
+                        const globalLimit = Math.min(
+                          12,
+                          normalized.limit ?? 12,
+                        );
+                        try {
+                          globalItems = await searchGlobalItems(
+                            normalized.query,
+                            {
+                              limit: globalLimit,
+                              location: normalized.location,
+                            },
+                          );
+                        } catch (err: any) {
+                          globalError =
+                            err?.message || "Unknown global search error";
+                        }
+                      }
 
                       if (process.env.EBAY_ENV !== "production") {
                         console.log(
-                          `eBay found ${items.length} items for "${normalized.query}"`,
+                          `eBay found ${ebayItems.length} items for "${normalized.query}"`,
                         );
                       }
 
-                      result = `I found ${items.length} items on eBay. They have been displayed to the user.`;
+                      const combined = dedupeProducts([
+                        ...ebayItems,
+                        ...globalItems,
+                      ]);
+
+                      const summaryParts: string[] = [];
+                      if (!ebayError) {
+                        summaryParts.push(`${ebayItems.length} items on eBay`);
+                      }
+                      if (!globalError && !globalSkipped) {
+                        summaryParts.push(
+                          `${globalItems.length} global items`,
+                        );
+                      }
+                      if (summaryParts.length === 0) {
+                        summaryParts.push("no items");
+                      }
+
+                      result = `I found ${summaryParts.join(
+                        " and ",
+                      )}. They have been displayed to the user.`;
+
+                      if (globalSkipped) {
+                        result += ` Global search limit reached (${MAX_GLOBAL_SEARCH_PER_TURN} per turn).`;
+                      }
+                      if (globalError) {
+                        result += ` Global search failed: ${globalError}.`;
+                      }
+                      if (ebayError) {
+                        result += ` eBay search failed: ${ebayError}.`;
+                      }
+
+                      if (combined.length > 0) {
+                        await ctx.runMutation(
+                          internal.messages.internalSaveProducts,
+                          {
+                            messageId: currentMessageId!,
+                            products: combined,
+                          },
+                        );
+                      }
+                    }
+                  }
+                } else if (name === "search_global") {
+                  // Legacy tool support for older messages
+                  if (globalSearchCount >= MAX_GLOBAL_SEARCH_PER_TURN) {
+                    toolLimitsReached = true;
+                    result = `Global search limit reached (${MAX_GLOBAL_SEARCH_PER_TURN} per turn). Use existing information to answer.`;
+                  } else if (usageCount > 1) {
+                    result = "Skipped duplicate global search to control costs.";
+                  } else {
+                    globalSearchCount++;
+                    const query =
+                      typeof argsObj.query === "string" ? argsObj.query : "";
+                    const limit =
+                      typeof argsObj.limit === "number" ? argsObj.limit : 12;
+                    const location =
+                      typeof argsObj.location === "string"
+                        ? argsObj.location
+                        : undefined;
+
+                    if (!query) {
+                      result = "Error: Missing global search query.";
+                    } else {
+                      const items = await searchGlobalItems(query, {
+                        limit,
+                        location,
+                      });
+                      result = `I found ${items.length} global items. They have been displayed to the user.`;
 
                       await ctx.runMutation(
                         internal.messages.internalSaveProducts,
@@ -854,12 +1042,22 @@ export const streamAnswer = action({
             });
           }
 
-          if (ebaySearchCount >= MAX_EBAY_SEARCH_PER_TURN) {
+          if (productSearchCount >= MAX_PRODUCT_SEARCH_PER_TURN) {
             await ctx.runMutation(internal.messages.internalSend, {
               threadId: args.threadId,
               role: "system",
-              content: `You have reached the maximum eBay search limit (${MAX_EBAY_SEARCH_PER_TURN}) for this turn. Stop searching and provide a comprehensive answer based on the information you already have.`,
-              toolCallId: "limit-warning-ebay",
+              content: `You have reached the maximum product search limit (${MAX_PRODUCT_SEARCH_PER_TURN}) for this turn. Stop searching and provide a comprehensive answer based on the information you already have.`,
+              toolCallId: "limit-warning-products",
+              name: "system",
+            });
+          }
+
+          if (globalSearchCount >= MAX_GLOBAL_SEARCH_PER_TURN) {
+            await ctx.runMutation(internal.messages.internalSend, {
+              threadId: args.threadId,
+              role: "system",
+              content: `You have reached the maximum global search limit (${MAX_GLOBAL_SEARCH_PER_TURN}) for this turn. Stop searching and provide a comprehensive answer based on the information you already have.`,
+              toolCallId: "limit-warning-global",
               name: "system",
             });
           }

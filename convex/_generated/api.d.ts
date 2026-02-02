@@ -15,6 +15,7 @@ import type * as crons from "../crons.js";
 import type * as ebay from "../ebay.js";
 import type * as ebayTaxonomy from "../ebayTaxonomy.js";
 import type * as explore from "../explore.js";
+import type * as global from "../global.js";
 import type * as http from "../http.js";
 import type * as integrations_crypto from "../integrations/crypto.js";
 import type * as integrations_evidence from "../integrations/evidence.js";
@@ -60,6 +61,7 @@ declare const fullApi: ApiFromModules<{
   ebay: typeof ebay;
   ebayTaxonomy: typeof ebayTaxonomy;
   explore: typeof explore;
+  global: typeof global;
   http: typeof http;
   "integrations/crypto": typeof integrations_crypto;
   "integrations/evidence": typeof integrations_evidence;

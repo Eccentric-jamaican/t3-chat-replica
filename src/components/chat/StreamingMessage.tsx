@@ -6,6 +6,7 @@ import { ReasoningBlock } from "./ReasoningBlock";
 import { ToolCallBlock } from "./ToolCallBlock";
 import { SearchToolResult } from "./SearchToolResult";
 import { EbayToolResult } from "./EbayToolResult";
+import { GlobalToolResult } from "./GlobalToolResult";
 import { type Product } from "../../data/mockProducts";
 import { ProductGrid } from "../product/ProductGrid";
 
@@ -218,6 +219,8 @@ export const StreamingMessage = ({
           <ProductGrid
             products={products}
             hideHeader
+            showSourceFilters
+            maxItems={12}
             onOpenExpanded={onOpenExpanded}
           />
         </div>
@@ -292,7 +295,10 @@ const ToolCallRenderer = ({
   if (name === "search_web") {
     return <SearchToolResult isLoading={!result} result={result} args={args} />;
   }
-  if (name === "search_ebay") {
+  if (name === "search_global") {
+    return <GlobalToolResult isLoading={!result} result={result} args={args} />;
+  }
+  if (name === "search_products" || name === "search_ebay") {
     return <EbayToolResult isLoading={!result} result={result} args={args} />;
   }
   return (
