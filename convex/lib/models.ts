@@ -16,13 +16,6 @@ export const MODEL_CAPABILITIES: Record<string, ModelCapability> = {
     isThinking: false,
     promptStrategy: "standard",
   },
-  "google/gemini-3.0-flash-preview": {
-    id: "google/gemini-3.0-flash-preview",
-    supportsTools: true,
-    supportsStreaming: true,
-    isThinking: false,
-    promptStrategy: "standard",
-  },
   "google/gemini-3-flash-preview": {
     id: "google/gemini-3-flash-preview",
     supportsTools: true,

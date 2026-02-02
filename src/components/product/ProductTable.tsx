@@ -65,17 +65,26 @@ export function ProductTable({ products, selectedIds, onToggleSelection, onProdu
                   onClick={() => onProductClick(product.id)}
                 >
                   <div className="h-10 w-10 shrink-0 overflow-hidden rounded-md bg-gray-100 border border-gray-200">
-                    <img
-                      src={imageSrc}
-                      alt={`${product.title} image`}
-                      className="h-full w-full object-cover"
-                      onError={(event) => {
-                        if (!imageFallback) return;
-                        const target = event.currentTarget;
-                        if (target.src === imageFallback) return;
-                        target.src = imageFallback;
-                      }}
-                    />
+                    {imageSrc ? (
+                      <img
+                        src={imageSrc}
+                        alt={`${product.title} image`}
+                        className="h-full w-full object-cover"
+                        onError={(event) => {
+                          if (!imageFallback) {
+                            event.currentTarget.classList.add("hidden");
+                            return;
+                          }
+                          const target = event.currentTarget;
+                          if (target.src === imageFallback) return;
+                          target.src = imageFallback;
+                        }}
+                      />
+                    ) : (
+                      <div className="flex h-full w-full items-center justify-center text-[10px] font-semibold text-gray-400">
+                        —
+                      </div>
+                    )}
                   </div>
                   <div className="flex flex-col">
                     <span className="font-medium text-gray-900 group-hover:text-[#a23b67] transition-colors leading-tight line-clamp-1">

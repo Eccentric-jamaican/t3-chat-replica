@@ -10,6 +10,10 @@ import { searchGlobalItems } from "./global";
 import { getModelCapabilities } from "./lib/models";
 import { normalizeEbaySearchArgs } from "./lib/ebaySearch";
 import { getBasePrompt, getRegexFallbackPrompt } from "./lib/prompts";
+import {
+  dedupeProducts,
+  parseFunctionCallsFromContent,
+} from "./lib/toolHelpers";
 
 const TOOLS = [
   {
@@ -119,72 +123,6 @@ function getMaxTokensForEffort(effort: string): number {
   }
 }
 
-function dedupeProducts(items: any[]) {
-  const seen = new Set<string>();
-  return items.filter((item) => {
-    const key =
-      typeof item?.url === "string"
-        ? item.url
-        : typeof item?.productUrl === "string"
-          ? item.productUrl
-          : typeof item?.id === "string"
-            ? item.id
-            : "";
-    if (!key) return true;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-}
-
-function parseFunctionCallsFromContent(content: string) {
-  if (!content.includes("<function_calls")) {
-    return { toolCalls: [] as any[], cleaned: content, hasOpenTag: false };
-  }
-
-  const hasOpenTag =
-    content.includes("<function_calls") && !content.includes("</function_calls>");
-  const regex = /<function_calls>([\s\S]*?)<\/function_calls>/gi;
-  const toolCalls: any[] = [];
-  let cleaned = content;
-  let match: RegExpExecArray | null;
-
-  while ((match = regex.exec(content)) !== null) {
-    const raw = match[1]?.trim();
-    if (!raw) {
-      cleaned = cleaned.replace(match[0], "");
-      continue;
-    }
-    try {
-      const parsed = JSON.parse(raw);
-      const items = Array.isArray(parsed) ? parsed : [parsed];
-      for (const item of items) {
-        if (!item || typeof item !== "object") continue;
-        const name =
-          typeof item.name === "string"
-            ? item.name
-            : typeof item.type === "string"
-              ? item.type
-              : "";
-        if (!name) continue;
-        const args = { ...item };
-        delete args.name;
-        delete args.type;
-        toolCalls.push({
-          id: `call_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
-          type: "function",
-          function: {
-            name,
-            arguments: JSON.stringify(args),
-          },
-        });
-      }
-    } catch {}
-    cleaned = cleaned.replace(match[0], "");
-  }
-
-  return { toolCalls, cleaned, hasOpenTag };
-}
 
 export const streamAnswer = action({
   args: {
@@ -872,49 +810,60 @@ export const streamAnswer = action({
                         }
                       }
 
-                      let ebayItems: any[] = [];
-                      let globalItems: any[] = [];
                       let ebayError: string | null = null;
                       let globalError: string | null = null;
-                      let globalSkipped = false;
+                      const globalSkipped =
+                        globalSearchCount >= MAX_GLOBAL_SEARCH_PER_TURN;
 
-                      try {
-                        ebayItems = await searchEbayItems(normalized.query, {
-                          limit: normalized.limit,
-                          categoryId,
-                          minPrice: normalized.minPrice,
-                          maxPrice: normalized.maxPrice,
-                          condition: normalized.condition,
-                          shipping: normalized.shipping,
-                          minSellerRating: normalized.sellerRating,
-                          location: normalized.location,
-                          marketplaceId,
-                        });
-                      } catch (err: any) {
-                        ebayError = err?.message || "Unknown eBay error";
-                      }
-
-                      if (globalSearchCount >= MAX_GLOBAL_SEARCH_PER_TURN) {
+                      if (globalSkipped) {
                         toolLimitsReached = true;
-                        globalSkipped = true;
                       } else {
                         globalSearchCount++;
-                        const globalLimit = Math.min(
-                          12,
-                          normalized.limit ?? 12,
-                        );
-                        try {
-                          globalItems = await searchGlobalItems(
-                            normalized.query,
-                            {
-                              limit: globalLimit,
-                              location: normalized.location,
-                            },
-                          );
-                        } catch (err: any) {
-                          globalError =
-                            err?.message || "Unknown global search error";
-                        }
+                      }
+
+                      const globalLimit = Math.min(
+                        12,
+                        normalized.limit ?? 12,
+                      );
+
+                      const [ebayResult, globalResult] =
+                        await Promise.allSettled([
+                          searchEbayItems(normalized.query, {
+                            limit: normalized.limit,
+                            categoryId,
+                            minPrice: normalized.minPrice,
+                            maxPrice: normalized.maxPrice,
+                            condition: normalized.condition,
+                            shipping: normalized.shipping,
+                            minSellerRating: normalized.sellerRating,
+                            location: normalized.location,
+                            marketplaceId,
+                          }),
+                          globalSkipped
+                            ? Promise.resolve([])
+                            : searchGlobalItems(normalized.query, {
+                                limit: globalLimit,
+                                location: normalized.location,
+                              }),
+                        ]);
+
+                      const ebayItems =
+                        ebayResult.status === "fulfilled"
+                          ? ebayResult.value
+                          : [];
+                      if (ebayResult.status === "rejected") {
+                        ebayError =
+                          ebayResult.reason?.message || "Unknown eBay error";
+                      }
+
+                      const globalItems =
+                        globalResult.status === "fulfilled"
+                          ? globalResult.value
+                          : [];
+                      if (globalResult.status === "rejected") {
+                        globalError =
+                          globalResult.reason?.message ||
+                          "Unknown global search error";
                       }
 
                       if (process.env.EBAY_ENV !== "production") {

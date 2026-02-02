@@ -67,6 +67,7 @@ export function GlobalToolResult({
     <div className="my-2 overflow-hidden rounded-lg text-sm">
       <button
         onClick={() => setIsOpen(!isOpen)}
+        aria-expanded={isOpen}
         className="flex w-full items-center justify-between p-2.5 text-left transition-colors hover:bg-black/5"
       >
         <div className="flex items-center gap-2 font-medium text-foreground/80">

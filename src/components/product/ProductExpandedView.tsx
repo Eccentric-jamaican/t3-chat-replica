@@ -42,10 +42,20 @@ export function ProductExpandedView({
     () => products.some((product) => !!product.source),
     [products],
   );
+  const validSourceFilter = useMemo(() => {
+    if (!hasSource) return "all";
+    if (
+      sourceFilter !== "all" &&
+      !products.some((product) => product.source === sourceFilter)
+    ) {
+      return "all";
+    }
+    return sourceFilter;
+  }, [hasSource, products, sourceFilter]);
   const filteredProducts = useMemo(() => {
-    if (!hasSource || sourceFilter === "all") return products;
-    return products.filter((product) => product.source === sourceFilter);
-  }, [products, hasSource, sourceFilter]);
+    if (!hasSource || validSourceFilter === "all") return products;
+    return products.filter((product) => product.source === validSourceFilter);
+  }, [products, hasSource, validSourceFilter]);
   const totalPages = Math.max(
     1,
     Math.ceil(filteredProducts.length / pageSize),
@@ -56,17 +66,10 @@ export function ProductExpandedView({
   }, [view, sourceFilter, products.length]);
 
   useEffect(() => {
-    if (!hasSource) {
-      if (sourceFilter !== "all") setSourceFilter("all");
-      return;
-    }
-    if (
-      sourceFilter !== "all" &&
-      !products.some((product) => product.source === sourceFilter)
-    ) {
+    if (validSourceFilter !== sourceFilter) {
       setSourceFilter("all");
     }
-  }, [hasSource, products, sourceFilter]);
+  }, [validSourceFilter, sourceFilter]);
 
   const paginatedProducts = useMemo(() => {
     const start = (page - 1) * pageSize;

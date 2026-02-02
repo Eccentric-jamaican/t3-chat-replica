@@ -24,6 +24,10 @@ export function ProductCard({ product }: ProductCardProps) {
     product.supplier?.name ||
     product.sellerName ||
     "";
+  const supplierLogo = product.supplier?.logo;
+  const supplierLogoIsUrl =
+    typeof supplierLogo === "string" &&
+    /^(https?:)?\/\//i.test(supplierLogo);
   const merchantFavicon = product.merchantDomain
     ? `https://www.google.com/s2/favicons?domain=${product.merchantDomain}&sz=32`
     : null;
@@ -95,9 +99,17 @@ export function ProductCard({ product }: ProductCardProps) {
                  alt=""
                  className="h-3.5 w-3.5 rounded-sm sm:h-4 sm:w-4"
                />
+             ) : supplierLogoIsUrl ? (
+               <img
+                 src={supplierLogo}
+                 alt=""
+                 className="h-3.5 w-3.5 rounded-sm object-cover sm:h-4 sm:w-4"
+               />
              ) : (
                <div className="flex h-3.5 w-3.5 items-center justify-center rounded-sm bg-gray-200 text-[9px] font-bold text-gray-600 sm:h-4 sm:w-4 sm:text-[10px]">
-                 {product.supplier?.logo ||
+                 {(typeof supplierLogo === "string" && !supplierLogoIsUrl
+                   ? supplierLogo
+                   : "") ||
                    (merchantLabel?.charAt(0).toUpperCase() || "E")}
                </div>
              )}

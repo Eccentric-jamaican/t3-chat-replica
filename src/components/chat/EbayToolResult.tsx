@@ -6,12 +6,16 @@ interface EbayToolResultProps {
   isLoading: boolean;
   result?: unknown;
   args?: string;
+  title?: string;
+  loadingText?: string;
 }
 
 export function EbayToolResult({
   isLoading,
   result,
   args,
+  title = "Searched products",
+  loadingText,
 }: EbayToolResultProps) {
   const [isOpen, setIsOpen] = useState(false);
 
@@ -88,14 +92,15 @@ export function EbayToolResult({
   }, [result]);
 
   if (isLoading) {
+    const loadingLabel =
+      loadingText ||
+      (query
+        ? `Searching products for: \"${query}\"...`
+        : "Searching products...");
     return (
       <div className="flex items-center gap-2 py-2 text-sm text-foreground/60">
         <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary/20 border-t-primary" />
-        <span>
-          {query
-            ? `Searching products for: "${query}"...`
-            : "Searching products..."}
-        </span>
+        <span>{loadingLabel}</span>
       </div>
     );
   }
@@ -139,7 +144,7 @@ export function EbayToolResult({
       >
         <div className="flex items-center gap-2 font-medium text-foreground/80">
           <ShoppingBag size={14} className="text-amber-500" />
-          <span>Searched products</span>
+          <span>{title}</span>
         </div>
         {isOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
       </button>

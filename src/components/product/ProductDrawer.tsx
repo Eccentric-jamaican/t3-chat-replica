@@ -35,7 +35,7 @@ export function ProductDrawer({ productId, initialData }: ProductDrawerProps) {
     product?.merchantDomain ||
     product?.supplier?.name ||
     product?.sellerName ||
-    "";
+    "Unknown merchant";
   const merchantFavicon = product?.merchantDomain
     ? `https://www.google.com/s2/favicons?domain=${product.merchantDomain}&sz=32`
     : null;

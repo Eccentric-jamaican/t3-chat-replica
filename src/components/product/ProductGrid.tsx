@@ -107,7 +107,7 @@ export function ProductGrid({
           <button
             onClick={() =>
               onOpenExpanded
-                ? onOpenExpanded(products)
+                ? onOpenExpanded(filteredProducts)
                 : onViewMore?.()
             }
             className="rounded-full bg-white px-6 py-2 text-sm font-semibold text-gray-900 border border-gray-200 shadow-sm hover:bg-gray-50 transition-colors"

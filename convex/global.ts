@@ -14,26 +14,34 @@ export async function searchGlobalItems(
   }
 
   const limit = options.limit ?? 6;
+  const timeoutMs = 5000;
   let data: any;
   if (serperKey) {
-    const response = await fetch("https://google.serper.dev/shopping", {
-      method: "POST",
-      headers: {
-        "X-API-KEY": serperKey,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        q: query,
-        num: limit,
-        ...(options.location ? { location: options.location } : {}),
-      }),
-    });
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const response = await fetch("https://google.serper.dev/shopping", {
+        method: "POST",
+        headers: {
+          "X-API-KEY": serperKey,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          q: query,
+          num: limit,
+          ...(options.location ? { location: options.location } : {}),
+        }),
+        signal: controller.signal,
+      });
 
-    if (!response.ok) {
-      const errorBody = await response.text();
-      throw new Error(`Global search failed: ${response.status} ${errorBody}`);
+      if (!response.ok) {
+        const errorBody = await response.text();
+        throw new Error(`Global search failed: ${response.status} ${errorBody}`);
+      }
+      data = await response.json();
+    } finally {
+      clearTimeout(timeout);
     }
-    data = await response.json();
   } else {
     const url = new URL("https://serpapi.com/search.json");
     url.searchParams.set("engine", "google_shopping");
@@ -44,12 +52,20 @@ export async function searchGlobalItems(
       url.searchParams.set("location", options.location);
     }
 
-    const response = await fetch(url.toString());
-    if (!response.ok) {
-      const errorBody = await response.text();
-      throw new Error(`Global search failed: ${response.status} ${errorBody}`);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const response = await fetch(url.toString(), {
+        signal: controller.signal,
+      });
+      if (!response.ok) {
+        const errorBody = await response.text();
+        throw new Error(`Global search failed: ${response.status} ${errorBody}`);
+      }
+      data = await response.json();
+    } finally {
+      clearTimeout(timeout);
     }
-    data = await response.json();
   }
 
   const results = normalizeGlobalResults(data);

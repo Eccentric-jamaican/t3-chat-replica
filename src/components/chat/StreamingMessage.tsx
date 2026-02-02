@@ -6,6 +6,7 @@ import { ReasoningBlock } from "./ReasoningBlock";
 import { ToolCallBlock } from "./ToolCallBlock";
 import { SearchToolResult } from "./SearchToolResult";
 import { EbayToolResult } from "./EbayToolResult";
+import { ProductToolResult } from "./ProductToolResult";
 import { GlobalToolResult } from "./GlobalToolResult";
 import { type Product } from "../../data/mockProducts";
 import { ProductGrid } from "../product/ProductGrid";
@@ -298,8 +299,21 @@ const ToolCallRenderer = ({
   if (name === "search_global") {
     return <GlobalToolResult isLoading={!result} result={result} args={args} />;
   }
-  if (name === "search_products" || name === "search_ebay") {
-    return <EbayToolResult isLoading={!result} result={result} args={args} />;
+  if (name === "search_products") {
+    return (
+      <ProductToolResult isLoading={!result} result={result} args={args} />
+    );
+  }
+  if (name === "search_ebay") {
+    return (
+      <EbayToolResult
+        isLoading={!result}
+        result={result}
+        args={args}
+        title="Searched eBay"
+        loadingText="Searching eBay..."
+      />
+    );
   }
   return (
     <ToolCallBlock

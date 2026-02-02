@@ -41,6 +41,7 @@ import type * as integrations_whatsapp_verify from "../integrations/whatsapp/ver
 import type * as lib_ebaySearch from "../lib/ebaySearch.js";
 import type * as lib_models from "../lib/models.js";
 import type * as lib_prompts from "../lib/prompts.js";
+import type * as lib_toolHelpers from "../lib/toolHelpers.js";
 import type * as messages from "../messages.js";
 import type * as packages from "../packages.js";
 import type * as profiles from "../profiles.js";
@@ -87,6 +88,7 @@ declare const fullApi: ApiFromModules<{
   "lib/ebaySearch": typeof lib_ebaySearch;
   "lib/models": typeof lib_models;
   "lib/prompts": typeof lib_prompts;
+  "lib/toolHelpers": typeof lib_toolHelpers;
   messages: typeof messages;
   packages: typeof packages;
   profiles: typeof profiles;

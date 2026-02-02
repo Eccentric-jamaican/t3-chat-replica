@@ -2,12 +2,12 @@
 
 ## Gmail inbox watch + manual sync (hybrid)
 
-Goal: automatically watch a user�s inbox for order confirmations (near-real-time) while still providing manual controls ("Sync now" and a one-time backfill) for recovery and testing.
+Goal: automatically watch a user's inbox for order confirmations (near-real-time) while still providing manual controls ("Sync now" and a one-time backfill) for recovery and testing.
 
 Key behaviors
 
 - Auto-watch enabled after OAuth; new order emails create drafts/pre-alerts without user action.
-- Manual "Sync now" triggers a short lookback (e.g., 3�7 days).
+- Manual "Sync now" triggers a short lookback (e.g., 3–7 days).
 - Optional "Backfill 30 days" for first-time connect or troubleshooting.
 - Clear UI state: watch status, last sync time, and any errors.
 

@@ -9,9 +9,7 @@ function normalizeUrl(url: string) {
 export function getProductImageUrl(product: Product) {
   const raw = typeof product.image === "string" ? product.image.trim() : "";
   if (!raw) return "";
-  const normalized = normalizeUrl(raw);
-  if (!normalized) return "";
-  return normalized;
+  return normalizeUrl(raw);
 }
 
 export function getProductImageFallback(product: Product) {
