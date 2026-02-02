@@ -256,6 +256,11 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
 
       // Store content before clearing input
       const messageContent = hasText ? trimmedText : "";
+      const fallbackTitle = hasText
+        ? messageContent
+        : attachments.length > 0
+          ? `Attachment: ${attachments[0].name || attachments[0].type || "Upload"}`
+          : "Untitled thread";
       if (forcedContent === undefined) {
         setContent("");
       }
@@ -287,7 +292,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
           currentThreadId = await createThread({
             sessionId,
             modelId: selectedModelId,
-            title: messageContent.slice(0, 40),
+            title: fallbackTitle.slice(0, 40),
           });
           setThreadId(currentThreadId);
           // Navigate to the new thread page
