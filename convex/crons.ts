@@ -17,4 +17,11 @@ crons.interval(
   internal.integrations.gmail.sync.catchupSync,
 );
 
+// Refresh eBay taxonomy monthly (category tree changes infrequently)
+crons.interval(
+  "refresh-ebay-taxonomy",
+  { hours: 720 },
+  internal.ebayTaxonomy.refreshEbayTaxonomy,
+);
+
 export default crons;

@@ -7,6 +7,7 @@ import {
   getEbayItemDetails as fetchEbayDetails,
 } from "./ebay";
 import { getModelCapabilities } from "./lib/models";
+import { normalizeEbaySearchArgs } from "./lib/ebaySearch";
 import { getBasePrompt, getRegexFallbackPrompt } from "./lib/prompts";
 
 const TOOLS = [
@@ -43,6 +44,38 @@ const TOOLS = [
             type: "number",
             description: "Number of results (max 36)",
             default: 36,
+          },
+          categoryId: {
+            type: "string",
+            description: "Optional eBay category ID (preferred when known)",
+          },
+          categoryName: {
+            type: "string",
+            description: "Optional category name (matched to eBay taxonomy)",
+          },
+          minPrice: {
+            type: "number",
+            description: "Minimum price in USD",
+          },
+          maxPrice: {
+            type: "number",
+            description: "Maximum price in USD",
+          },
+          condition: {
+            type: "string",
+            enum: ["new", "used", "refurbished", "open_box"],
+          },
+          shipping: {
+            type: "string",
+            enum: ["free", "fast"],
+          },
+          sellerRating: {
+            type: "number",
+            description: "Minimum seller feedback percentage (default 95)",
+          },
+          location: {
+            type: "string",
+            description: "Item location country code (e.g., US)",
           },
         },
         required: ["query"],
@@ -724,33 +757,54 @@ export const streamAnswer = action({
                     result = "Skipped duplicate eBay search to control costs.";
                   } else {
                     ebaySearchCount++;
-                    const parsedLimit = Number.parseInt(
-                      String(argsObj.limit),
-                      10,
-                    );
-                    const safeLimit = Number.isFinite(parsedLimit)
-                      ? Math.max(1, Math.min(36, parsedLimit))
-                      : 36;
-                    const items = await searchEbayItems(
-                      argsObj.query,
-                      safeLimit,
-                    );
+                    const normalized = normalizeEbaySearchArgs(argsObj);
+                    if (!normalized.query) {
+                      result = "Error: Missing eBay search query.";
+                    } else {
+                      const marketplaceId =
+                        process.env.EBAY_MARKETPLACE_ID || "EBAY_US";
+                      let categoryId = normalized.categoryId;
+                      if (!categoryId && normalized.categoryName) {
+                        const resolvedCategoryId = await ctx.runQuery(
+                          internal.ebayTaxonomy.findEbayCategoryId,
+                          {
+                            categoryName: normalized.categoryName,
+                            marketplaceId,
+                          },
+                        );
+                        if (typeof resolvedCategoryId === "string") {
+                          categoryId = resolvedCategoryId;
+                        }
+                      }
 
-                    if (process.env.EBAY_ENV !== "production") {
-                      console.log(
-                        `eBay found ${items.length} items for "${argsObj.query}"`,
+                      const items = await searchEbayItems(normalized.query, {
+                        limit: normalized.limit,
+                        categoryId,
+                        minPrice: normalized.minPrice,
+                        maxPrice: normalized.maxPrice,
+                        condition: normalized.condition,
+                        shipping: normalized.shipping,
+                        minSellerRating: normalized.sellerRating,
+                        location: normalized.location,
+                        marketplaceId,
+                      });
+
+                      if (process.env.EBAY_ENV !== "production") {
+                        console.log(
+                          `eBay found ${items.length} items for "${normalized.query}"`,
+                        );
+                      }
+
+                      result = `I found ${items.length} items on eBay. They have been displayed to the user.`;
+
+                      await ctx.runMutation(
+                        internal.messages.internalSaveProducts,
+                        {
+                          messageId: currentMessageId!,
+                          products: items,
+                        },
                       );
                     }
-
-                    result = `I found ${items.length} items on eBay. They have been displayed to the user.`;
-
-                    await ctx.runMutation(
-                      internal.messages.internalSaveProducts,
-                      {
-                        messageId: currentMessageId!,
-                        products: items,
-                      },
-                    );
                   }
                 }
 

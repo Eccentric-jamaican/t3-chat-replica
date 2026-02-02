@@ -1,4 +1,3 @@
-
 /**
  * eBay API Helper for Convex
  * Handles OAuth Client Credentials Flow and Browse API searches.
@@ -15,13 +14,18 @@ interface EbayTokenResponse {
  * Only shows full details if DEBUG_EBAY or DEBUG env flag is set.
  */
 function logEbayError(context: string, status: number, body: string) {
-  const isDebug = process.env.DEBUG_EBAY === "true" || process.env.DEBUG === "true";
-  const redactedBody = isDebug ? body : (body.length > 100 ? body.substring(0, 100) + "..." : body);
-  
+  const isDebug =
+    process.env.DEBUG_EBAY === "true" || process.env.DEBUG === "true";
+  const redactedBody = isDebug
+    ? body
+    : body.length > 100
+      ? body.substring(0, 100) + "..."
+      : body;
+
   if (isDebug) {
     console.error(`[DEBUG] ${context} Error (Full):`, body);
   }
-  
+
   return `eBay ${context} failed: ${status} ${redactedBody}`;
 }
 
@@ -29,7 +33,7 @@ function logEbayError(context: string, status: number, body: string) {
  * Gets a fresh Application Access Token from eBay.
  * Uses the Client Credentials grant flow.
  */
-async function getApplicationToken() {
+export async function getApplicationToken(scopes?: string) {
   const clientId = process.env.EBAY_CLIENT_ID;
   const clientSecret = process.env.EBAY_CLIENT_SECRET;
 
@@ -38,27 +42,34 @@ async function getApplicationToken() {
   }
 
   const auth = btoa(`${clientId}:${clientSecret}`);
-  
-  const response = await fetch("https://api.ebay.com/identity/v1/oauth2/token", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-      "Authorization": `Basic ${auth}`,
+
+  const response = await fetch(
+    "https://api.ebay.com/identity/v1/oauth2/token",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Authorization: `Basic ${auth}`,
+      },
+      body: new URLSearchParams({
+        grant_type: "client_credentials",
+        scope: scopes ?? "https://api.ebay.com/oauth/api_scope",
+      }),
     },
-    body: new URLSearchParams({
-      grant_type: "client_credentials",
-      scope: "https://api.ebay.com/oauth/api_scope",
-    }),
-  });
+  );
 
   if (!response.ok) {
     const errorBody = await response.text();
-    const errorMessage = logEbayError("OAuth Token", response.status, errorBody);
+    const errorMessage = logEbayError(
+      "OAuth Token",
+      response.status,
+      errorBody,
+    );
     console.error(`[eBay OAuth Error] Status: ${response.status} (Redacted)`);
     throw new Error(errorMessage);
   }
 
-  const data = await response.json() as EbayTokenResponse;
+  const data = (await response.json()) as EbayTokenResponse;
   return data.access_token;
 }
 
@@ -66,23 +77,83 @@ async function getApplicationToken() {
  * Searches for items on eBay using the Browse API.
  * Maps results to our internal Product format.
  */
-export async function searchEbayItems(query: string, limit: number = 6) {
-  const token = await getApplicationToken();
-  const marketplaceId = process.env.EBAY_MARKETPLACE_ID || "EBAY_US";
+type EbaySearchOptions = {
+  limit?: number;
+  categoryId?: string;
+  minPrice?: number;
+  maxPrice?: number;
+  condition?: "new" | "used" | "refurbished" | "open_box";
+  shipping?: "free" | "fast";
+  minSellerRating?: number;
+  location?: string;
+  marketplaceId?: string;
+};
 
-  // Using the Browse API's search endpoint
+const CONDITION_IDS: Record<string, string> = {
+  new: "1000",
+  used: "3000",
+  refurbished: "2000",
+  open_box: "1500",
+};
+
+export async function searchEbayItems(
+  query: string,
+  options: EbaySearchOptions = {},
+) {
+  const token = await getApplicationToken();
+  const marketplaceId =
+    options.marketplaceId || process.env.EBAY_MARKETPLACE_ID || "EBAY_US";
+  const limit = options.limit ?? 6;
+
   const url = new URL("https://api.ebay.com/buy/browse/v1/item_summary/search");
   url.searchParams.set("q", query);
   url.searchParams.set("limit", limit.toString());
-  // Optional: filter for Fixed Price (Buy It Now) items for better UI experience
-  url.searchParams.set("filter", "buyingOptions:{FIXED_PRICE}");
+
+  if (options.categoryId) {
+    url.searchParams.set("category_ids", options.categoryId);
+  }
+
+  const filters: string[] = ["buyingOptions:{FIXED_PRICE}"];
+
+  if (
+    typeof options.minPrice === "number" ||
+    typeof options.maxPrice === "number"
+  ) {
+    const min = typeof options.minPrice === "number" ? options.minPrice : "";
+    const max = typeof options.maxPrice === "number" ? options.maxPrice : "";
+    filters.push(`price:[${min}..${max}]`);
+    filters.push("priceCurrency:USD");
+  }
+
+  if (options.condition && CONDITION_IDS[options.condition]) {
+    filters.push(`conditionIds:{${CONDITION_IDS[options.condition]}}`);
+  }
+
+  if (options.shipping === "free") {
+    filters.push("shippingOptions:{FREE_SHIPPING}");
+  } else if (options.shipping === "fast") {
+    filters.push("shippingOptions:{EXPEDITED_SHIPPING}");
+  }
+
+  if (typeof options.minSellerRating === "number") {
+    const rating = Math.min(Math.max(options.minSellerRating, 0), 100);
+    filters.push(`sellerFeedbackPercent:[${rating}..100]`);
+  }
+
+  if (options.location && options.location.length === 2) {
+    filters.push(`itemLocationCountry:${options.location.toUpperCase()}`);
+  }
+
+  if (filters.length > 0) {
+    url.searchParams.set("filter", filters.join(","));
+  }
 
   console.log(`[eBay Search] Query: "${query}", URL: ${url.toString()}`);
 
   const response = await fetch(url.toString(), {
     method: "GET",
     headers: {
-      "Authorization": `Bearer ${token}`,
+      Authorization: `Bearer ${token}`,
       "X-EBAY-C-MARKETPLACE-ID": marketplaceId,
       "Content-Type": "application/json",
     },
@@ -96,7 +167,7 @@ export async function searchEbayItems(query: string, limit: number = 6) {
   }
 
   const data = await response.json();
-  
+
   if (!data.itemSummaries) return [];
 
   // Map eBay's complex JSON to our cleaner schema
@@ -107,7 +178,9 @@ export async function searchEbayItems(query: string, limit: number = 6) {
     image: item.image?.imageUrl || item.additionalImages?.[0]?.imageUrl || "",
     url: item.itemWebUrl,
     sellerName: item.seller?.username,
-    sellerFeedback: item.seller?.feedbackPercentage ? `${item.seller.feedbackPercentage}%` : undefined,
+    sellerFeedback: item.seller?.feedbackPercentage
+      ? `${item.seller.feedbackPercentage}%`
+      : undefined,
     condition: item.condition,
     // Note: Search API doesn't provide these catalog metrics by default
     rating: undefined,
@@ -127,15 +200,19 @@ export async function getEbayItemDetails(itemId: string) {
   const response = await fetch(url, {
     method: "GET",
     headers: {
-      "Authorization": `Bearer ${token}`,
+      Authorization: `Bearer ${token}`,
       "X-EBAY-C-MARKETPLACE-ID": marketplaceId,
     },
   });
 
   if (!response.ok) {
-     const errorBody = await response.text();
-     const errorMessage = logEbayError("Item Details", response.status, errorBody);
-     throw new Error(errorMessage);
+    const errorBody = await response.text();
+    const errorMessage = logEbayError(
+      "Item Details",
+      response.status,
+      errorBody,
+    );
+    throw new Error(errorMessage);
   }
 
   return await response.json();

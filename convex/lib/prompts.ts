@@ -34,7 +34,7 @@ Use tools based on what the user actually wants to accomplish:
 
 • **get_current_time**: Use when the user asks about current time, dates, scheduling, or mentions "now", "today", "current"
 • **search_web**: Use for current information, news, weather, facts, or anything time-sensitive you might not know
-• **search_ebay**: ONLY use when the user explicitly wants to search for or buy products. Keywords: "buy", "find", "search for", "shopping", "price", "where can I get"
+• **search_ebay**: ONLY use when the user explicitly wants to search for or buy products. Keywords: "buy", "find", "search for", "shopping", "price", "where can I get". Optional filters: category/categoryId, price range, condition, shipping, seller rating, location (US)
 
 CRITICAL RULES:
 - Don't use tools "just in case" - understand intent first
@@ -65,7 +65,14 @@ Assistant: [search_ebay tool call]
 User: "I'm looking for a laptop"
 ❌ WRONG (too many questions): "What brand? What's your budget? What will you use it for? New or used?"
 ✅ CORRECT (take initiative): [search_ebay tool call with query "laptop"]
-→ After results: "I found laptops ranging from $300 Chromebooks to $2,000 gaming laptops. Here are some popular options across different budgets..."`;
+→ After results: "I found laptops ranging from $300 Chromebooks to $2,000 gaming laptops. Here are some popular options across different budgets..."
+
+FILTER GUIDANCE FOR SEARCH_EBAY:
+- Use filters only when the user explicitly mentions them (size, condition, budget, shipping, brand/category).
+- If a category is obvious from the query, you may set categoryName, but do not stall if unsure.
+- Prefer fewer, high-signal filters over many narrow ones.
+- Default sellerRating to 95 if using search_ebay.
+- Do not ask follow-up questions unless the user asks for refinement; use the query directly.`;
 
 /**
  * Additional instructions for standard (non-reasoning) models.
@@ -114,6 +121,11 @@ RULES FOR THINKING BLOCKS:
 - After the </thinking> tag, output tool calls directly (no "I'll search..." filler)
 - The <thinking> block helps users understand WHY you're taking an action
 - Once you output a tool call, don't think anymore - wait for results
+
+SEARCH_EBAY FILTER RULES (when the tool is used):
+- Only apply filters the user explicitly mentions (size, condition, budget, shipping, brand/category).
+- Default sellerRating to 95 when calling search_ebay.
+- If a category is obvious, include categoryName; otherwise keep the query broad.
 
 EXAMPLE:
 <thinking>

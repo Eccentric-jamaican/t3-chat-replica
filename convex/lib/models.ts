@@ -62,6 +62,20 @@ export const MODEL_CAPABILITIES: Record<string, ModelCapability> = {
     isThinking: false,
     promptStrategy: "standard",
   },
+  "openai/gpt-5-nano": {
+    id: "openai/gpt-5-nano",
+    supportsTools: true,
+    supportsStreaming: true,
+    isThinking: false,
+    promptStrategy: "standard",
+  },
+  "openai/gpt-5-nano:free": {
+    id: "openai/gpt-5-nano:free",
+    supportsTools: true,
+    supportsStreaming: true,
+    isThinking: false,
+    promptStrategy: "standard",
+  },
   "openai/o1-mini": {
     id: "openai/o1-mini",
     supportsTools: true,
@@ -114,11 +128,11 @@ export const MODEL_CAPABILITIES: Record<string, ModelCapability> = {
 
   // === MOONSHOT (KIMI) ===
   "moonshotai/kimi-k2.5": {
-     id: "moonshotai/kimi-k2.5",
-     supportsTools: true,
-     supportsStreaming: true,
-     isThinking: false,
-     promptStrategy: "standard",
+    id: "moonshotai/kimi-k2.5",
+    supportsTools: true,
+    supportsStreaming: true,
+    isThinking: false,
+    promptStrategy: "standard",
   },
   "moonshotai/moonshot-v1-8k": {
     id: "moonshotai/moonshot-v1-8k",
@@ -130,18 +144,18 @@ export const MODEL_CAPABILITIES: Record<string, ModelCapability> = {
 
   // === XAI (GROK) ===
   "x-ai/grok-2-vision-1212": {
-     id: "x-ai/grok-2-vision-1212",
-     supportsTools: true,
-     supportsStreaming: true,
-     isThinking: false,
-     promptStrategy: "standard", // Grok now supports native tools via OpenRouter
+    id: "x-ai/grok-2-vision-1212",
+    supportsTools: true,
+    supportsStreaming: true,
+    isThinking: false,
+    promptStrategy: "standard", // Grok now supports native tools via OpenRouter
   },
-   "x-ai/grok-4": {
-     id: "x-ai/grok-4",
-     supportsTools: true,
-     supportsStreaming: true,
-     isThinking: true, // Grok 4 has reasoning
-     promptStrategy: "reasoning",
+  "x-ai/grok-4": {
+    id: "x-ai/grok-4",
+    supportsTools: true,
+    supportsStreaming: true,
+    isThinking: true, // Grok 4 has reasoning
+    promptStrategy: "reasoning",
   },
 
   // === OPENAI GPT-5 ===
@@ -154,23 +168,37 @@ export const MODEL_CAPABILITIES: Record<string, ModelCapability> = {
   },
 };
 
-export function getModelCapabilities(modelId: string | undefined): ModelCapability {
+export function getModelCapabilities(
+  modelId: string | undefined,
+): ModelCapability {
   if (!modelId) {
-     return MODEL_CAPABILITIES["moonshotai/moonshot-v1-8k"]; // Default safe
+    return MODEL_CAPABILITIES["moonshotai/moonshot-v1-8k"]; // Default safe
   }
-  
+
   // Specific override for known capabilities if not found in map
   if (MODEL_CAPABILITIES[modelId]) {
-     return MODEL_CAPABILITIES[modelId];
+    return MODEL_CAPABILITIES[modelId];
   }
 
   // [AGENTIC] Modern Default Strategy
   // Assume most new models on OpenRouter support tools unless known otherwise.
   // This replaces the old "safely fail to regex" strategy.
-  
-  const isThinking = modelId.toLowerCase().includes("r1") || 
-                     modelId.toLowerCase().includes("reasoning") || 
-                     modelId.toLowerCase().includes("thinking");
+
+  const modelIdLower = modelId.toLowerCase();
+  const isThinking =
+    modelIdLower.includes("r1") ||
+    modelIdLower.includes("reasoning") ||
+    modelIdLower.includes("thinking");
+
+  if (modelIdLower.includes("gpt-5")) {
+    return {
+      id: modelId,
+      supportsTools: true,
+      supportsStreaming: true,
+      isThinking,
+      promptStrategy: isThinking ? "reasoning" : "standard",
+    };
+  }
 
   return {
     id: modelId,

@@ -430,7 +430,7 @@ function ChatPage() {
                                   exit={{ opacity: 0, scale: 0.98 }}
                                   transition={{ duration: 0.2 }}
                                   layout="position"
-                                  className="w-full max-w-full rounded-2xl bg-zinc-100 px-4 py-2.5 text-left text-[15px] leading-relaxed break-words whitespace-pre-wrap text-zinc-900 shadow-sm transition-all sm:max-w-[85%] md:px-5 md:py-3 md:text-[15.5px]"
+                                  className="max-w-[85%] rounded-2xl bg-zinc-100 px-4 py-2 text-left text-[14px] leading-relaxed break-words whitespace-pre-wrap text-zinc-900 shadow-sm transition-all md:px-5 md:py-3 md:text-[15.5px]"
                                 >
                                   <div className="flex flex-col gap-1">
                                     {msg.attachments &&

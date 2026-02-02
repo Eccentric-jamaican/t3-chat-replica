@@ -15,15 +15,67 @@ export function EbayToolResult({
 }: EbayToolResultProps) {
   const [isOpen, setIsOpen] = useState(false);
 
-  let query = "";
-  if (args) {
+  const parsedArgs = useMemo(() => {
+    if (!args) return null;
     try {
-      const parsed = JSON.parse(args);
-      if (parsed.query) query = parsed.query;
+      return JSON.parse(args);
     } catch (e) {
-      // Partial JSON
+      return null;
     }
-  }
+  }, [args]);
+
+  const query = typeof parsedArgs?.query === "string" ? parsedArgs.query : "";
+
+  const filters = useMemo(() => {
+    if (!parsedArgs) return [] as string[];
+    const list: string[] = [];
+
+    if (typeof parsedArgs.condition === "string") {
+      const label = parsedArgs.condition
+        .replace(/_/g, " ")
+        .replace(/\b\w/g, (c: string) => c.toUpperCase());
+      list.push(label);
+    }
+
+    if (typeof parsedArgs.shipping === "string") {
+      list.push(
+        parsedArgs.shipping === "free" ? "Free shipping" : "Fast shipping",
+      );
+    }
+
+    const minPrice = Number(parsedArgs.minPrice);
+    const maxPrice = Number(parsedArgs.maxPrice);
+    if (Number.isFinite(minPrice) || Number.isFinite(maxPrice)) {
+      const minLabel = Number.isFinite(minPrice) ? `$${minPrice}` : "";
+      const maxLabel = Number.isFinite(maxPrice) ? `$${maxPrice}` : "";
+      if (minLabel && maxLabel) list.push(`${minLabel}-${maxLabel}`);
+      else if (minLabel) list.push(`Over ${minLabel}`);
+      else if (maxLabel) list.push(`Under ${maxLabel}`);
+    }
+
+    const sellerRating = Number(parsedArgs.sellerRating);
+    if (Number.isFinite(sellerRating)) {
+      list.push(`${Math.round(sellerRating)}%+ seller`);
+    }
+
+    if (
+      typeof parsedArgs.categoryName === "string" &&
+      parsedArgs.categoryName
+    ) {
+      list.push(`Category: ${parsedArgs.categoryName}`);
+    } else if (
+      typeof parsedArgs.categoryId === "string" &&
+      parsedArgs.categoryId
+    ) {
+      list.push(`Category: ${parsedArgs.categoryId}`);
+    }
+
+    if (typeof parsedArgs.location === "string" && parsedArgs.location) {
+      list.push(`Location: ${parsedArgs.location}`);
+    }
+
+    return list;
+  }, [parsedArgs]);
 
   const resultText = useMemo(() => {
     if (typeof result === "string") return result;
@@ -87,6 +139,11 @@ export function EbayToolResult({
               {query && (
                 <div className="font-mono text-xs text-foreground/50">
                   Query: {query}
+                </div>
+              )}
+              {filters.length > 0 && (
+                <div className="text-xs text-foreground/60">
+                  Filters: {filters.join(" · ")}
                 </div>
               )}
               <div className="text-xs text-foreground/60">{summary}</div>

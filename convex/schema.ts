@@ -1,5 +1,5 @@
-import { defineSchema, defineTable } from 'convex/server'
-import { v } from 'convex/values'
+import { defineSchema, defineTable } from "convex/server";
+import { v } from "convex/values";
 
 // Note: Better Auth tables (user, session, account, verification) are managed
 // by the @convex-dev/better-auth component. User data is synced to the
@@ -13,36 +13,36 @@ export default defineSchema({
     userId: v.optional(v.string()), // For logged in users (Better Auth)
     lastMessageAt: v.optional(v.number()),
     isPinned: v.optional(v.boolean()),
-    parentThreadId: v.optional(v.id('threads')),
+    parentThreadId: v.optional(v.id("threads")),
   })
-    .index('by_session', ['sessionId'])
-    .index('by_user', ['userId']),
-  
+    .index("by_session", ["sessionId"])
+    .index("by_user", ["userId"]),
+
   // ... rest of the tables
 
   messages: defineTable({
-    threadId: v.id('threads'),
+    threadId: v.id("threads"),
     role: v.union(
-      v.literal('user'),
-      v.literal('assistant'),
-      v.literal('system'),
-      v.literal('tool'),
+      v.literal("user"),
+      v.literal("assistant"),
+      v.literal("system"),
+      v.literal("tool"),
     ),
     content: v.string(),
     modelId: v.optional(v.string()), // Track which model generated this message
     status: v.optional(
       v.union(
-        v.literal('streaming'),
-        v.literal('completed'),
-        v.literal('error'),
-        v.literal('aborted'),
+        v.literal("streaming"),
+        v.literal("completed"),
+        v.literal("error"),
+        v.literal("aborted"),
       ),
     ),
     reasoningContent: v.optional(v.string()), // Store reasoning tokens from thinking models
     attachments: v.optional(
       v.array(
         v.object({
-          storageId: v.id('_storage'),
+          storageId: v.id("_storage"),
           type: v.string(), // e.g., "image/png"
           name: v.string(),
           size: v.number(),
@@ -53,7 +53,7 @@ export default defineSchema({
       v.array(
         v.object({
           id: v.string(),
-          type: v.literal('function'),
+          type: v.literal("function"),
           function: v.object({
             name: v.string(),
             arguments: v.string(),
@@ -80,26 +80,26 @@ export default defineSchema({
       ),
     ),
   })
-    .index('by_thread', ['threadId'])
-    .index('by_thread_status', ['threadId', 'status']),
+    .index("by_thread", ["threadId"])
+    .index("by_thread_status", ["threadId", "status"]),
 
   streamSessions: defineTable({
-    threadId: v.id('threads'),
-    messageId: v.id('messages'),
+    threadId: v.id("threads"),
+    messageId: v.id("messages"),
     status: v.union(
-      v.literal('streaming'),
-      v.literal('completed'),
-      v.literal('error'),
-      v.literal('aborted'),
+      v.literal("streaming"),
+      v.literal("completed"),
+      v.literal("error"),
+      v.literal("aborted"),
     ),
     startedAt: v.optional(v.number()),
     endedAt: v.optional(v.number()),
     lastHeartbeat: v.optional(v.number()),
   })
-    .index('by_thread', ['threadId'])
-    .index('by_thread_status', ['threadId', 'status'])
-    .index('by_message', ['messageId'])
-    .index('by_status', ['status']),
+    .index("by_thread", ["threadId"])
+    .index("by_thread_status", ["threadId", "status"])
+    .index("by_message", ["messageId"])
+    .index("by_status", ["status"]),
 
   profiles: defineTable({
     sessionId: v.string(),
@@ -117,7 +117,7 @@ export default defineSchema({
         city: v.string(),
         parish: v.string(),
         postalCode: v.optional(v.string()),
-      })
+      }),
     ),
   })
     .index("by_session", ["sessionId"])
@@ -235,8 +235,7 @@ export default defineSchema({
     autoCreatePreAlerts: v.boolean(),
     gmailSyncEnabled: v.boolean(),
     whatsappSyncEnabled: v.boolean(),
-  })
-    .index("by_user", ["userId"]),
+  }).index("by_user", ["userId"]),
 
   packages: defineTable({
     userId: v.string(), // Better Auth user ID
@@ -257,4 +256,17 @@ export default defineSchema({
     .index("by_user", ["userId"])
     .index("by_status", ["status"])
     .index("by_user_status", ["userId", "status"]),
-})
+
+  ebayCategories: defineTable({
+    marketplaceId: v.string(),
+    fetchedAt: v.number(),
+    categoryId: v.string(),
+    categoryName: v.string(),
+    normalizedName: v.string(),
+    parentId: v.optional(v.string()),
+    path: v.string(),
+    leaf: v.boolean(),
+  })
+    .index("by_marketplace", ["marketplaceId"])
+    .index("by_category_id", ["categoryId"]),
+});
