@@ -115,19 +115,33 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
       }[]
     >([]);
     const [uploading, setUploading] = useState(false);
+    const [isDragActive, setIsDragActive] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const dragDepthRef = useRef(0);
 
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const abortControllerRef = useRef<AbortController | null>(null);
 
-    const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-      const files = Array.from(e.target.files || []);
-      if (files.length === 0) return;
+    const handleFiles = async (files: File[]) => {
+      const supportedFiles = files.filter(
+        (file) =>
+          file.type.startsWith("image/") || file.type === "application/pdf",
+      );
+      if (supportedFiles.length === 0) {
+        toast.error("Unsupported file type. Please upload images or PDFs.");
+        if (fileInputRef.current) fileInputRef.current.value = "";
+        return;
+      }
+
+      if (supportedFiles.length !== files.length) {
+        toast.error("Some files were skipped (only images and PDFs allowed).");
+      }
+
       setUploading(true);
 
       try {
         const newAttachments: typeof attachments = [];
-        for (const file of files) {
+        for (const file of supportedFiles) {
           // Upload to Convex Storage
           const postUrl = await generateUploadUrl();
           const result = await fetch(postUrl, {
@@ -152,6 +166,45 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
         setUploading(false);
         if (fileInputRef.current) fileInputRef.current.value = "";
       }
+    };
+
+    const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const files = Array.from(e.target.files || []);
+      if (files.length === 0) return;
+      await handleFiles(files);
+    };
+
+    const handleDragEnter = (e: React.DragEvent<HTMLDivElement>) => {
+      e.preventDefault();
+      e.stopPropagation();
+      dragDepthRef.current += 1;
+      setIsDragActive(true);
+    };
+
+    const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+      e.preventDefault();
+      e.stopPropagation();
+      dragDepthRef.current -= 1;
+      if (dragDepthRef.current <= 0) {
+        dragDepthRef.current = 0;
+        setIsDragActive(false);
+      }
+    };
+
+    const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+    };
+
+    const handleDrop = async (e: React.DragEvent<HTMLDivElement>) => {
+      e.preventDefault();
+      e.stopPropagation();
+      dragDepthRef.current = 0;
+      setIsDragActive(false);
+      const files = Array.from(e.dataTransfer?.files || []);
+      if (files.length === 0) return;
+      await handleFiles(files);
     };
 
     const removeAttachment = (index: number) => {
@@ -463,7 +516,16 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
               isMobile &&
                 "border border-black/5 bg-background/70 backdrop-blur-sm",
             )}
+            onDragEnter={handleDragEnter}
+            onDragLeave={handleDragLeave}
+            onDragOver={handleDragOver}
+            onDrop={handleDrop}
           >
+            {isDragActive && (
+              <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center bg-white/80 text-sm font-semibold text-t3-berry backdrop-blur-sm">
+                Drop files to attach
+              </div>
+            )}
             {/* Top-Right Toggle Pill (Reasoning/Expert) - Hidden on mobile to save space, or moved */}
             {!isMobile && (
               <div className="absolute top-4 right-4 z-10">

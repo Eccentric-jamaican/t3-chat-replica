@@ -10,6 +10,7 @@ import { fetchOpenRouterModels, type AppModel } from "../../lib/openrouter";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import { useNavigate } from "@tanstack/react-router";
 import { v4 as uuidv4 } from "uuid";
+import { toast } from "sonner";
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -109,9 +110,11 @@ export function MessageEditInput({
   >(initialAttachments.map((a) => ({ ...a, previewUrl: a.url || "" })));
 
   const [uploading, setUploading] = useState(false);
+  const [isDragActive, setIsDragActive] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const previewUrlsRef = useRef<Set<string>>(new Set());
+  const dragDepthRef = useRef(0);
 
   // Cleanup preview URLs on unmount
   useEffect(() => {
@@ -147,14 +150,26 @@ export function MessageEditInput({
     }
   }, []);
 
-  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []);
-    if (files.length === 0) return;
+  const handleFiles = async (files: File[]) => {
+    const supportedFiles = files.filter(
+      (file) =>
+        file.type.startsWith("image/") || file.type === "application/pdf",
+    );
+    if (supportedFiles.length === 0) {
+      toast.error("Unsupported file type. Please upload images or PDFs.");
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      return;
+    }
+
+    if (supportedFiles.length !== files.length) {
+      toast.error("Some files were skipped (only images and PDFs allowed).");
+    }
+
     setUploading(true);
 
     try {
       const newAttachments: typeof attachments = [];
-      for (const file of files) {
+      for (const file of supportedFiles) {
         const postUrl = await generateUploadUrl();
         const result = await fetch(postUrl, {
           method: "POST",
@@ -181,6 +196,45 @@ export function MessageEditInput({
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
     }
+  };
+
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+    await handleFiles(files);
+  };
+
+  const handleDragEnter = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragDepthRef.current += 1;
+    setIsDragActive(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragDepthRef.current -= 1;
+    if (dragDepthRef.current <= 0) {
+      dragDepthRef.current = 0;
+      setIsDragActive(false);
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+  };
+
+  const handleDrop = async (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragDepthRef.current = 0;
+    setIsDragActive(false);
+    const files = Array.from(e.dataTransfer?.files || []);
+    if (files.length === 0) return;
+    await handleFiles(files);
   };
 
   const removeAttachment = (index: number) => {
@@ -303,7 +357,16 @@ export function MessageEditInput({
           "relative overflow-hidden rounded-2xl border border-fuchsia-200/50 bg-white/80 shadow-lg backdrop-blur-sm transition-all duration-300",
           "focus-within:ring-[4px] focus-within:ring-primary/10",
         )}
+        onDragEnter={handleDragEnter}
+        onDragLeave={handleDragLeave}
+        onDragOver={handleDragOver}
+        onDrop={handleDrop}
       >
+        {isDragActive && (
+          <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center bg-white/80 text-sm font-semibold text-fuchsia-700 backdrop-blur-sm">
+            Drop files to attach
+          </div>
+        )}
         {/* Attachment Previews */}
         <AnimatePresence>
           {attachments.length > 0 && (
