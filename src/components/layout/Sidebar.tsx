@@ -466,46 +466,6 @@ export const Sidebar = ({ isOpen: externalOpen, onToggle }: SidebarProps) => {
   });
 
   useEffect(() => {
-    setShareToken(null);
-    setShareError(null);
-    setShareLoading(false);
-  }, [activeThreadId]);
-
-  useEffect(() => {
-    if (!isShareOpen || !activeThreadId || shareToken || shareLoading) return;
-    let cancelled = false;
-    const loadShareToken = async () => {
-      try {
-        setShareLoading(true);
-        setShareError(null);
-        const result = await createShareToken({
-          threadId: activeThreadId,
-          sessionId,
-        });
-        if (cancelled) return;
-        setShareToken(result.shareToken);
-      } catch (err: any) {
-        if (cancelled) return;
-        setShareError(err?.message || "Unable to create share link.");
-      } finally {
-        if (cancelled) return;
-        setShareLoading(false);
-      }
-    };
-    loadShareToken();
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    activeThreadId,
-    createShareToken,
-    isShareOpen,
-    sessionId,
-    shareLoading,
-    shareToken,
-  ]);
-
-  useEffect(() => {
     if (hasSyncedMobileRef.current) return;
     setInternalOpen(!isMobile);
     hasSyncedMobileRef.current = true;
@@ -545,6 +505,46 @@ export const Sidebar = ({ isOpen: externalOpen, onToggle }: SidebarProps) => {
   const [shareToken, setShareToken] = useState<string | null>(null);
   const [shareLoading, setShareLoading] = useState(false);
   const [shareError, setShareError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setShareToken(null);
+    setShareError(null);
+    setShareLoading(false);
+  }, [activeThreadId]);
+
+  useEffect(() => {
+    if (!isShareOpen || !activeThreadId || shareToken || shareLoading) return;
+    let cancelled = false;
+    const loadShareToken = async () => {
+      try {
+        setShareLoading(true);
+        setShareError(null);
+        const result = await createShareToken({
+          threadId: activeThreadId,
+          sessionId,
+        });
+        if (cancelled) return;
+        setShareToken(result.shareToken);
+      } catch (err: any) {
+        if (cancelled) return;
+        setShareError(err?.message || "Unable to create share link.");
+      } finally {
+        if (cancelled) return;
+        setShareLoading(false);
+      }
+    };
+    loadShareToken();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    activeThreadId,
+    createShareToken,
+    isShareOpen,
+    sessionId,
+    shareLoading,
+    shareToken,
+  ]);
 
   const handleNewChat = async () => {
     // Navigate home to start a fresh chat
