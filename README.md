@@ -42,6 +42,11 @@ Create a `.env.local` file with:
 ```env
 VITE_CONVEX_URL=your_convex_deployment_url
 VITE_SENTRY_DSN=your_sentry_dsn # optional
+SENTRY_DSN=your_sentry_server_dsn # optional (server)
+VITE_SENTRY_TRACES_SAMPLE_RATE=0.1
+SENTRY_TRACES_SAMPLE_RATE=0.1
+VITE_SENTRY_RELEASE=your_release # optional
+SENTRY_RELEASE=your_release # optional
 ```
 
 And set up Convex environment variables:
@@ -53,6 +58,16 @@ npx convex env:set EBAY_CLIENT_SECRET=your_ebay_client_secret
 npx convex env:set GMAIL_CLIENT_ID=your_gmail_client_id
 npx convex env:set GMAIL_CLIENT_SECRET=your_gmail_client_secret
 npx convex env:set WHATSAPP_ACCESS_TOKEN=your_whatsapp_token
+npx convex env:set SENTRY_DSN=your_sentry_server_dsn
+```
+
+If you want source map uploads during `vite build`, set:
+
+```bash
+export SENTRY_AUTH_TOKEN=your_sentry_auth_token
+export SENTRY_ORG=your_sentry_org_slug
+export SENTRY_PROJECT=your_sentry_project_slug
+export SENTRY_RELEASE=$(git rev-parse --short HEAD)
 ```
 
 ### Development

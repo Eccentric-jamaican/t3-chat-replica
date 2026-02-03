@@ -1,5 +1,6 @@
 import { handler } from "@/lib/auth-server";
 import { createFileRoute } from "@tanstack/react-router";
+import { withSentry } from "@/lib/sentry.server";
 
 const ALLOWED_ORIGIN = process.env.VITE_APP_ORIGIN || "http://localhost:3000";
 
@@ -10,7 +11,7 @@ const corsHeaders = {
   "Access-Control-Allow-Credentials": "true",
 };
 
-async function withCors(request: Request): Promise<Response> {
+const withCors = withSentry(async (request: Request): Promise<Response> => {
   const response = await handler(request);
   const newHeaders = new Headers(response.headers);
   for (const [key, value] of Object.entries(corsHeaders)) {
@@ -21,7 +22,7 @@ async function withCors(request: Request): Promise<Response> {
     statusText: response.statusText,
     headers: newHeaders,
   });
-}
+});
 
 export const Route = createFileRoute("/api/auth/$")({
   server: {
