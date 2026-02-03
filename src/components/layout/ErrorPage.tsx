@@ -1,7 +1,8 @@
 import { useNavigate } from "@tanstack/react-router";
 import { AlertCircle, RefreshCw, ChevronDown, ChevronUp, Home } from "lucide-react";
 import { Button } from "../ui/button";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import * as Sentry from "@sentry/react";
 
 export function ErrorPage({ error }: { error: unknown }) {
   const [showDetails, setShowDetails] = useState(false);
@@ -10,6 +11,10 @@ export function ErrorPage({ error }: { error: unknown }) {
   // Normalize error to an Error object
   const safeError = error instanceof Error ? error : new Error(String(error));
   const isDev = import.meta.env.DEV;
+
+  useEffect(() => {
+    Sentry.captureException(safeError);
+  }, [safeError]);
 
   return (
     <div className="flex min-h-screen w-full flex-col items-center justify-center bg-background p-4 relative overflow-hidden">

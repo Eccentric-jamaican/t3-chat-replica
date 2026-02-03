@@ -89,12 +89,14 @@ import { ConvexBetterAuthProvider } from "@convex-dev/better-auth/react";
 import { convex } from "../lib/convex";
 import { authClient } from "../lib/auth";
 import { useVisualViewport } from "../hooks/useVisualViewport";
+import { initSentry } from "../lib/sentry";
 
 function RootDocument({ children }: { children: React.ReactNode }) {
   // Initialize virtual keyboard tracking
   useVisualViewport();
 
   useEffect(() => {
+    initSentry();
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", () => {
         navigator.serviceWorker.register("/sw.js").catch((err) => {

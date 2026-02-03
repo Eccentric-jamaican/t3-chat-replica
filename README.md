@@ -41,6 +41,7 @@ Create a `.env.local` file with:
 
 ```env
 VITE_CONVEX_URL=your_convex_deployment_url
+VITE_SENTRY_DSN=your_sentry_dsn # optional
 ```
 
 And set up Convex environment variables:
