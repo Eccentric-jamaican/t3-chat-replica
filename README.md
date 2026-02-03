@@ -8,16 +8,17 @@ AI-powered chat application with e-commerce integration and package tracking.
 - **eBay Product Search** - Search and browse eBay products directly within chat conversations
 - **Package Tracking** - Track packages from warehouse to delivery
 - **Gmail Integration** - Automatically detect order confirmations from Gmail and create pre-alerts
-- **WhatsApp Integration** - Connect your WhatsApp for notifications and messaging
+- **WhatsApp Integration** - Connect your WhatsApp for notifications and messaging (not done)
 - **Product Catalog** - Browse products by category in the explore section
-- **User Authentication** - Secure authentication with Better Auth
+- **User Authentication** - Secure authentication with Better Auth(need tp wire up forget password flow)
 
 ## Tech Stack
 
 - **Frontend**: React 19, TanStack Router, Tailwind CSS v4
 - **Backend**: Convex (serverless database and functions)
 - **Authentication**: Better Auth with @convex-dev/better-auth
-- **AI Integration**: OpenAI-compatible API with multiple model support
+- **AI Integration**: OpenAI-compatible API with multiple model support with Openrouter
+- **Openrouter**: Model router provider
 - **Integrations**: eBay API, Gmail API, WhatsApp Business API
 
 ## Getting Started
@@ -31,7 +32,7 @@ AI-powered chat application with e-commerce integration and package tracking.
 ### Installation
 
 ```bash
-npm install
+bun install
 ```
 
 ### Environment Variables
@@ -56,7 +57,7 @@ npx convex env:set WHATSAPP_ACCESS_TOKEN=your_whatsapp_token
 ### Development
 
 ```bash
-npm run dev
+bun run dev
 ```
 
 The app will be available at `http://localhost:3000`
