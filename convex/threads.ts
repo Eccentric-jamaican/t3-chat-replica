@@ -10,9 +10,9 @@ function generateShareToken() {
   const cryptoObj = (globalThis as { crypto?: { randomUUID?: () => string } })
     .crypto;
   if (cryptoObj?.randomUUID) {
-    return `${shareTokenPrefix}${cryptoObj.randomUUID()}`;
+    return cryptoObj.randomUUID();
   }
-  return `${shareTokenPrefix}${Date.now()}_${Math.random()
+  return `${Date.now()}_${Math.random()
     .toString(36)
     .slice(2, 12)}`;
 }
@@ -264,10 +264,20 @@ export const createShareToken = mutation({
 export const createShareFork = mutation({
   args: { token: v.string(), sessionId: v.optional(v.string()) },
   handler: async (ctx, args) => {
-    const shareEntry = await ctx.db
+    const normalizedToken = args.token.trim();
+    let shareEntry = await ctx.db
       .query("sharedThreads")
-      .withIndex("by_share_token", (q) => q.eq("shareToken", args.token))
+      .withIndex("by_share_token", (q) => q.eq("shareToken", normalizedToken))
       .first();
+
+    if (!shareEntry && !normalizedToken.startsWith(shareTokenPrefix)) {
+      shareEntry = await ctx.db
+        .query("sharedThreads")
+        .withIndex("by_share_token", (q) =>
+          q.eq("shareToken", `${shareTokenPrefix}${normalizedToken}`)
+        )
+        .first();
+    }
 
     if (!shareEntry || shareEntry.isRevoked) {
       throw new Error("Share link is invalid or revoked");

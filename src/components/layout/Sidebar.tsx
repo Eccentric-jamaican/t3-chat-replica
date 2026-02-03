@@ -21,7 +21,7 @@ import {
   Bookmark,
   Package,
   Heart,
-  ArrowUp,
+  ArrowUpToLine,
   ChevronLeft,
   LogOut,
   User as UserIcon,
@@ -554,8 +554,9 @@ export const Sidebar = ({ isOpen: externalOpen, onToggle }: SidebarProps) => {
 
   const getShareUrl = () => {
     if (!shareToken) return "";
-    if (typeof window === "undefined") return `/share/${shareToken}`;
-    return `${window.location.origin}/share/${shareToken}`;
+    const shareSlug = shareToken.replace(/^share_/, "");
+    if (typeof window === "undefined") return `/share/${shareSlug}`;
+    return `${window.location.origin}/share/${shareSlug}`;
   };
 
   const handleOpenShare = () => {
@@ -946,7 +947,7 @@ export const Sidebar = ({ isOpen: externalOpen, onToggle }: SidebarProps) => {
           )}
           aria-disabled={!activeThreadId}
         >
-          <ArrowUp size={18} />
+          <ArrowUpToLine size={18} />
         </button>
         <Link
           to="/settings"
@@ -989,21 +990,51 @@ export const Sidebar = ({ isOpen: externalOpen, onToggle }: SidebarProps) => {
               <div className="mt-4 grid grid-cols-3 gap-2">
                 <button
                   onClick={() => handleShareTo("x")}
-                  className="rounded-lg border border-black/10 px-3 py-2 text-xs font-semibold text-foreground/70 transition-colors hover:bg-black/5"
+                  className="flex flex-col items-center gap-2 rounded-lg border border-black/10 px-3 py-3 text-xs font-semibold text-foreground/70 transition-colors hover:bg-black/5"
                 >
-                  Share on X
+                  <span className="flex h-9 w-9 items-center justify-center rounded-full bg-black text-white">
+                    <svg
+                      aria-hidden="true"
+                      viewBox="0 0 24 24"
+                      className="h-4 w-4"
+                      fill="currentColor"
+                    >
+                      <path d="M18.244 2.25h3.308l-7.227 8.26 8.507 11.24h-6.667l-5.219-6.834-5.98 6.834H1.658l7.73-8.835L1.25 2.25h6.835l4.713 6.231zm-1.161 17.52h1.833L6.612 4.126H4.646z" />
+                    </svg>
+                  </span>
+                  <span>Share on X</span>
                 </button>
                 <button
                   onClick={() => handleShareTo("whatsapp")}
-                  className="rounded-lg border border-black/10 px-3 py-2 text-xs font-semibold text-foreground/70 transition-colors hover:bg-black/5"
+                  className="flex flex-col items-center gap-2 rounded-lg border border-black/10 px-3 py-3 text-xs font-semibold text-foreground/70 transition-colors hover:bg-black/5"
                 >
-                  WhatsApp
+                  <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#25D366] text-white">
+                    <svg
+                      aria-hidden="true"
+                      viewBox="0 0 24 24"
+                      className="h-4 w-4"
+                      fill="currentColor"
+                    >
+                      <path d="M12.04 2.001c-5.505 0-9.998 4.493-9.998 9.998 0 1.765.462 3.486 1.338 4.997L2 22l5.147-1.312a9.96 9.96 0 0 0 4.893 1.313h.004c5.505 0 9.998-4.493 9.998-9.998 0-2.668-1.039-5.177-2.926-7.07A9.92 9.92 0 0 0 12.04 2.001zm5.705 15.037c-.24.676-1.38 1.293-1.901 1.347-.495.052-1.12.074-1.806-.114-.415-.131-.948-.31-1.633-.606-2.873-1.236-4.743-4.144-4.886-4.336-.14-.192-1.164-1.547-1.164-2.952 0-1.405.735-2.096.995-2.38.258-.284.564-.355.752-.355.188 0 .376.001.54.009.174.008.41-.066.642.488.24.576.815 2.002.886 2.148.07.146.117.316.023.508-.095.192-.142.316-.282.486-.14.17-.296.381-.423.512-.14.14-.286.293-.123.575.163.282.727 1.2 1.56 1.944 1.072.956 1.976 1.252 2.258 1.392.282.14.446.117.611-.07.164-.187.705-.82.893-1.102.188-.282.376-.235.634-.14.258.094 1.64.773 1.92.914.282.14.47.21.54.328.07.118.07.683-.17 1.36z" />
+                    </svg>
+                  </span>
+                  <span>WhatsApp</span>
                 </button>
                 <button
                   onClick={() => handleShareTo("instagram")}
-                  className="rounded-lg border border-black/10 px-3 py-2 text-xs font-semibold text-foreground/70 transition-colors hover:bg-black/5"
+                  className="flex flex-col items-center gap-2 rounded-lg border border-black/10 px-3 py-3 text-xs font-semibold text-foreground/70 transition-colors hover:bg-black/5"
                 >
-                  Instagram
+                  <span className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-[#f58529] via-[#dd2a7b] to-[#515bd4] text-white">
+                    <svg
+                      aria-hidden="true"
+                      viewBox="0 0 24 24"
+                      className="h-4 w-4"
+                      fill="currentColor"
+                    >
+                      <path d="M12 2.163c3.204 0 3.584.012 4.85.07 1.366.062 2.633.333 3.608 1.308.975.975 1.246 2.242 1.308 3.608.058 1.266.07 1.646.07 4.85s-.012 3.584-.07 4.85c-.062 1.366-.333 2.633-1.308 3.608-.975.975-2.242 1.246-3.608 1.308-1.266.058-1.646.07-4.85.07s-3.584-.012-4.85-.07c-1.366-.062-2.633-.333-3.608-1.308-.975-.975-1.246-2.242-1.308-3.608-.058-1.266-.07-1.646-.07-4.85s.012-3.584.07-4.85c.062-1.366.333-2.633 1.308-3.608.975-.975 2.242-1.246 3.608-1.308 1.266-.058 1.646-.07 4.85-.07m0-2.163C8.741 0 8.332.013 7.052.072 5.775.131 4.602.356 3.6 1.358 2.598 2.36 2.373 3.533 2.314 4.81 2.255 6.09 2.242 6.499 2.242 9.758v4.484c0 3.259.013 3.668.072 4.948.059 1.277.284 2.45 1.286 3.452 1.002 1.002 2.175 1.227 3.452 1.286 1.28.059 1.689.072 4.948.072s3.668-.013 4.948-.072c1.277-.059 2.45-.284 3.452-1.286 1.002-1.002 1.227-2.175 1.286-3.452.059-1.28.072-1.689.072-4.948V9.758c0-3.259-.013-3.668-.072-4.948-.059-1.277-.284-2.45-1.286-3.452C19.45.356 18.277.131 17 .072 15.72.013 15.311 0 12 0z" />
+                    </svg>
+                  </span>
+                  <span>Instagram</span>
                 </button>
               </div>
               <p className="mt-3 text-xs text-foreground/40">
