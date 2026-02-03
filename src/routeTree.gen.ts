@@ -14,6 +14,7 @@ import { Route as SignInRouteImport } from './routes/sign-in'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as PreAlertsRouteImport } from './routes/pre-alerts'
 import { Route as PackagesRouteImport } from './routes/packages'
+import { Route as FavoritesRouteImport } from './routes/favorites'
 import { Route as ExploreRouteImport } from './routes/explore'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ExploreIndexRouteImport } from './routes/explore.index'
@@ -54,6 +55,11 @@ const PreAlertsRoute = PreAlertsRouteImport.update({
 const PackagesRoute = PackagesRouteImport.update({
   id: '/packages',
   path: '/packages',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const FavoritesRoute = FavoritesRouteImport.update({
+  id: '/favorites',
+  path: '/favorites',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ExploreRoute = ExploreRouteImport.update({
@@ -143,6 +149,7 @@ const DemoStartSsrDataOnlyRoute = DemoStartSsrDataOnlyRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/explore': typeof ExploreRouteWithChildren
+  '/favorites': typeof FavoritesRoute
   '/packages': typeof PackagesRoute
   '/pre-alerts': typeof PreAlertsRoute
   '/settings': typeof SettingsRoute
@@ -165,6 +172,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/favorites': typeof FavoritesRoute
   '/packages': typeof PackagesRoute
   '/pre-alerts': typeof PreAlertsRoute
   '/settings': typeof SettingsRoute
@@ -188,6 +196,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/explore': typeof ExploreRouteWithChildren
+  '/favorites': typeof FavoritesRoute
   '/packages': typeof PackagesRoute
   '/pre-alerts': typeof PreAlertsRoute
   '/settings': typeof SettingsRoute
@@ -213,6 +222,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/explore'
+    | '/favorites'
     | '/packages'
     | '/pre-alerts'
     | '/settings'
@@ -235,6 +245,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/favorites'
     | '/packages'
     | '/pre-alerts'
     | '/settings'
@@ -257,6 +268,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/explore'
+    | '/favorites'
     | '/packages'
     | '/pre-alerts'
     | '/settings'
@@ -281,6 +293,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   ExploreRoute: typeof ExploreRouteWithChildren
+  FavoritesRoute: typeof FavoritesRoute
   PackagesRoute: typeof PackagesRoute
   PreAlertsRoute: typeof PreAlertsRoute
   SettingsRoute: typeof SettingsRoute
@@ -332,6 +345,13 @@ declare module '@tanstack/react-router' {
       path: '/packages'
       fullPath: '/packages'
       preLoaderRoute: typeof PackagesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/favorites': {
+      id: '/favorites'
+      path: '/favorites'
+      fullPath: '/favorites'
+      preLoaderRoute: typeof FavoritesRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/explore': {
@@ -484,6 +504,7 @@ const ExploreRouteWithChildren =
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   ExploreRoute: ExploreRouteWithChildren,
+  FavoritesRoute: FavoritesRoute,
   PackagesRoute: PackagesRoute,
   PreAlertsRoute: PreAlertsRoute,
   SettingsRoute: SettingsRoute,

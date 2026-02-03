@@ -18,6 +18,8 @@ import { useIsMobile } from "../hooks/useIsMobile";
 import { useAction } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { useEffect, useState } from "react";
+import { ProductCard } from "../components/product/ProductCard";
+import { type Product } from "../data/mockProducts";
 
 export const Route = createFileRoute("/explore/")({ component: ExplorePage });
 
@@ -195,48 +197,22 @@ function ExplorePage() {
               </div>
 
               <div className="scrollbar-hide -mx-4 flex scroll-pl-4 gap-4 overflow-x-auto px-4 pb-6 md:mx-0 md:px-0">
-                {section.items.map((item: ShopItem) => (
-                  <Link
-                    key={item.id}
-                    to="."
-                    search={{ productId: item.id }}
-                    className="group w-[160px] flex-none cursor-pointer md:w-[220px]"
-                  >
-                    <div className="relative mb-3 aspect-square overflow-hidden rounded-2xl bg-black/5">
-                      {item.image?.trim() ? (
-                        <img
-                          src={item.image}
-                          alt={item.title}
-                          className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
-                        />
-                      ) : (
-                        <div className="flex h-full w-full items-center justify-center bg-black/5 text-xs font-semibold text-foreground/40">
-                          No image
-                        </div>
-                      )}
-                      <div className="absolute top-2 right-2 flex items-center gap-0.5 rounded-md bg-white/90 px-1.5 py-0.5 text-[10px] font-bold shadow-sm backdrop-blur-sm">
-                        <Star
-                          size={10}
-                          className="fill-yellow-400 text-yellow-400"
-                        />
-                        <span>{item.rating.toFixed(1)}</span>
-                      </div>
+                {section.items.map((item: ShopItem) => {
+                  const product: Product = {
+                    id: item.id,
+                    title: item.title,
+                    image: item.image,
+                    price: item.price,
+                    priceRange: item.price || "",
+                    rating: item.rating,
+                    merchantName: item.brand,
+                  };
+                  return (
+                    <div key={item.id} className="w-[180px] flex-none md:w-[240px]">
+                      <ProductCard product={product} />
                     </div>
-                    <div>
-                      <h3 className="line-clamp-2 text-sm leading-tight font-bold text-foreground/90 transition-colors group-hover:text-primary">
-                        {item.title}
-                      </h3>
-                      <p className="mt-1 truncate text-xs text-foreground/50">
-                        {item.brand}
-                      </p>
-                      {item.price && (
-                        <p className="mt-1 text-sm font-semibold text-foreground/90">
-                          {item.price}
-                        </p>
-                      )}
-                    </div>
-                  </Link>
-                ))}
+                  );
+                })}
               </div>
             </section>
           ))
