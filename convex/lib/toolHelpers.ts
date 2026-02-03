@@ -98,9 +98,19 @@ export function parseFunctionCallsFromContent(content: string): ToolParseResult 
               ? item.type
               : "";
         if (!name) continue;
-        const args = { ...item };
-        delete args.name;
-        delete args.type;
+        const argumentsIsObject =
+          typeof item.arguments === "object" &&
+          item.arguments !== null &&
+          !Array.isArray(item.arguments);
+        const args = argumentsIsObject
+          ? item.arguments
+          : (() => {
+              const nextArgs = { ...item };
+              delete nextArgs.name;
+              delete nextArgs.type;
+              delete nextArgs.arguments;
+              return nextArgs;
+            })();
         toolCalls.push({
           id: generateToolCallId(),
           type: "function",
