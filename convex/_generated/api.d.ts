@@ -8,6 +8,7 @@
  * @module
  */
 
+import type * as affiliate from "../affiliate.js";
 import type * as auth from "../auth.js";
 import type * as chat from "../chat.js";
 import type * as chatHttp from "../chatHttp.js";
@@ -56,6 +57,7 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  affiliate: typeof affiliate;
   auth: typeof auth;
   chat: typeof chat;
   chatHttp: typeof chatHttp;

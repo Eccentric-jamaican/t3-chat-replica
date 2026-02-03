@@ -65,6 +65,22 @@ Likely files to touch
 - `convex/chatHttp.ts` (HTTP stream payload for audio/video)
 - `convex/schema.ts` (attachment metadata updates if needed)
 
+## EPN affiliate tracking (eBay)
+
+Goal: monetize eBay purchase intent by attaching EPN tracking parameters to outbound eBay links and displaying compliant disclosure in the product drawer.
+
+Key behaviors
+
+- Build EPN tracking URLs dynamically for all eBay item links (no prebuilt URLs).
+- Attach a hashed `customid` derived from `userId` (logged-in) or `sessionId` (anonymous), using SHA-256 + server salt (no PII).
+- Show a subtle disclosure near eBay call-to-action links in the product drawer.
+- Store EPN parameters in Convex env vars; do not hardcode in client.
+
+Notes
+
+- Set `EPN_CAMPID`, `EPN_MKCID`, `EPN_MKRID`, `EPN_TOOLID`, `EPN_MKEVT`, and `EPN_CUSTOMID_SALT` in Convex.
+- Replace placeholder salts in dev with a real secret before production.
+
 ## Agent labels + agentic sourcing loop
 
 Goal: simplify model selection with high-level labels (e.g., "Fast" and "Agent") and add an agentic loop so sourcing can iteratively refine queries, broaden coverage, and improve result quality.

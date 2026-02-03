@@ -11,7 +11,7 @@ import {
   Heart,
 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { useAction, useMutation, useQuery } from "convex/react";
+import { useAction, useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import { cn } from "../../lib/utils";
 import {
@@ -19,6 +19,7 @@ import {
   getProductImageUrl,
 } from "./productImage";
 import { FavoriteListSelector } from "./FavoriteListSelector";
+import { buildEpnUrl, isEbayUrl } from "../../lib/affiliate";
 
 interface ProductDrawerProps {
   productId: string;
@@ -29,6 +30,17 @@ export function ProductDrawer({ productId, initialData }: ProductDrawerProps) {
   const navigate = useNavigate();
   const location = useLocation(); // Hook to get the router's current location
   const getItemDetails = useAction(api.chat.getItemDetails);
+  const [sessionId] = useState(() => {
+    if (typeof window === "undefined") return "";
+    const saved = localStorage.getItem("sendcat_session_id");
+    if (saved) return saved;
+    const newId = crypto.randomUUID();
+    localStorage.setItem("sendcat_session_id", newId);
+    return newId;
+  });
+  const epnConfig = useQuery(api.affiliate.getEpnConfig, {
+    sessionId: sessionId || undefined,
+  });
   const [product, setProduct] = useState<Product | undefined>(initialData);
   const [loading, setLoading] = useState(!initialData);
   const [error, setError] = useState<string | null>(null);
@@ -51,6 +63,10 @@ export function ProductDrawer({ productId, initialData }: ProductDrawerProps) {
     ? getProductImageUrl(product) || imageFallback
     : "";
   const primaryUrl = product?.productUrl || product?.url;
+  const isEbayListing = isEbayUrl(primaryUrl);
+  const affiliateUrl = isEbayListing
+    ? buildEpnUrl(primaryUrl || "", epnConfig)
+    : primaryUrl;
   const isGoogleShoppingUrl = (url?: string) => {
     if (!url) return false;
     try {
@@ -107,6 +123,7 @@ export function ProductDrawer({ productId, initialData }: ProductDrawerProps) {
           image:
             data.image?.imageUrl || data.additionalImages?.[0]?.imageUrl || "",
           url: data.itemWebUrl,
+          source: "ebay",
           sellerName: data.seller?.username,
           sellerFeedback: data.seller?.feedbackPercentage
             ? `${data.seller.feedbackPercentage}%`
@@ -246,9 +263,9 @@ export function ProductDrawer({ productId, initialData }: ProductDrawerProps) {
                 </motion.div>
                 {primaryUrl && (
                   <a
-                    href={primaryUrl}
+                    href={affiliateUrl}
                     target="_blank"
-                    rel="noopener noreferrer"
+                    rel={`noopener noreferrer${isEbayListing ? " sponsored" : ""}`}
                     className="flex w-full items-center justify-center gap-2 rounded-xl border border-zinc-200 py-3 text-sm font-semibold text-zinc-600 transition-colors hover:bg-zinc-50"
                   >
                     <ExternalLink size={16} />
@@ -353,16 +370,21 @@ export function ProductDrawer({ productId, initialData }: ProductDrawerProps) {
 
         {/* Sticky Footer */}
         <div className="sticky bottom-0 z-10 border-t border-gray-100 bg-white p-4 backdrop-blur-md">
+          {isEbayListing && affiliateUrl ? (
+            <div className="mb-2 rounded-lg border border-zinc-100 bg-zinc-50 px-3 py-2 text-[11px] font-medium text-zinc-500">
+              As an eBay Partner, we may be compensated for purchases.
+            </div>
+          ) : null}
           <div className="ml-auto flex max-w-sm gap-4">
             <button className="flex flex-1 items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-3 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50">
               <MessageSquare size={18} />
               Ask AI
             </button>
-            {primaryUrl && (
+            {affiliateUrl && (
               <a
-                href={primaryUrl}
+                href={affiliateUrl}
                 target="_blank"
-                rel="noopener noreferrer"
+                rel={`noopener noreferrer${isEbayListing ? " sponsored" : ""}`}
                 className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-zinc-900 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-zinc-900/10 transition-colors hover:bg-black"
               >
                 <ExternalLink size={18} />
