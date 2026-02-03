@@ -12,6 +12,10 @@ import {
 import { useEffect, useState } from "react";
 import { useAction } from "convex/react";
 import { api } from "../../../convex/_generated/api";
+import {
+  getProductImageFallback,
+  getProductImageUrl,
+} from "./productImage";
 
 interface ProductDrawerProps {
   productId: string;
@@ -25,6 +29,49 @@ export function ProductDrawer({ productId, initialData }: ProductDrawerProps) {
   const [product, setProduct] = useState<Product | undefined>(initialData);
   const [loading, setLoading] = useState(!initialData);
   const [error, setError] = useState<string | null>(null);
+  const isGlobal = product?.source === "global";
+  const merchantLabel =
+    product?.merchantName ||
+    product?.merchantDomain ||
+    product?.supplier?.name ||
+    product?.sellerName ||
+    "Unknown merchant";
+  const merchantFavicon = product?.merchantDomain
+    ? `https://www.google.com/s2/favicons?domain=${product.merchantDomain}&sz=32`
+    : null;
+  const supplierLogo = product?.supplier?.logo;
+  const supplierLogoIsUrl =
+    typeof supplierLogo === "string" && /^(https?:)?\/\//i.test(supplierLogo);
+  const priceLabel = product?.priceRange || product?.price || "-";
+  const imageFallback = product ? getProductImageFallback(product) : "";
+  const imageSrc = product
+    ? getProductImageUrl(product) || imageFallback
+    : "";
+  const primaryUrl = product?.productUrl || product?.url;
+  const isGoogleShoppingUrl = (url?: string) => {
+    if (!url) return false;
+    try {
+      const host = new URL(url).hostname;
+      return (
+        host.includes("google.com") ||
+        host.includes("shopping.google.") ||
+        host.includes("googleusercontent.com")
+      );
+    } catch (err) {
+      return false;
+    }
+  };
+  const isGoogleShopping = isGlobal && isGoogleShoppingUrl(primaryUrl);
+  const primaryLabel = isGlobal
+    ? isGoogleShopping
+      ? "View buying options"
+      : "Open on merchant"
+    : "Check on eBay";
+  const listingLabel = isGlobal
+    ? isGoogleShopping
+      ? "View on Google Shopping"
+      : "View listing on merchant"
+    : "View original listing on eBay";
 
   useEffect(() => {
     // Prevent body scroll when drawer is open
@@ -158,20 +205,29 @@ export function ProductDrawer({ productId, initialData }: ProductDrawerProps) {
                   className="aspect-square w-full overflow-hidden rounded-2xl border border-gray-100 bg-gray-50"
                 >
                   <img
-                    src={product.image}
+                    src={imageSrc}
                     alt={product.title}
                     className="h-full w-full object-cover"
+                    onError={(event) => {
+                      if (!imageFallback) {
+                        event.currentTarget.classList.add("hidden");
+                        return;
+                      }
+                      const target = event.currentTarget;
+                      if (target.src === imageFallback) return;
+                      target.src = imageFallback;
+                    }}
                   />
                 </motion.div>
-                {product.url && (
+                {primaryUrl && (
                   <a
-                    href={product.url}
+                    href={primaryUrl}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="flex w-full items-center justify-center gap-2 rounded-xl border border-zinc-200 py-3 text-sm font-semibold text-zinc-600 transition-colors hover:bg-zinc-50"
                   >
                     <ExternalLink size={16} />
-                    View original listing on eBay
+                    {listingLabel}
                   </a>
                 )}
               </div>
@@ -212,7 +268,7 @@ export function ProductDrawer({ productId, initialData }: ProductDrawerProps) {
                       Price
                     </div>
                     <div className="text-3xl font-bold text-gray-900">
-                      {product.priceRange}
+                      {priceLabel}
                     </div>
                     {product.condition ? (
                       <div className="mt-1 text-sm text-[10px] font-bold tracking-widest text-zinc-500 uppercase">
@@ -224,14 +280,31 @@ export function ProductDrawer({ productId, initialData }: ProductDrawerProps) {
 
                 {/* Seller Info */}
                 <div className="flex items-center gap-3 rounded-xl border border-zinc-100 bg-white p-4 shadow-sm">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-zinc-100 font-bold text-zinc-600">
-                    {product.supplier?.logo ||
-                      product.sellerName?.charAt(0).toUpperCase() ||
-                      "E"}
-                  </div>
+                  {merchantFavicon ? (
+                    <img
+                      src={merchantFavicon}
+                      alt=""
+                      className="h-10 w-10 rounded-lg"
+                    />
+                  ) : supplierLogoIsUrl ? (
+                    <img
+                      src={supplierLogo}
+                      alt=""
+                      className="h-10 w-10 rounded-lg object-cover"
+                    />
+                  ) : (
+                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-zinc-100 font-bold text-zinc-600">
+                      {(typeof supplierLogo === "string" &&
+                      !supplierLogoIsUrl
+                        ? supplierLogo
+                        : "") ||
+                        merchantLabel?.charAt(0).toUpperCase() ||
+                        "E"}
+                    </div>
+                  )}
                   <div>
                     <div className="text-sm font-semibold text-gray-900">
-                      {product.supplier?.name || product.sellerName}
+                      {merchantLabel}
                     </div>
                     <div className="flex items-center gap-2 text-xs text-gray-500">
                       {product.supplier ? (
@@ -242,7 +315,9 @@ export function ProductDrawer({ productId, initialData }: ProductDrawerProps) {
                         </span>
                       ) : null}
                       <span>•</span>
-                      <span>Verified Seller</span>
+                      <span>
+                        {isGlobal ? "Verified Merchant" : "Verified Seller"}
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -258,15 +333,17 @@ export function ProductDrawer({ productId, initialData }: ProductDrawerProps) {
               <MessageSquare size={18} />
               Ask AI
             </button>
-            <a
-              href={product?.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-zinc-900 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-zinc-900/10 transition-colors hover:bg-black"
-            >
-              <ExternalLink size={18} />
-              Check on eBay
-            </a>
+            {primaryUrl && (
+              <a
+                href={primaryUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-zinc-900 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-zinc-900/10 transition-colors hover:bg-black"
+              >
+                <ExternalLink size={18} />
+                {primaryLabel}
+              </a>
+            )}
           </div>
         </div>
       </motion.div>

@@ -15,6 +15,7 @@ import type * as crons from "../crons.js";
 import type * as ebay from "../ebay.js";
 import type * as ebayTaxonomy from "../ebayTaxonomy.js";
 import type * as explore from "../explore.js";
+import type * as global from "../global.js";
 import type * as http from "../http.js";
 import type * as integrations_crypto from "../integrations/crypto.js";
 import type * as integrations_evidence from "../integrations/evidence.js";
@@ -40,6 +41,7 @@ import type * as integrations_whatsapp_verify from "../integrations/whatsapp/ver
 import type * as lib_ebaySearch from "../lib/ebaySearch.js";
 import type * as lib_models from "../lib/models.js";
 import type * as lib_prompts from "../lib/prompts.js";
+import type * as lib_toolHelpers from "../lib/toolHelpers.js";
 import type * as messages from "../messages.js";
 import type * as packages from "../packages.js";
 import type * as profiles from "../profiles.js";
@@ -60,6 +62,7 @@ declare const fullApi: ApiFromModules<{
   ebay: typeof ebay;
   ebayTaxonomy: typeof ebayTaxonomy;
   explore: typeof explore;
+  global: typeof global;
   http: typeof http;
   "integrations/crypto": typeof integrations_crypto;
   "integrations/evidence": typeof integrations_evidence;
@@ -85,6 +88,7 @@ declare const fullApi: ApiFromModules<{
   "lib/ebaySearch": typeof lib_ebaySearch;
   "lib/models": typeof lib_models;
   "lib/prompts": typeof lib_prompts;
+  "lib/toolHelpers": typeof lib_toolHelpers;
   messages: typeof messages;
   packages: typeof packages;
   profiles: typeof profiles;
