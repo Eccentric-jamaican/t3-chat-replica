@@ -3,14 +3,24 @@ import { Sidebar } from "../components/layout/Sidebar";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { ProductCard } from "../components/product/ProductCard";
-import { useState, useEffect } from "react";
+import { ProductDrawer } from "../components/product/ProductDrawer";
+import { useState, useEffect, useMemo } from "react";
 import { Plus, Trash2, Edit2, Heart, Loader2 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "../lib/utils";
 import { useIsMobile } from "../hooks/useIsMobile";
 import { authClient } from "../lib/auth";
+import { type Product } from "../data/mockProducts";
+
+type FavoritesSearchParams = {
+  productId?: string;
+};
 
 export const Route = createFileRoute("/favorites")({
+  validateSearch: (search: Record<string, unknown>): FavoritesSearchParams => ({
+    productId:
+      typeof search.productId === "string" ? search.productId : undefined,
+  }),
   component: FavoritesPage,
 });
 
@@ -19,6 +29,7 @@ function FavoritesPage() {
   const [sidebarOpen, setSidebarOpen] = useState(!isMobile);
   const { data: session, isPending } = authClient.useSession();
   const isAuthenticated = !isPending && !!session;
+  const { productId } = Route.useSearch();
 
   useEffect(() => {
     setSidebarOpen(!isMobile);
@@ -39,6 +50,14 @@ function FavoritesPage() {
   const [newListName, setNewListName] = useState("");
   const [editingListId, setEditingListId] = useState<string | null>(null);
   const [editListName, setEditListName] = useState("");
+  const productLookup = useMemo(() => {
+    const lookup = new Map<string, Product>();
+    favoritesData?.favorites.forEach((fav: any) => {
+      if (!fav?.item?.id) return;
+      lookup.set(fav.item.id, fav.item as Product);
+    });
+    return lookup;
+  }, [favoritesData?.favorites]);
 
   if (isPending) return null;
 
@@ -278,6 +297,15 @@ function FavoritesPage() {
           </div>
         </div>
       </main>
+
+      <AnimatePresence>
+        {productId && (
+          <ProductDrawer
+            productId={productId}
+            initialData={productLookup.get(productId)}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }
