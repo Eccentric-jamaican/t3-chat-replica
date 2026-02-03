@@ -23,7 +23,7 @@ export function ProductCard({ product }: ProductCardProps) {
     product.merchantDomain ||
     product.supplier?.name ||
     product.sellerName ||
-    "";
+    "Unknown merchant";
   const supplierLogo = product.supplier?.logo;
   const supplierLogoIsUrl =
     typeof supplierLogo === "string" &&
