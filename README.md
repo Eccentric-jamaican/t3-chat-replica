@@ -10,7 +10,7 @@ AI-powered chat application with e-commerce integration and package tracking.
 - **Gmail Integration** - Automatically detect order confirmations from Gmail and create pre-alerts
 - **WhatsApp Integration** - Connect your WhatsApp for notifications and messaging (not done)
 - **Product Catalog** - Browse products by category in the explore section
-- **User Authentication** - Secure authentication with Better Auth(need tp wire up forget password flow)
+- **User Authentication** - Secure authentication with Better Auth, including password reset
 
 ## Tech Stack
 
@@ -53,6 +53,8 @@ And set up Convex environment variables:
 
 ```bash
 npx convex env:set BETTER_AUTH_SECRET=your_secret
+npx convex env:set RESEND_API_KEY=your_resend_api_key
+npx convex env:set EMAIL_FROM="SendCat <no-reply@yourdomain.com>"
 npx convex env:set EBAY_CLIENT_ID=your_ebay_client_id
 npx convex env:set EBAY_CLIENT_SECRET=your_ebay_client_secret
 npx convex env:set GMAIL_CLIENT_ID=your_gmail_client_id

@@ -4,6 +4,7 @@ import { createClient, type CreateAuth, type AuthFunctions } from "@convex-dev/b
 import { components, internal } from "./_generated/api";
 import type { DataModel } from "./_generated/dataModel";
 import authConfig from "./auth.config";
+import { sendEmail } from "./integrations/email";
 
 // AuthFunctions must reference the auth module for triggers to work
 const authFunctions: AuthFunctions = internal.auth;
@@ -168,10 +169,11 @@ const getBaseURL = (): string => {
 
 export const createAuth: CreateAuth<DataModel> = (ctx) => {
   const baseURL = getBaseURL();
+  const adapter = authComponent.adapter(ctx);
   
   return betterAuth({
     baseURL, // Dynamic base URL for OAuth callbacks
-    database: authComponent.adapter(ctx),
+    database: adapter,
     session: {
       expiresIn: 60 * 60 * 24 * 30, // 30 days
       updateAge: 60 * 60 * 24, // Update session every 24 hours
@@ -182,6 +184,73 @@ export const createAuth: CreateAuth<DataModel> = (ctx) => {
     },
     emailAndPassword: {
       enabled: true,
+      sendResetPassword: async ({ user, url }) => {
+        try {
+          const accounts =
+            (await adapter.findMany({
+              model: "account",
+              where: [
+                {
+                  field: "userId",
+                  value: user.id,
+                },
+              ],
+            })) ?? [];
+          const hasCredentialAccount = accounts.some(
+            (account) => account.providerId === "credential" && account.password,
+          );
+          if (!hasCredentialAccount) {
+            if (isDebugMode) {
+              console.log(
+                "[AUTH] Password reset skipped (no credential account):",
+                maskEmail(user.email),
+              );
+            }
+            return;
+          }
+        } catch (error) {
+          if (isDebugMode) {
+            console.warn(
+              "[AUTH] Password reset account check failed; sending anyway",
+              error,
+            );
+          }
+        }
+
+        const escapeHtml = (value: string) =>
+          value
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#39;");
+        const safeName = escapeHtml(user.name || "there");
+        const html = `
+          <div style="font-family: Arial, sans-serif; line-height: 1.5;">
+            <p>Hi ${safeName},</p>
+            <p>We received a request to reset your SendCat password.</p>
+            <p>
+              <a href="${url}" style="color: #0f766e; font-weight: 600;">
+                Reset your password
+              </a>
+            </p>
+            <p>If you did not request this, you can ignore this email.</p>
+          </div>
+        `;
+        const text = [
+          `Hi ${safeName},`,
+          "We received a request to reset your SendCat password.",
+          `Reset your password: ${url}`,
+          "If you did not request this, you can ignore this email.",
+        ].join("\n");
+
+        await sendEmail({
+          to: user.email,
+          subject: "Reset your SendCat password",
+          html,
+          text,
+        });
+      },
       // Note: Password validation is handled client-side
       // Better Auth only supports custom hash/verify functions, not validation
     },

@@ -12,8 +12,10 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as SignUpRouteImport } from './routes/sign-up'
 import { Route as SignInRouteImport } from './routes/sign-in'
 import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as PreAlertsRouteImport } from './routes/pre-alerts'
 import { Route as PackagesRouteImport } from './routes/packages'
+import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
 import { Route as FavoritesRouteImport } from './routes/favorites'
 import { Route as ExploreRouteImport } from './routes/explore'
 import { Route as IndexRouteImport } from './routes/index'
@@ -48,6 +50,11 @@ const SettingsRoute = SettingsRouteImport.update({
   path: '/settings',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ResetPasswordRoute = ResetPasswordRouteImport.update({
+  id: '/reset-password',
+  path: '/reset-password',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const PreAlertsRoute = PreAlertsRouteImport.update({
   id: '/pre-alerts',
   path: '/pre-alerts',
@@ -56,6 +63,11 @@ const PreAlertsRoute = PreAlertsRouteImport.update({
 const PackagesRoute = PackagesRouteImport.update({
   id: '/packages',
   path: '/packages',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ForgotPasswordRoute = ForgotPasswordRouteImport.update({
+  id: '/forgot-password',
+  path: '/forgot-password',
   getParentRoute: () => rootRouteImport,
 } as any)
 const FavoritesRoute = FavoritesRouteImport.update({
@@ -156,8 +168,10 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/explore': typeof ExploreRouteWithChildren
   '/favorites': typeof FavoritesRoute
+  '/forgot-password': typeof ForgotPasswordRoute
   '/packages': typeof PackagesRoute
   '/pre-alerts': typeof PreAlertsRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/settings': typeof SettingsRoute
   '/sign-in': typeof SignInRoute
   '/sign-up': typeof SignUpRoute
@@ -180,8 +194,10 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/favorites': typeof FavoritesRoute
+  '/forgot-password': typeof ForgotPasswordRoute
   '/packages': typeof PackagesRoute
   '/pre-alerts': typeof PreAlertsRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/settings': typeof SettingsRoute
   '/sign-in': typeof SignInRoute
   '/sign-up': typeof SignUpRoute
@@ -205,8 +221,10 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/explore': typeof ExploreRouteWithChildren
   '/favorites': typeof FavoritesRoute
+  '/forgot-password': typeof ForgotPasswordRoute
   '/packages': typeof PackagesRoute
   '/pre-alerts': typeof PreAlertsRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/settings': typeof SettingsRoute
   '/sign-in': typeof SignInRoute
   '/sign-up': typeof SignUpRoute
@@ -232,8 +250,10 @@ export interface FileRouteTypes {
     | '/'
     | '/explore'
     | '/favorites'
+    | '/forgot-password'
     | '/packages'
     | '/pre-alerts'
+    | '/reset-password'
     | '/settings'
     | '/sign-in'
     | '/sign-up'
@@ -256,8 +276,10 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/favorites'
+    | '/forgot-password'
     | '/packages'
     | '/pre-alerts'
+    | '/reset-password'
     | '/settings'
     | '/sign-in'
     | '/sign-up'
@@ -280,8 +302,10 @@ export interface FileRouteTypes {
     | '/'
     | '/explore'
     | '/favorites'
+    | '/forgot-password'
     | '/packages'
     | '/pre-alerts'
+    | '/reset-password'
     | '/settings'
     | '/sign-in'
     | '/sign-up'
@@ -306,8 +330,10 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   ExploreRoute: typeof ExploreRouteWithChildren
   FavoritesRoute: typeof FavoritesRoute
+  ForgotPasswordRoute: typeof ForgotPasswordRoute
   PackagesRoute: typeof PackagesRoute
   PreAlertsRoute: typeof PreAlertsRoute
+  ResetPasswordRoute: typeof ResetPasswordRoute
   SettingsRoute: typeof SettingsRoute
   SignInRoute: typeof SignInRoute
   SignUpRoute: typeof SignUpRoute
@@ -346,6 +372,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/reset-password': {
+      id: '/reset-password'
+      path: '/reset-password'
+      fullPath: '/reset-password'
+      preLoaderRoute: typeof ResetPasswordRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/pre-alerts': {
       id: '/pre-alerts'
       path: '/pre-alerts'
@@ -358,6 +391,13 @@ declare module '@tanstack/react-router' {
       path: '/packages'
       fullPath: '/packages'
       preLoaderRoute: typeof PackagesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/forgot-password': {
+      id: '/forgot-password'
+      path: '/forgot-password'
+      fullPath: '/forgot-password'
+      preLoaderRoute: typeof ForgotPasswordRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/favorites': {
@@ -525,8 +565,10 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   ExploreRoute: ExploreRouteWithChildren,
   FavoritesRoute: FavoritesRoute,
+  ForgotPasswordRoute: ForgotPasswordRoute,
   PackagesRoute: PackagesRoute,
   PreAlertsRoute: PreAlertsRoute,
+  ResetPasswordRoute: ResetPasswordRoute,
   SettingsRoute: SettingsRoute,
   SignInRoute: SignInRoute,
   SignUpRoute: SignUpRoute,

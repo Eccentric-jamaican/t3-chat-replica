@@ -125,9 +125,12 @@ function SignIn() {
             <div className="space-y-2">
               <div className="flex items-center justify-between ml-1">
                 <label className="text-sm font-medium text-foreground/80">Password</label>
-                <span className="text-xs text-muted-foreground/50 cursor-not-allowed" title="Coming soon">
+                <Link
+                  to="/forgot-password"
+                  className="text-xs text-primary/80 transition-colors hover:text-primary"
+                >
                   Forgot password?
-                </span>
+                </Link>
               </div>
               <div className="group relative">
                 <Lock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground transition-colors group-focus-within:text-primary" />
