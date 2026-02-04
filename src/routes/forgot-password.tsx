@@ -24,18 +24,24 @@ function ForgotPassword() {
     setLoading(true);
 
     try {
-      await authClient.requestPasswordReset({
+      const { error: authError } = await authClient.requestPasswordReset({
         email,
         redirectTo: `${window.location.origin}/reset-password`,
       });
+      if (authError && import.meta.env.DEV) {
+        console.error("[AUTH CLIENT] Request password reset error:", authError);
+      }
+      setSent(true);
+      toast.success("If that email exists, we'll send a reset link shortly.");
     } catch (err) {
       if (import.meta.env.DEV) {
         console.error("[AUTH CLIENT] Request password reset error:", err);
       }
+      toast.error(
+        "Unable to send reset link. Please check your connection and try again.",
+      );
     } finally {
       setLoading(false);
-      setSent(true);
-      toast.success("If that email exists, we'll send a reset link shortly.");
     }
   };
 
