@@ -54,7 +54,7 @@ export function EmailLayout({
           <Hr style={styles.divider} />
           <Section style={styles.footer}>
             <Text style={styles.footerText}>
-              {footerText || "Questions? support@sendcat.app"}
+              {footerText || "Questions? support@mail.sendcat.app"}
             </Text>
           </Section>
         </Container>

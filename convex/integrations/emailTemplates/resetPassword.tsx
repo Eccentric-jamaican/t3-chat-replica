@@ -32,7 +32,7 @@ export function ResetPasswordEmail({
           </Text>
         </Section>
       }
-      footerText="Questions? support@sendcat.app"
+      footerText="Questions? support@mail.sendcat.app"
     />
   );
 }

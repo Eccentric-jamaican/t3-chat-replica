@@ -24,12 +24,12 @@ export function WelcomeEmail({ name, appUrl, brandColor }: WelcomeEmailProps) {
             keep everything in one place.
           </Text>
           <Text style={styles.text}>
-            If you ever need help, reach out to support@sendcat.app and we will be
+            If you ever need help, reach out to support@mail.sendcat.app and we will be
             happy to assist.
           </Text>
         </Section>
       }
-      footerText="Questions? support@sendcat.app"
+      footerText="Questions? support@mail.sendcat.app"
     />
   );
 }

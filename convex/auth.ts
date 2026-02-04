@@ -90,6 +90,7 @@ export const authComponent = createClient<DataModel>(components.betterAuth, {
             subject: "Welcome to SendCat",
             html,
             text,
+            replyTo: "support@mail.sendcat.app",
           });
           if (isDebugMode) {
             console.log("[AUTH EMAIL] Welcome email sent:", maskEmail(doc.email));
@@ -275,6 +276,7 @@ export const createAuth: CreateAuth<DataModel> = (ctx) => {
           subject: "Reset your SendCat password",
           html,
           text,
+          replyTo: "support@mail.sendcat.app",
         });
         if (isDebugMode) {
           console.log("[AUTH EMAIL] Reset password email sent:", maskEmail(user.email));
