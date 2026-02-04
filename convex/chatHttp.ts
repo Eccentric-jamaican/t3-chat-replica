@@ -540,7 +540,16 @@ export async function chatHandler(ctx: any, request: Request) {
                     "Time check limit reached for this turn. Use existing information to answer.";
                 } else {
                   timeCheckCount++;
-                  result = new Date().toLocaleString();
+                  result = new Date().toLocaleString("en-US", {
+                    timeZone: "America/Jamaica",
+                    weekday: "long",
+                    year: "numeric",
+                    month: "long",
+                    day: "numeric",
+                    hour: "numeric",
+                    minute: "2-digit",
+                    hour12: true,
+                  });
                 }
               } else if (name === "search_web") {
                 if (webSearchCount >= MAX_WEB_SEARCH_PER_TURN) {

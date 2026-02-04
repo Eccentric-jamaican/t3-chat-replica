@@ -5,6 +5,10 @@ import { components, internal } from "./_generated/api";
 import type { DataModel } from "./_generated/dataModel";
 import authConfig from "./auth.config";
 import { sendEmail } from "./integrations/email";
+import { renderEmail } from "./integrations/emailTemplates/render";
+import { ResetPasswordEmail } from "./integrations/emailTemplates/resetPassword";
+import { WelcomeEmail } from "./integrations/emailTemplates/welcome";
+import React from "react";
 
 // AuthFunctions must reference the auth module for triggers to work
 const authFunctions: AuthFunctions = internal.auth;
@@ -31,6 +35,16 @@ const truncateId = (id: string): string => {
 
 // Only emit verbose logs in development (set CONVEX_DEBUG_LOGS=true in Convex dashboard)
 const isDebugMode = process.env.CONVEX_DEBUG_LOGS === "true";
+const BRAND_COLOR = "#111827";
+
+const getAppUrl = (): string => {
+  if (process.env.APP_URL) {
+    return process.env.APP_URL;
+  }
+  const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(",").map((o) => o.trim()) || [];
+  const productionOrigin = allowedOrigins.find((o) => !o.includes("localhost"));
+  return productionOrigin || "https://sendcat.app";
+};
 
 /**
  * The auth component client - provides adapter, route registration, and helper methods.
@@ -60,6 +74,28 @@ export const authComponent = createClient<DataModel>(components.betterAuth, {
             profileId: truncateId(profileId),
             userId: truncateId(doc._id),
           });
+        }
+
+        try {
+          const appUrl = getAppUrl();
+          const { html, text } = await renderEmail(
+            React.createElement(WelcomeEmail, {
+              name: doc.name,
+              appUrl,
+              brandColor: BRAND_COLOR,
+            })
+          );
+          await sendEmail({
+            to: doc.email,
+            subject: "Welcome to SendCat",
+            html,
+            text,
+          });
+          if (isDebugMode) {
+            console.log("[AUTH EMAIL] Welcome email sent:", maskEmail(doc.email));
+          }
+        } catch (error) {
+          console.error("[AUTH EMAIL] Failed to send welcome email:", error);
         }
       },
       onUpdate: async (ctx, newDoc, oldDoc) => {
@@ -226,32 +262,13 @@ export const createAuth: CreateAuth<DataModel> = (ctx) => {
           }
         }
 
-        const escapeHtml = (value: string) =>
-          value
-            .replace(/&/g, "&amp;")
-            .replace(/</g, "&lt;")
-            .replace(/>/g, "&gt;")
-            .replace(/"/g, "&quot;")
-            .replace(/'/g, "&#39;");
-        const safeName = escapeHtml(user.name || "there");
-        const html = `
-          <div style="font-family: Arial, sans-serif; line-height: 1.5;">
-            <p>Hi ${safeName},</p>
-            <p>We received a request to reset your SendCat password.</p>
-            <p>
-              <a href="${url}" style="color: #0f766e; font-weight: 600;">
-                Reset your password
-              </a>
-            </p>
-            <p>If you did not request this, you can ignore this email.</p>
-          </div>
-        `;
-        const text = [
-          `Hi ${safeName},`,
-          "We received a request to reset your SendCat password.",
-          `Reset your password: ${url}`,
-          "If you did not request this, you can ignore this email.",
-        ].join("\n");
+        const { html, text } = await renderEmail(
+          React.createElement(ResetPasswordEmail, {
+            name: user.name,
+            resetUrl: url,
+            brandColor: BRAND_COLOR,
+          })
+        );
 
         await sendEmail({
           to: user.email,
@@ -259,6 +276,9 @@ export const createAuth: CreateAuth<DataModel> = (ctx) => {
           html,
           text,
         });
+        if (isDebugMode) {
+          console.log("[AUTH EMAIL] Reset password email sent:", maskEmail(user.email));
+        }
       },
       // Note: Password validation is handled client-side
       // Better Auth only supports custom hash/verify functions, not validation

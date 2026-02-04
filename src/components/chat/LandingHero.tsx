@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion'
-import { Sparkles, Compass, Code2, GraduationCap } from 'lucide-react'
+import { ShoppingBag, Scale, Package, Tag } from 'lucide-react'
 import { useIsMobile } from '../../hooks/useIsMobile'
 import { clsx, type ClassValue } from 'clsx'
 import { twMerge } from 'tailwind-merge'
@@ -33,10 +33,10 @@ export const LandingHero = ({ onSelectPrompt }: LandingHeroProps) => {
       {/* Action Cards: Pill-shaped, T3 Lavender Oklab transition */}
       <div className="flex justify-center gap-2 overflow-x-auto scrollbar-hide px-2">
         {[
-          { icon: <Sparkles size={16} />, label: "Create" },
-          { icon: <Compass size={16} />, label: "Explore" },
-          { icon: <Code2 size={16} />, label: "Code" },
-          { icon: <GraduationCap size={16} />, label: "Learn" }
+          { icon: <ShoppingBag size={16} />, label: "Shop" },
+          { icon: <Scale size={16} />, label: "Compare" },
+          { icon: <Package size={16} />, label: "Track" },
+          { icon: <Tag size={16} />, label: "Deals" }
         ].map((item, i) => (
           <motion.button
             key={i}
@@ -52,10 +52,10 @@ export const LandingHero = ({ onSelectPrompt }: LandingHeroProps) => {
       {/* Suggested Prompts: Airy spacing, subtle borders */}
       <div className="max-w-md mx-auto space-y-2 mt-8">
         {[
-          "How does AI work?",
-          "Are black holes real?",
-          'How many Rs are in the word "strawberry"?',
-          "What is the meaning of life?",
+          "Find me wireless earbuds under $100",
+          "What's a good laptop for programming?",
+          "Compare prices for Nike Air Force 1s",
+          "Show me trending deals today",
         ].map((text, i) => (
           <motion.button
             key={i}

@@ -714,7 +714,16 @@ export const streamAnswer = action({
                     result = `Time check limit reached (${MAX_TIME_CHECK_PER_TURN} per turn). Use existing information to answer.`;
                   } else {
                     timeCheckCount++;
-                    result = new Date().toLocaleString();
+                    result = new Date().toLocaleString("en-US", {
+                      timeZone: "America/Jamaica",
+                      weekday: "long",
+                      year: "numeric",
+                      month: "long",
+                      day: "numeric",
+                      hour: "numeric",
+                      minute: "2-digit",
+                      hour12: true,
+                    });
                   }
                 } else if (name === "search_web") {
                   // [COST CONTROL] Check per-turn limit for web searches
