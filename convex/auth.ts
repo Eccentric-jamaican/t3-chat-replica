@@ -306,7 +306,7 @@ export const createAuth: CreateAuth<DataModel> = (ctx) => {
     // Trusted origins for auth requests
     trustedOrigins: [
       "http://localhost:3000",
-      "https://t3-chat-replica.vercel.app",
+      "https://www.sendcat.app/",
     ],
     plugins: [
       convex({ authConfig }),
