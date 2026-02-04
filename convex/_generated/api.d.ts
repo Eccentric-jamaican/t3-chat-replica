@@ -20,6 +20,7 @@ import type * as favorites from "../favorites.js";
 import type * as global from "../global.js";
 import type * as http from "../http.js";
 import type * as integrations_crypto from "../integrations/crypto.js";
+import type * as integrations_email from "../integrations/email.js";
 import type * as integrations_evidence from "../integrations/evidence.js";
 import type * as integrations_extractor from "../integrations/extractor.js";
 import type * as integrations_gmail_api from "../integrations/gmail/api.js";
@@ -69,6 +70,7 @@ declare const fullApi: ApiFromModules<{
   global: typeof global;
   http: typeof http;
   "integrations/crypto": typeof integrations_crypto;
+  "integrations/email": typeof integrations_email;
   "integrations/evidence": typeof integrations_evidence;
   "integrations/extractor": typeof integrations_extractor;
   "integrations/gmail/api": typeof integrations_gmail_api;

@@ -182,6 +182,15 @@ export const createAuth: CreateAuth<DataModel> = (ctx) => {
         maxAge: 60 * 5, // 5 minutes cache
       },
     },
+    rateLimit: {
+      enabled: true,
+      customRules: {
+        "/request-password-reset": {
+          window: 60 * 15, // 15 minutes
+          max: 5,
+        },
+      },
+    },
     emailAndPassword: {
       enabled: true,
       sendResetPassword: async ({ user, url }) => {
