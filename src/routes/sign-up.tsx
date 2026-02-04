@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useNavigate, useSearch } from '@tanstack/react-router';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { authClient } from '../lib/auth';
 import { cn, resolveRedirect } from '../lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -7,6 +7,7 @@ import { Mail, Lock, User, ArrowRight, Loader2, AlertCircle, Check } from 'lucid
 import { Button } from '../components/ui/button';
 import { toast } from 'sonner';
 import { z } from 'zod';
+import { trackEvent } from '../lib/analytics';
 
 const signUpSearchSchema = z.object({
   redirect: z.string().optional(),
@@ -25,6 +26,10 @@ function SignUp() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
+
+  useEffect(() => {
+    trackEvent('sign_up_view', { redirect: redirect ?? null });
+  }, [redirect]);
 
   const handleEmailSignUp = async (e: React.FormEvent) => {
     e.preventDefault();

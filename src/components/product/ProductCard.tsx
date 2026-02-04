@@ -5,11 +5,13 @@ import { Heart } from "lucide-react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import { cn } from "../../lib/utils";
+import { useEffect } from "react";
 import {
   getProductImageFallback,
   getProductImageUrl,
 } from "./productImage";
 import { FavoriteListSelector } from "./FavoriteListSelector";
+import { trackProductView } from "../../lib/analytics";
 
 interface ProductCardProps {
   product: Product;
@@ -52,6 +54,14 @@ export function ProductCard({ product }: ProductCardProps) {
     // Add productId to search params to open the drawer
     navigate({ to: ".", search: { productId: product.id } });
   };
+
+  useEffect(() => {
+    trackProductView(product.id, {
+      source: product.source,
+      price: priceLabel,
+      merchant_domain: product.merchantDomain,
+    });
+  }, [priceLabel, product.id, product.merchantDomain, product.source]);
 
   return (
     <div

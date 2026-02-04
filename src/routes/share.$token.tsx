@@ -4,6 +4,7 @@ import { useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { Loader2, AlertTriangle } from "lucide-react";
 import { v4 as uuidv4 } from "uuid";
+import { trackEvent } from "../lib/analytics";
 
 export const Route = createFileRoute("/share/$token")({
   component: ShareRoute,
@@ -30,6 +31,7 @@ function ShareRoute() {
     const forkThread = async () => {
       try {
         const sessionId = getSessionId();
+        trackEvent("share_thread_open", { token });
         const result = await createShareFork({ token, sessionId });
         if (cancelled) return;
         navigate({ to: "/chat/$threadId", params: { threadId: result.threadId } });

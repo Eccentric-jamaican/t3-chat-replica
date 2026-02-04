@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Wrench, ChevronDown, Check, Loader2, Globe } from 'lucide-react'
 import { clsx, type ClassValue } from 'clsx'
 import { twMerge } from 'tailwind-merge'
+import { trackEvent } from '../../lib/analytics'
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
@@ -17,17 +18,55 @@ interface ToolCallBlockProps {
 export const ToolCallBlock = ({ toolName, args, result, state = "completed" }: ToolCallBlockProps) => {
   const [isExpanded, setIsExpanded] = useState(false)
 
-  const isSearch = toolName === "search_web"
-  const displayName = isSearch ? "Searched the web" : `Used tool: ${toolName}`
-  const Icon = isSearch ? Globe : Wrench
+  const isWebSearch = toolName === "search_web"
+  const isSearchTool = toolName.includes("search")
+  const displayName = isWebSearch ? "Searched the web" : `Used tool: ${toolName}`
+  const Icon = isWebSearch ? Globe : Wrench
+  const hasTrackedCall = useRef(false)
+  const hasTrackedResult = useRef(false)
+
+  const parsedArgs = useMemo(() => {
+    if (!args) return null
+    try {
+      return JSON.parse(args)
+    } catch {
+      return null
+    }
+  }, [args])
+
+  const searchQuery = typeof parsedArgs?.query === "string" ? parsedArgs.query : ""
 
   // Format args for display
   let displayArgs = args
   try {
      const parsed = JSON.parse(args)
-     if (isSearch && parsed.query) displayArgs = `"${parsed.query}"`
+     if (isWebSearch && parsed.query) displayArgs = `"${parsed.query}"`
      else displayArgs = JSON.stringify(parsed, null, 2)
   } catch {}
+
+  useEffect(() => {
+    if (hasTrackedCall.current) return
+    trackEvent("tool_call", {
+      tool_name: toolName,
+      state,
+    })
+    if (isSearchTool && searchQuery) {
+      trackEvent("search_submitted", {
+        query: searchQuery,
+        search_type: isWebSearch ? "web" : "products",
+      })
+    }
+    hasTrackedCall.current = true
+  }, [isSearchTool, isWebSearch, searchQuery, state, toolName])
+
+  useEffect(() => {
+    if (hasTrackedResult.current || result == null) return
+    trackEvent("tool_result_render", {
+      tool_name: toolName,
+      has_result: true,
+    })
+    hasTrackedResult.current = true
+  }, [result, toolName])
 
   return (
     <div className="mb-3 rounded-xl border border-blue-200/40 bg-gradient-to-br from-blue-50/50 to-cyan-50/30 overflow-hidden backdrop-blur-sm">

@@ -18,6 +18,7 @@ import { cn } from "../../lib/utils";
 import { ModelPicker } from "./ModelPicker";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import { toast } from "sonner";
+import { trackEvent } from "../../lib/analytics";
 
 export interface ChatInputProps {
   existingThreadId?: string;
@@ -50,6 +51,15 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
         localStorage.setItem("t3_selected_model", selectedModelId);
       }
     }, [selectedModelId]);
+
+    const handleModelSelect = (modelId: string) => {
+      if (modelId === selectedModelId) return;
+      trackEvent("model_switch", {
+        from: selectedModelId,
+        to: modelId,
+      });
+      setSelectedModelId(modelId);
+    };
 
     const [reasoningEffort, setReasoningEffort] = useState<string | null>(null);
     const [searchEnabled, setSearchEnabled] = useState(false);
@@ -294,6 +304,12 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
             modelId: selectedModelId,
             title: fallbackTitle.slice(0, 40),
           });
+          trackEvent("thread_created", {
+            thread_id: currentThreadId,
+            model_id: selectedModelId,
+            has_text: hasText,
+            attachment_count: attachments.length,
+          });
           setThreadId(currentThreadId);
           // Navigate to the new thread page
           navigate({
@@ -301,6 +317,16 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
             params: { threadId: currentThreadId },
           });
         }
+
+        trackEvent("message_send", {
+          thread_id: currentThreadId,
+          model_id: selectedModelId,
+          chars: messageContent.length,
+          has_attachments: hasAttachments,
+          attachment_count: attachments.length,
+          search_enabled: searchEnabled,
+          reasoning_effort: reasoningEffort ?? "none",
+        });
 
         await sendMessage({
           threadId: currentThreadId as Id<"threads">,
@@ -454,6 +480,32 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
                         },
                       }),
                     );
+                  } else if (data.type === "usage" && currentMessageId) {
+                    const usage = data.usage || {};
+                    const metrics = data.metrics || {};
+                    trackEvent("llm_usage", {
+                      thread_id: currentThreadId,
+                      message_id: currentMessageId,
+                      model_id: metrics.modelId || selectedModelId,
+                      latency_ms: metrics.latencyMs ?? null,
+                      ttft_ms: metrics.ttftMs ?? null,
+                      finish_reason: metrics.finishReason ?? null,
+                      prompt_tokens: usage.prompt_tokens ?? null,
+                      completion_tokens: usage.completion_tokens ?? null,
+                      total_tokens: usage.total_tokens ?? null,
+                      cached_tokens: usage.cached_tokens ?? null,
+                      reasoning_tokens: usage.reasoning_tokens ?? null,
+                      cost: usage.cost ?? null,
+                    });
+                  } else if (data.type === "usage_error") {
+                    const metrics = data.metrics || {};
+                    trackEvent("llm_error", {
+                      thread_id: currentThreadId,
+                      message_id: currentMessageId,
+                      model_id: metrics.modelId || selectedModelId,
+                      latency_ms: metrics.latencyMs ?? null,
+                      error: data.error || "Unknown error",
+                    });
                   } else if (data.type === "error") {
                     toast.error(data.error);
                   }
@@ -606,7 +658,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
                 <div className="flex items-center gap-1 md:gap-2">
                   <ModelPicker
                     selectedModelId={selectedModelId}
-                    onSelect={setSelectedModelId}
+                    onSelect={handleModelSelect}
                   />
 
                   {supportsReasoning && (

@@ -1,5 +1,6 @@
 import { useMemo, useState, useEffect } from "react";
 import { motion } from "framer-motion";
+import { useEffect, useMemo, useState } from "react";
 import { Markdown } from "./Markdown";
 import { useSmoothStreaming } from "../../hooks/useSmoothStreaming";
 import { ReasoningBlock } from "./ReasoningBlock";
@@ -10,6 +11,7 @@ import { ProductToolResult } from "./ProductToolResult";
 import { GlobalToolResult } from "./GlobalToolResult";
 import { type Product } from "../../data/mockProducts";
 import { ProductGrid } from "../product/ProductGrid";
+import { trackEvent } from "../../lib/analytics";
 
 interface StreamingMessageProps {
   messageId: string;
@@ -155,6 +157,25 @@ export const StreamingMessage = ({
     .replace(/^\|$/, "")
     .trim();
 
+  const [showSurvey, setShowSurvey] = useState(false);
+  const [surveyAnswered, setSurveyAnswered] = useState(false);
+
+  const getEtDateKey = () => {
+    if (typeof window === "undefined") return "";
+    const formatter = new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/New_York",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    });
+    const parts = formatter.formatToParts(new Date());
+    const year = parts.find((p) => p.type === "year")?.value ?? "1970";
+    const month = parts.find((p) => p.type === "month")?.value ?? "01";
+    const day = parts.find((p) => p.type === "day")?.value ?? "01";
+    return `${year}-${month}-${day}`;
+  };
+
+
   // Merge tools
   const mergedToolCalls = useMemo(() => {
     const dbTools = toolCalls || [];
@@ -162,6 +183,34 @@ export const StreamingMessage = ({
     const uniqueStreaming = streamingToolCalls.filter((t) => !dbIds.has(t.id));
     return [...dbTools, ...uniqueStreaming];
   }, [toolCalls, streamingToolCalls]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (isStreaming || surveyAnswered || showSurvey) return;
+    const hasResponse =
+      filteredContent.length > 0 ||
+      products.length > 0 ||
+      mergedToolCalls.length > 0;
+    if (!hasResponse) return;
+    const lastPromptDate = localStorage.getItem(
+      "sendcat_quality_prompt_date",
+    );
+    const today = getEtDateKey();
+    if (lastPromptDate === today) return;
+    if (Math.random() > 0.05) return;
+
+    localStorage.setItem("sendcat_quality_prompt_date", today);
+    setShowSurvey(true);
+    trackEvent("llm_quality_prompt_shown", { message_id: messageId });
+  }, [
+    filteredContent.length,
+    isStreaming,
+    mergedToolCalls.length,
+    messageId,
+    products.length,
+    showSurvey,
+    surveyAnswered,
+  ]);
 
   const { displayedText, isAnimating } = useSmoothStreaming(
     filteredContent,
@@ -230,6 +279,40 @@ export const StreamingMessage = ({
       {/* Content */}
       {shouldRenderContent && (
         <div className="leading-relaxed break-words">{renderedContent}</div>
+      )}
+
+      {showSurvey && !surveyAnswered && (
+        <div className="flex items-center justify-between gap-3 rounded-xl border border-fuchsia-100 bg-fuchsia-50/40 px-3 py-2 text-xs text-foreground/70">
+          <span className="font-medium">Was this response helpful?</span>
+          <div className="flex items-center gap-2">
+            <button
+              className="rounded-full border border-emerald-200 bg-white px-3 py-1 text-[11px] font-semibold text-emerald-600 transition-colors hover:bg-emerald-50"
+              onClick={() => {
+                setSurveyAnswered(true);
+                setShowSurvey(false);
+                trackEvent("llm_quality_feedback", {
+                  message_id: messageId,
+                  response: "yes",
+                });
+              }}
+            >
+              Yes
+            </button>
+            <button
+              className="rounded-full border border-rose-200 bg-white px-3 py-1 text-[11px] font-semibold text-rose-600 transition-colors hover:bg-rose-50"
+              onClick={() => {
+                setSurveyAnswered(true);
+                setShowSurvey(false);
+                trackEvent("llm_quality_feedback", {
+                  message_id: messageId,
+                  response: "no",
+                });
+              }}
+            >
+              No
+            </button>
+          </div>
+        </div>
       )}
 
       {/* [AGENTIC] Thinking Indicator - Moved here to respect streaming state */}

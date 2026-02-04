@@ -62,6 +62,7 @@ import {
   DialogTitle,
 } from "../ui/dialog";
 import { toast } from "sonner";
+import { identifyUser, resetAnalytics, trackEvent } from "../../lib/analytics";
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -423,6 +424,7 @@ export const Sidebar = ({ isOpen: externalOpen, onToggle }: SidebarProps) => {
     authClient.useSession();
   const { isLoading: isConvexAuthLoading } = useConvexAuth();
   const currentUserId = authSession?.user?.id ?? null;
+  const prevTrackedUserId = useRef<string | null>(null);
 
   // Track auth transitions to prevent showing stale data from previous user
   const prevUserIdRef = useRef<string | null>(undefined as any);
@@ -444,6 +446,26 @@ export const Sidebar = ({ isOpen: externalOpen, onToggle }: SidebarProps) => {
       return () => clearTimeout(timeout);
     }
   }, [currentUserId]);
+
+  useEffect(() => {
+    if (currentUserId) {
+      identifyUser(currentUserId, {
+        email: authSession?.user?.email,
+        name: authSession?.user?.name,
+      });
+      if (prevTrackedUserId.current !== currentUserId) {
+        trackEvent("sign_in_completed", { user_id: currentUserId });
+      }
+      prevTrackedUserId.current = currentUserId;
+      return;
+    }
+
+    if (prevTrackedUserId.current) {
+      trackEvent("sign_out");
+    }
+    prevTrackedUserId.current = null;
+    resetAnalytics();
+  }, [authSession?.user?.email, authSession?.user?.name, currentUserId]);
 
   const isOpen = externalOpen !== undefined ? externalOpen : internalOpen;
   const setIsOpen = (open: boolean) => {
@@ -570,6 +592,7 @@ export const Sidebar = ({ isOpen: externalOpen, onToggle }: SidebarProps) => {
       toast.error("Open a chat to share.");
       return;
     }
+    trackEvent("share_dialog_open", { thread_id: activeThreadId });
     setIsShareOpen(true);
   };
 
@@ -579,6 +602,7 @@ export const Sidebar = ({ isOpen: externalOpen, onToggle }: SidebarProps) => {
     try {
       await navigator.clipboard.writeText(url);
       toast.success("Share link copied");
+      trackEvent("share_thread_copy", { thread_id: activeThreadId, url });
     } catch (err) {
       toast.error("Failed to copy link");
     }
@@ -587,6 +611,7 @@ export const Sidebar = ({ isOpen: externalOpen, onToggle }: SidebarProps) => {
   const handleShareTo = (target: "x" | "whatsapp" | "instagram") => {
     const url = getShareUrl();
     if (!url) return;
+    trackEvent("share_thread_share", { thread_id: activeThreadId, target });
     const shareText = "Check out this chat";
     const encodedUrl = encodeURIComponent(url);
     const encodedText = encodeURIComponent(shareText);

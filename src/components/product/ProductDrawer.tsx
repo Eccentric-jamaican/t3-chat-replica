@@ -10,7 +10,7 @@ import {
   Info,
   Heart,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useAction, useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import { cn } from "../../lib/utils";
@@ -20,6 +20,7 @@ import {
 } from "./productImage";
 import { FavoriteListSelector } from "./FavoriteListSelector";
 import { buildEpnUrl, isEbayUrl } from "../../lib/affiliate";
+import { trackEvent } from "../../lib/analytics";
 
 interface ProductDrawerProps {
   productId: string;
@@ -44,6 +45,7 @@ export function ProductDrawer({ productId, initialData }: ProductDrawerProps) {
   const [product, setProduct] = useState<Product | undefined>(initialData);
   const [loading, setLoading] = useState(!initialData);
   const [error, setError] = useState<string | null>(null);
+  const trackedProductRef = useRef<string | null>(null);
   const isGlobal = product?.source === "global";
   const merchantLabel =
     product?.merchantName ||
@@ -99,6 +101,17 @@ export function ProductDrawer({ productId, initialData }: ProductDrawerProps) {
       document.body.style.overflow = "unset";
     };
   }, []);
+
+  useEffect(() => {
+    if (!product || trackedProductRef.current === product.id) return;
+    trackedProductRef.current = product.id;
+    trackEvent("product_drawer_open", {
+      product_id: product.id,
+      source: product.source,
+      price: priceLabel,
+      merchant_domain: product.merchantDomain,
+    });
+  }, [priceLabel, product]);
 
   useEffect(() => {
     // If we have valid initial data (like from the search bubble), use it
@@ -162,6 +175,16 @@ export function ProductDrawer({ productId, initialData }: ProductDrawerProps) {
         replace: true,
       });
     }
+  };
+
+  const handleVisitMerchant = () => {
+    if (!product) return;
+    trackEvent("visit_merchant_click", {
+      product_id: product.id,
+      source: product.source,
+      merchant_domain: product.merchantDomain,
+      is_affiliate: isEbayListing,
+    });
   };
 
   if (!productId) return null;
@@ -266,6 +289,7 @@ export function ProductDrawer({ productId, initialData }: ProductDrawerProps) {
                     href={affiliateUrl}
                     target="_blank"
                     rel={`noopener noreferrer${isEbayListing ? " sponsored" : ""}`}
+                    onClick={handleVisitMerchant}
                     className="flex w-full items-center justify-center gap-2 rounded-xl border border-zinc-200 py-3 text-sm font-semibold text-zinc-600 transition-colors hover:bg-zinc-50"
                   >
                     <ExternalLink size={16} />
@@ -385,6 +409,7 @@ export function ProductDrawer({ productId, initialData }: ProductDrawerProps) {
                 href={affiliateUrl}
                 target="_blank"
                 rel={`noopener noreferrer${isEbayListing ? " sponsored" : ""}`}
+                onClick={handleVisitMerchant}
                 className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-zinc-900 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-zinc-900/10 transition-colors hover:bg-black"
               >
                 <ExternalLink size={18} />

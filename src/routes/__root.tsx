@@ -90,6 +90,7 @@ import { convex } from "../lib/convex";
 import { authClient } from "../lib/auth";
 import { useVisualViewport } from "../hooks/useVisualViewport";
 import { initSentry } from "../lib/sentry";
+import { initAnalytics, startSessionTracking } from "../lib/analytics";
 
 if (typeof window !== "undefined") {
   initSentry();
@@ -100,6 +101,8 @@ function RootDocument({ children }: { children: React.ReactNode }) {
   useVisualViewport();
 
   useEffect(() => {
+    initAnalytics();
+    const stopSessionTracking = startSessionTracking();
     if (!("serviceWorker" in navigator)) return;
 
     const handleLoad = () => {
@@ -110,6 +113,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
 
     window.addEventListener("load", handleLoad);
     return () => {
+      stopSessionTracking();
       window.removeEventListener("load", handleLoad);
     };
   }, []);

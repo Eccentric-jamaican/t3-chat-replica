@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Globe, ChevronDown, ChevronUp } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { trackEvent } from '../../lib/analytics'
 
 interface SearchResult {
   title: string
@@ -16,6 +17,7 @@ interface SearchToolResultProps {
 
 export function SearchToolResult({ isLoading, result, args }: SearchToolResultProps) {
   const [isOpen, setIsOpen] = useState(false)
+  const hasTrackedResult = useRef(false)
 
   // Parse query from args if available
   let query = "";
@@ -28,6 +30,27 @@ export function SearchToolResult({ isLoading, result, args }: SearchToolResultPr
     }
   }
 
+  const parsedResults = useMemo(() => {
+    if (Array.isArray(result)) return result as SearchResult[];
+    try {
+      if (result && typeof result === "string") return JSON.parse(result) as SearchResult[];
+    } catch (e) {
+      return null;
+    }
+    return [];
+  }, [result]);
+
+  useEffect(() => {
+    if (hasTrackedResult.current || isLoading) return;
+    if (!parsedResults || parsedResults.length === 0) return;
+    hasTrackedResult.current = true;
+    trackEvent("tool_result_render", {
+      tool_name: "search_web",
+      query,
+      total_count: parsedResults.length,
+    });
+  }, [isLoading, parsedResults, query]);
+
   if (isLoading) {
     return (
       <div className="flex items-center gap-2 text-sm text-foreground/60 py-2">
@@ -37,20 +60,12 @@ export function SearchToolResult({ isLoading, result, args }: SearchToolResultPr
     )
   }
 
-  let parsedResults: SearchResult[] = []
-  if (Array.isArray(result)) {
-    parsedResults = result;
-  } else {
-    try {
-      if (result && typeof result === "string") parsedResults = JSON.parse(result)
-    } catch (e) {
-      // If it's pure text (legacy) or error
-      return (
-        <div className="text-xs bg-black/5 p-2 rounded font-mono text-foreground/60">
-          {String(result)}
-        </div>
-      )
-    }
+  if (parsedResults === null) {
+    return (
+      <div className="text-xs bg-black/5 p-2 rounded font-mono text-foreground/60">
+        {String(result)}
+      </div>
+    )
   }
 
   if (!parsedResults || parsedResults.length === 0) return null

@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useNavigate, useSearch } from '@tanstack/react-router'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { authClient } from '../lib/auth'
 import { cn, resolveRedirect } from '../lib/utils'
@@ -7,6 +7,7 @@ import { toast } from 'sonner'
 import { Mail, Lock, ArrowRight, Loader2, AlertCircle } from 'lucide-react'
 import { Button } from '../components/ui/button'
 import { z } from 'zod'
+import { trackEvent } from '../lib/analytics'
 
 const signInSearchSchema = z.object({
   redirect: z.string().optional(),
@@ -24,6 +25,10 @@ function SignIn() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const navigate = useNavigate()
+
+  useEffect(() => {
+    trackEvent('sign_in_view', { redirect: redirect ?? null })
+  }, [redirect])
 
   const handleEmailSignIn = async (e: React.FormEvent) => {
     e.preventDefault()

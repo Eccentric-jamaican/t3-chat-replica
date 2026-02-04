@@ -1,6 +1,7 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ShoppingBag, ChevronDown, ChevronUp } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import { trackEvent } from "../../lib/analytics";
 
 interface EbayToolResultProps {
   isLoading: boolean;
@@ -18,6 +19,7 @@ export function EbayToolResult({
   loadingText,
 }: EbayToolResultProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const hasTrackedResult = useRef(false);
 
   const parsedArgs = useMemo(() => {
     if (!args) return null;
@@ -122,6 +124,18 @@ export function EbayToolResult({
   const combinedCount =
     (typeof ebayCount === "number" ? ebayCount : 0) +
     (typeof globalCount === "number" ? globalCount : 0);
+
+  useEffect(() => {
+    if (hasTrackedResult.current || isLoading || !resultText) return;
+    hasTrackedResult.current = true;
+    trackEvent("tool_result_render", {
+      tool_name: "search_products",
+      query,
+      total_count: combinedCount > 0 ? combinedCount : count ?? null,
+      ebay_count: ebayCount,
+      global_count: globalCount,
+    });
+  }, [combinedCount, count, ebayCount, globalCount, isLoading, query, resultText]);
 
   let summary = resultText;
   if (/limit reached/i.test(resultText)) {

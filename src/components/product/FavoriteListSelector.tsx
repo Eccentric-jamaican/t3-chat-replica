@@ -8,6 +8,7 @@ import { Checkbox } from "../ui/checkbox";
 import { cn } from "../../lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
+import { trackEvent } from "../../lib/analytics";
 
 interface FavoriteListSelectorProps {
   product: Product;
@@ -31,12 +32,20 @@ export function FavoriteListSelector({ product, trigger }: FavoriteListSelectorP
     ) || [];
   
   const handleToggle = async (listId?: any) => {
+    const wasInList = productFavorites.some(
+      (favorite) => favorite.listId === listId,
+    );
     try {
       await toggleFavorite({
         type: "product",
         externalId: product.id,
         item: product,
         listId,
+      });
+      trackEvent(wasInList ? "favorite_removed" : "favorite_added", {
+        product_id: product.id,
+        list_id: listId ?? "all",
+        source: product.source,
       });
     } catch (error) {
       toast.error("Failed to update favorite");
@@ -54,6 +63,15 @@ export function FavoriteListSelector({ product, trigger }: FavoriteListSelectorP
         externalId: product.id,
         item: product,
         listId,
+      });
+      trackEvent("favorite_list_created", {
+        list_id: listId,
+        list_name: newListName.trim(),
+      });
+      trackEvent("favorite_added", {
+        product_id: product.id,
+        list_id: listId,
+        source: product.source,
       });
       setNewListName("");
       setIsCreating(false);

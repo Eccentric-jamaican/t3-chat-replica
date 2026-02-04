@@ -35,6 +35,7 @@ import { ProductExpandedView } from "../components/product/ProductExpandedView";
 import { SelectionActionBar } from "../components/product/SelectionActionBar";
 import { v4 as uuidv4 } from "uuid";
 import { type Product } from "../data/mockProducts";
+import { trackEvent } from "../lib/analytics";
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -123,6 +124,10 @@ function ChatPage() {
   const { productId } = Route.useSearch();
   const navigate = useNavigate();
   const isMobile = useIsMobile();
+  useEffect(() => {
+    if (!threadId) return;
+    trackEvent("thread_opened", { thread_id: threadId });
+  }, [threadId]);
 
   // Wait for Convex auth to be ready before querying messages
   const { isLoading: isConvexAuthLoading } = useConvexAuth();

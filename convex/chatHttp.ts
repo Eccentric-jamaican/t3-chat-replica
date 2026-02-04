@@ -148,6 +148,10 @@ export async function chatHandler(ctx: any, request: Request) {
         let fullContent = "";
         let contentBuffer = "";
         let fullReasoning = "";
+        let requestStart: number | null = null;
+        let firstTokenAt: number | null = null;
+        let lastUsage: any = null;
+        let responseModel: string | null = null;
 
         // [COST CONTROL] Per-turn tool usage counters
         let webSearchCount = 0;
@@ -265,6 +269,10 @@ export async function chatHandler(ctx: any, request: Request) {
 
           const abortController = new AbortController();
           currentAbortController = abortController;
+          requestStart = Date.now();
+          firstTokenAt = null;
+          lastUsage = null;
+          responseModel = null;
           const response = await fetch(
             "https://openrouter.ai/api/v1/chat/completions",
             {
@@ -328,6 +336,13 @@ export async function chatHandler(ctx: any, request: Request) {
                 continue;
               }
 
+              if (data.model && !responseModel) {
+                responseModel = data.model;
+              }
+              if (data.usage) {
+                lastUsage = data.usage;
+              }
+
               // Handle mid-stream errors from OpenRouter
               if (data.error) {
                 console.error(`OpenRouter stream error: ${data.error.message}`);
@@ -347,6 +362,9 @@ export async function chatHandler(ctx: any, request: Request) {
               }
 
               if (delta?.content) {
+                if (!firstTokenAt) {
+                  firstTokenAt = Date.now();
+                }
                 contentBuffer += delta.content;
                 const functionCallParse =
                   parseFunctionCallsFromContent(contentBuffer);
@@ -370,6 +388,9 @@ export async function chatHandler(ctx: any, request: Request) {
 
               // [AGENTIC] Stream Reasoning
               if (delta?.reasoning) {
+                if (!firstTokenAt) {
+                  firstTokenAt = Date.now();
+                }
                 fullReasoning += delta.reasoning;
                 send({ type: "reasoning", content: delta.reasoning });
               }
@@ -394,6 +415,9 @@ export async function chatHandler(ctx: any, request: Request) {
               }
 
               if (delta?.tool_calls) {
+                if (!firstTokenAt) {
+                  firstTokenAt = Date.now();
+                }
                 for (const toolDelta of delta.tool_calls) {
                   const index = toolDelta.index;
 
@@ -454,6 +478,26 @@ export async function chatHandler(ctx: any, request: Request) {
           if (isAborted) {
             await reader.cancel();
             break;
+          }
+
+          if (requestStart) {
+            const latencyMs = Date.now() - requestStart;
+            const ttftMs =
+              typeof firstTokenAt === "number"
+                ? firstTokenAt - requestStart
+                : null;
+            if (lastUsage || latencyMs >= 0) {
+              send({
+                type: "usage",
+                usage: lastUsage,
+                metrics: {
+                  latencyMs,
+                  ttftMs,
+                  modelId: responseModel ?? modelId ?? null,
+                  finishReason,
+                },
+              });
+            }
           }
 
           if (accumulatedToolCalls.length > 0) {
@@ -815,6 +859,16 @@ export async function chatHandler(ctx: any, request: Request) {
         }
       } catch (err: any) {
         console.error("[SSE ERROR]", err);
+        if (requestStart) {
+          send({
+            type: "usage_error",
+            error: err?.message || "Unknown error",
+            metrics: {
+              latencyMs: Date.now() - requestStart,
+              modelId: responseModel ?? modelId ?? null,
+            },
+          });
+        }
         send({ type: "error", error: err.message });
       } finally {
         controller.close();
