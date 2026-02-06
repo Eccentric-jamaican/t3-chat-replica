@@ -1252,7 +1252,7 @@ const ThreadItem = ({
   <body>
     <section class="header">
       <h1>${exportBase.escapeHtml(threadTitle)}</h1>
-      <div><a href="${threadUrl}">${threadUrl}</a></div>
+      <div><a href="${exportBase.escapeHtml(threadUrl)}">${exportBase.escapeHtml(threadUrl)}</a></div>
       <div class="meta-line">Exported: ${exportedAt}</div>
     </section>
     ${transcript}
