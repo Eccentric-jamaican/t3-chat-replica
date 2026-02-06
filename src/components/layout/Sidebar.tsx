@@ -701,7 +701,7 @@ export const Sidebar = ({ isOpen: externalOpen, onToggle }: SidebarProps) => {
           <div
             ref={sidebarScrollRef}
             onScroll={handleSidebarScroll}
-            className="scrollbar-hide sidebar-scroll-area flex-1 overflow-y-auto px-1"
+            className="scrollbar-hide sidebar-scroll-area relative flex-1 overflow-y-auto px-1"
           >
             {pinnedThreads.length > 0 && (
               <>
