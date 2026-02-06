@@ -398,7 +398,7 @@ function ChatPage() {
 
   type VirtualBlock =
     | { type: "parent-link"; parentThreadId: string }
-    | { type: "group"; group: any; groupIndex: number }
+    | { type: "group"; group: MessageGroup; groupIndex: number }
     | { type: "anchor" };
 
   const virtualBlocks: VirtualBlock[] = useMemo(() => {
@@ -613,10 +613,12 @@ function ChatPage() {
     const groupMessages = group.messages;
     const lastMsg = groupMessages[groupMessages.length - 1];
     const isAnyStreaming = groupMessages.some((m: any) => m.status === "streaming");
+    const assistantGroupKey =
+      groupMessages?.[0]?._id ?? `assistant-group-${String(groupIndex)}`;
 
     return (
       <motion.div
-        key={`assistant-group-${groupIndex}`}
+        key={assistantGroupKey}
         initial={disableInitialAnimation ? false : { opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
         className="group mb-6 flex w-full flex-col items-start"
@@ -771,7 +773,9 @@ function ChatPage() {
                               ?
                                 block.group.messages?.[0]?._id ??
                                 "user-" + String(block.groupIndex)
-                              : "assistant-group-" + String(block.groupIndex);
+                              :
+                                block.group.messages?.[0]?._id ??
+                                "assistant-group-" + String(block.groupIndex);
 
                       return (
                         <div

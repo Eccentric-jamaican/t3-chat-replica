@@ -86,6 +86,11 @@ export async function fetchOpenRouterModels(): Promise<AppModel[]> {
   inflightModelsPromise = (async () => {
   try {
     const response = await fetch('https://openrouter.ai/api/v1/models')
+    if (!response.ok) {
+      throw new Error(
+        `OpenRouter API returned ${response.status} ${response.statusText}`,
+      )
+    }
     const data = await response.json()
     
     // safe guard if API fails or shape changes

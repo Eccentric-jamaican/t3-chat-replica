@@ -13,6 +13,7 @@ import {
 import { FavoriteListSelector } from "./FavoriteListSelector";
 import { trackProductView } from "../../lib/analytics";
 import { getOrSetProductDetails } from "../../lib/productDetailsCache";
+import { mapEbayItemDetailsToProduct } from "../../lib/mapEbayItemDetailsToProduct";
 
 interface ProductCardProps {
   product: Product;
@@ -75,22 +76,7 @@ export function ProductCard({ product }: ProductCardProps) {
     prefetchTimeoutRef.current = window.setTimeout(() => {
       void getOrSetProductDetails(product.id, async () => {
         const data = await getItemDetails({ itemId: product.id });
-        return {
-          id: data.itemId,
-          title: data.title,
-          priceRange: `${data.price?.currency} ${data.price?.value}`,
-          image:
-            data.image?.imageUrl || data.additionalImages?.[0]?.imageUrl || "",
-          url: data.itemWebUrl,
-          source: "ebay",
-          sellerName: data.seller?.username,
-          sellerFeedback: data.seller?.feedbackPercentage
-            ? `${data.seller.feedbackPercentage}%`
-            : undefined,
-          condition: data.condition,
-          rating: data.product?.averageRating,
-          reviews: data.product?.reviewCount,
-        } satisfies Product;
+        return mapEbayItemDetailsToProduct(data) satisfies Product;
       }).catch(() => {});
     }, 150);
   };
@@ -103,7 +89,10 @@ export function ProductCard({ product }: ProductCardProps) {
     });
   }, [priceLabel, product.id, product.merchantDomain, product.source]);
 
-  useEffect(() => cancelPrefetch, []);
+  useEffect(() => {
+    // Ensure we don't leave a pending hover prefetch timer alive if this card unmounts.
+    return () => cancelPrefetch();
+  }, []);
 
   return (
     <div

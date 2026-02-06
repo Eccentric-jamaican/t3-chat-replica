@@ -11,6 +11,7 @@ type InflightEntry = {
 };
 
 const DETAILS_TTL_MS = 10 * 60 * 1000; // 10 minutes
+const MAX_ENTRIES = 200;
 
 // In-memory cache is enough to speed up "open drawer, close, reopen" flows.
 // If you later want persistence across reloads, swap this to sessionStorage.
@@ -24,6 +25,11 @@ export function getCachedProductDetails(productId: string): Product | null {
     productDetailsCache.delete(productId);
     return null;
   }
+
+  // Refresh recency for an LRU-ish eviction policy.
+  productDetailsCache.delete(productId);
+  productDetailsCache.set(productId, entry);
+
   return entry.value;
 }
 
@@ -32,6 +38,13 @@ export function setCachedProductDetails(productId: string, value: Product) {
     value,
     expiresAt: Date.now() + DETAILS_TTL_MS,
   });
+
+  // Prevent unbounded growth for long-lived tabs with heavy browsing.
+  while (productDetailsCache.size > MAX_ENTRIES) {
+    const oldestKey = productDetailsCache.keys().next().value as string | undefined;
+    if (!oldestKey) break;
+    productDetailsCache.delete(oldestKey);
+  }
 }
 
 /**
@@ -60,4 +73,3 @@ export function getOrSetProductDetails(
   inflight.set(productId, { promise, expiresAt: Date.now() + DETAILS_TTL_MS });
   return promise;
 }
-

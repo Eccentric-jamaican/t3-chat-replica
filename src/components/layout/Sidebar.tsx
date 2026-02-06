@@ -261,6 +261,12 @@ export const Sidebar = ({ isOpen: externalOpen, onToggle }: SidebarProps) => {
   const prefetchedThreadsRef = useRef(new Set<string>());
   const prefetchedThreadRoutesRef = useRef(new Set<string>());
 
+  useEffect(() => {
+    // Prefetch tracking is per-auth session. Clear on user change to avoid stale IDs suppressing future prefetches.
+    prefetchedThreadsRef.current.clear();
+    prefetchedThreadRoutesRef.current.clear();
+  }, [currentUserId]);
+
   useLayoutEffect(() => {
     const el = sidebarScrollRef.current;
     if (!el) return;
@@ -487,6 +493,8 @@ export const Sidebar = ({ isOpen: externalOpen, onToggle }: SidebarProps) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pinnedThreads.length, unpinnedThreads.length, isOpen]);
 
+  // Keep this in sync with the rendered ThreadItem height. If the CSS changes and the row height changes,
+  // the manual windowing math will need to be updated (otherwise you may see gaps/overlap).
   const THREAD_ROW_HEIGHT = 44;
   const THREAD_OVERSCAN = 8;
   const shouldVirtualizeUnpinned = unpinnedThreads.length > 80;

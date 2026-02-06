@@ -43,7 +43,19 @@ function CategoryIndexPage() {
     : "from-[#f6d365] via-[#fda085] to-[#fbc2eb]";
 
   useEffect(() => {
+    // If this route stays mounted while the param changes, reset UI state to match the new category.
+    const cached = peekExploreItemsCached(itemsKey);
+    setItems(cached ?? []);
+    setIsLoading(!cached);
+    setShowAllSubcategories(false);
+  }, [itemsKey]);
+
+  useEffect(() => {
     if (!category) return;
+    if (!peekExploreItemsCached(itemsKey)) {
+      setIsLoading(true);
+      setItems([]);
+    }
     const fetchData = async () => {
       try {
         const data = await getOrSetExploreItemsCached({

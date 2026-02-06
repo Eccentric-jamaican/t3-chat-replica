@@ -10,64 +10,6 @@ import {
   formatToolCalls,
 } from "./sidebarExportBase";
 
-const CodeHeaderIcon = ({ type }: { type: "download" | "wrap" | "copy" }) => {
-  if (type === "download") {
-    return (
-      <svg
-        viewBox="0 0 24 24"
-        width="14"
-        height="14"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      >
-        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-        <polyline points="7 10 12 15 17 10" />
-        <line x1="12" y1="15" x2="12" y2="3" />
-      </svg>
-    );
-  }
-
-  if (type === "wrap") {
-    return (
-      <svg
-        viewBox="0 0 24 24"
-        width="14"
-        height="14"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      >
-        <line x1="3" y1="6" x2="17" y2="6" />
-        <line x1="3" y1="12" x2="13" y2="12" />
-        <line x1="3" y1="18" x2="9" y2="18" />
-        <path d="M17 12a4 4 0 1 1 0 8" />
-        <polyline points="15 16 17 20 19 16" />
-      </svg>
-    );
-  }
-
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      width="14"
-      height="14"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
-      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-    </svg>
-  );
-};
-
 const renderMarkdownToHtml = (markdown: string) => {
   const components: any = {
     pre: ({ children }: any) => <>{children}</>,
@@ -83,17 +25,6 @@ const renderMarkdownToHtml = (markdown: string) => {
         <div className="code-card">
           <div className="code-header">
             <span className="code-lang">{language}</span>
-            <div className="code-actions">
-              <span className="code-action" aria-hidden>
-                <CodeHeaderIcon type="download" />
-              </span>
-              <span className="code-action" aria-hidden>
-                <CodeHeaderIcon type="wrap" />
-              </span>
-              <span className="code-action" aria-hidden>
-                <CodeHeaderIcon type="copy" />
-              </span>
-            </div>
           </div>
           <pre className="code-body">
             <code className={className}>{children}</code>
@@ -173,4 +104,3 @@ export const formatTranscriptHtml = (entries: any[]) =>
     `;
     })
     .join("\n");
-

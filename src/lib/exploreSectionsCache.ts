@@ -16,7 +16,8 @@ export function getExploreItemsCacheKey(input: {
 }) {
   if (input.section) return `section:${input.section}`;
   if (input.categoryId) return `category:${input.categoryId}`;
-  return "unknown";
+  // This should never happen. Returning a fallback key would silently create cache collisions.
+  throw new Error("getExploreItemsCacheKey requires section or categoryId");
 }
 
 export async function getOrSetExploreItemsCached(opts: {

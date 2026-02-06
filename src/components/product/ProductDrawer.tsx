@@ -22,6 +22,7 @@ import { FavoriteListSelector } from "./FavoriteListSelector";
 import { buildEpnUrl, isEbayUrl } from "../../lib/affiliate";
 import { trackEvent } from "../../lib/analytics";
 import { getCachedProductDetails, getOrSetProductDetails } from "../../lib/productDetailsCache";
+import { mapEbayItemDetailsToProduct } from "../../lib/mapEbayItemDetailsToProduct";
 
 interface ProductDrawerProps {
   productId: string;
@@ -138,23 +139,7 @@ export function ProductDrawer({ productId, initialData }: ProductDrawerProps) {
 
         const mappedProduct = await getOrSetProductDetails(productId, async () => {
           const data = await getItemDetails({ itemId: productId });
-          // Map eBay full item to our Product type
-          return {
-            id: data.itemId,
-            title: data.title,
-            priceRange: `${data.price?.currency} ${data.price?.value}`,
-            image:
-              data.image?.imageUrl || data.additionalImages?.[0]?.imageUrl || "",
-            url: data.itemWebUrl,
-            source: "ebay",
-            sellerName: data.seller?.username,
-            sellerFeedback: data.seller?.feedbackPercentage
-              ? `${data.seller.feedbackPercentage}%`
-              : undefined,
-            condition: data.condition,
-            rating: data.product?.averageRating,
-            reviews: data.product?.reviewCount,
-          } satisfies Product;
+          return mapEbayItemDetailsToProduct(data) satisfies Product;
         });
 
         setProduct(mappedProduct);
