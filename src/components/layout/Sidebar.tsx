@@ -473,7 +473,7 @@ export const Sidebar = ({ isOpen: externalOpen, onToggle }: SidebarProps) => {
     const id = schedule(() => prefetchThread(target, { preloadRoute: false }));
     return () => cancel(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [threads, sessionId, shouldSkipQuery]);
+  }, [activeThreadId, threads, sessionId, shouldSkipQuery]);
 
   const handleRename = async (id: any) => {
     if (!editingTitle.trim()) {
