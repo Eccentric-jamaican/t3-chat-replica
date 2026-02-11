@@ -14,6 +14,7 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip'
 
 import { ProviderIcon, PROVIDER_CONFIG } from './ProviderIcons'
+import { setSelectedModelId } from '../../lib/selectedModel'
 
 interface MessageActionMenuProps {
   type: 'retry' | 'branch'
@@ -74,6 +75,11 @@ export function MessageActionMenu({ type, onAction, children }: MessageActionMen
   const actionLabel = type === 'retry' ? 'Retry same' : 'Branch off'
   const Icon = type === 'retry' ? RotateCcw : GitBranch
 
+  const runAction = (modelId?: string) => {
+    if (modelId) setSelectedModelId(modelId)
+    onAction(modelId)
+  }
+
   return (
     <DropdownMenu>
       <Tooltip>
@@ -96,7 +102,7 @@ export function MessageActionMenu({ type, onAction, children }: MessageActionMen
         className="min-w-[220px] max-h-[400px] overflow-y-auto scrollbar-hide z-[250]"
       >
         {/* Primary action */}
-        <DropdownMenuItem onClick={() => onAction()} className="gap-2">
+        <DropdownMenuItem onClick={() => runAction()} className="gap-2">
           <Icon size={14} />
           <span>{actionLabel}</span>
         </DropdownMenuItem>
@@ -126,7 +132,7 @@ export function MessageActionMenu({ type, onAction, children }: MessageActionMen
                   {favoriteModels.map(model => (
                     <div 
                       key={model.id} 
-                      onClick={(e) => { e.stopPropagation(); onAction(model.id); }}
+                      onClick={(e) => { e.stopPropagation(); runAction(model.id); }}
                       className="flex items-center gap-2 px-2 py-1.5 rounded-sm hover:bg-black/5 cursor-pointer text-[13px]"
                     >
                       <ProviderIcon provider={model.provider} className="w-4 h-4" />
@@ -146,7 +152,7 @@ export function MessageActionMenu({ type, onAction, children }: MessageActionMen
               </DropdownMenuSubTrigger>
               <DropdownMenuSubContent className="max-h-[300px] overflow-y-auto z-[250]">
                 {favoriteModels.map(model => (
-                    <DropdownMenuItem key={model.id} onClick={() => onAction(model.id)} className="gap-2">
+                    <DropdownMenuItem key={model.id} onClick={() => runAction(model.id)} className="gap-2">
                     <ProviderIcon provider={model.provider} className="w-4 h-4" />
                     <span>{model.name}</span>
                   </DropdownMenuItem>
@@ -174,7 +180,7 @@ export function MessageActionMenu({ type, onAction, children }: MessageActionMen
                   {modelsByProvider[provider.id].map(model => (
                     <div 
                       key={model.id} 
-                      onClick={(e) => { e.stopPropagation(); onAction(model.id); }}
+                      onClick={(e) => { e.stopPropagation(); runAction(model.id); }}
                       className="flex items-center gap-2 px-2 py-1.5 rounded-sm hover:bg-black/5 cursor-pointer text-[13px]"
                     >
                       <ProviderIcon provider={model.provider} className="w-4 h-4" />
@@ -194,7 +200,7 @@ export function MessageActionMenu({ type, onAction, children }: MessageActionMen
               </DropdownMenuSubTrigger>
               <DropdownMenuSubContent className="max-h-[300px] overflow-y-auto z-[250]">
                 {modelsByProvider[provider.id].map(model => (
-                  <DropdownMenuItem key={model.id} onClick={() => onAction(model.id)} className="gap-2">
+                  <DropdownMenuItem key={model.id} onClick={() => runAction(model.id)} className="gap-2">
                     <ProviderIcon provider={model.provider} className="w-4 h-4" />
                     <span>{model.name}</span>
                   </DropdownMenuItem>

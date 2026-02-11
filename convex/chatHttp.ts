@@ -13,6 +13,8 @@ import {
 import {
   dedupeProducts,
   parseFunctionCallsFromContent,
+  parseFallbackToolCallsFromContent,
+  hasOpenFallbackToolCall,
 } from "./lib/toolHelpers";
 
  
@@ -283,7 +285,7 @@ export async function chatHandler(ctx: any, request: Request) {
               },
               body: JSON.stringify({
                 models: [
-                  modelId ?? "moonshotai/moonshot-v1-8k",
+                  modelId ?? "moonshotai/kimi-k2.5",
                   "openai/gpt-5",
                   "google/gemini-2.0-flash-exp:free",
                 ],
@@ -379,6 +381,39 @@ export async function chatHandler(ctx: any, request: Request) {
                 if (functionCallParse.hasOpenTag) {
                   continue;
                 }
+
+                // [AGENTIC] Regex/tool-fallback parsing (before streaming content to client).
+                // Some models (e.g. minimax) will emit bracket-style tool hints like:
+                //   [search_web: "..."] or [search_products: "..."]
+                // We must intercept these before sending them as assistant text.
+                if (capabilities.toolFallback === "regex") {
+                  const candidate = fullContent + contentBuffer;
+                  const parsed = parseFallbackToolCallsFromContent(candidate, {
+                    allowWebSearch: !!webSearch,
+                  });
+                  // Always strip fallback tool markup from assistant text, even if we
+                  // can't parse it into an executable tool call.
+                  if (parsed.cleaned !== candidate) {
+                    if (parsed.cleaned.startsWith(fullContent)) {
+                      contentBuffer = parsed.cleaned.slice(fullContent.length);
+                    } else {
+                      // Unexpected, but safest is to replace our accumulated content.
+                      fullContent = parsed.cleaned;
+                      contentBuffer = "";
+                    }
+                  }
+                  if (parsed.toolCalls.length > 0) {
+                    accumulatedToolCalls.push(...parsed.toolCalls);
+                    fullContent = parsed.cleaned;
+                    contentBuffer = "";
+                    break readLoop;
+                  }
+                  if (hasOpenFallbackToolCall(candidate)) {
+                    // Wait for the tool markup to complete before streaming or flushing.
+                    continue;
+                  }
+                }
+
                 if (contentBuffer) {
                   fullContent += contentBuffer;
                   send({ type: "content", content: contentBuffer });
@@ -393,25 +428,6 @@ export async function chatHandler(ctx: any, request: Request) {
                 }
                 fullReasoning += delta.reasoning;
                 send({ type: "reasoning", content: delta.reasoning });
-              }
-
-              // [AGENTIC] Regex Fallback
-              if (capabilities.toolFallback === "regex" && delta?.content) {
-                const searchRegex = /\[\[SEARCH: (.*?)\]\]/;
-                const match = fullContent.match(searchRegex);
-                if (match) {
-                  const query = match[1];
-                  accumulatedToolCalls.push({
-                    id: `call_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
-                    type: "function",
-                    function: {
-                      name: "search_web",
-                      arguments: JSON.stringify({ query }),
-                    },
-                  });
-                  // Break reader loop to execute tool
-                  break readLoop;
-                }
               }
 
               if (delta?.tool_calls) {

@@ -19,6 +19,7 @@ import { ModelPicker } from "./ModelPicker";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import { toast } from "sonner";
 import { trackEvent } from "../../lib/analytics";
+import { useSelectedModelId } from "../../hooks/useSelectedModelId";
 
 export interface ChatInputProps {
   existingThreadId?: string;
@@ -38,23 +39,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
     const [isGenerating, setIsGenerating] = useState(false);
     const [showBanner, setShowBanner] = useState(true);
 
-    const [selectedModelId, setSelectedModelId] = useState(
-      "openai/gpt-oss-120b:free",
-    );
-
-    useEffect(() => {
-      if (typeof window === "undefined") return;
-      const saved = localStorage.getItem("t3_selected_model");
-      if (saved) {
-        setSelectedModelId(saved);
-      }
-    }, []);
-
-    useEffect(() => {
-      if (typeof window !== "undefined") {
-        localStorage.setItem("t3_selected_model", selectedModelId);
-      }
-    }, [selectedModelId]);
+    const [selectedModelId, setSelectedModelId] = useSelectedModelId();
 
     const handleModelSelect = (modelId: string) => {
       if (modelId === selectedModelId) return;

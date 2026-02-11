@@ -42,6 +42,7 @@ import { v4 as uuidv4 } from "uuid";
 import { type Product } from "../data/mockProducts";
 import { trackEvent } from "../lib/analytics";
 import { useVirtualizer } from "@tanstack/react-virtual";
+import { getSelectedModelId, setSelectedModelId } from "../lib/selectedModel";
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -266,10 +267,8 @@ function ChatPage() {
         localStorage.setItem("sendcat_session_id", branchSessionId);
       }
 
-      const selectedModel =
-        modelId ||
-        localStorage.getItem("t3_selected_model") ||
-        "google/gemini-2.0-flash-exp:free";
+      const selectedModel = modelId ?? getSelectedModelId();
+      if (modelId) setSelectedModelId(modelId);
 
       // Determine the correct parent thread ID (avoid unnecessary nesting)
       let finalParentThreadId = threadId;
@@ -352,6 +351,7 @@ function ChatPage() {
 
   const handleRetry = async (userMessageId: string, modelId?: string) => {
     if (retryingMessageId === userMessageId) return;
+    if (modelId) setSelectedModelId(modelId);
     setRetryingMessageId(userMessageId);
     await createBranch(userMessageId, modelId ?? undefined);
     setRetryingMessageId(null);
@@ -359,6 +359,7 @@ function ChatPage() {
 
   const handleBranch = async (userMessageId: string, modelId?: string) => {
     if (branchingMessageId === userMessageId) return;
+    if (modelId) setSelectedModelId(modelId);
     setBranchingMessageId(userMessageId);
     await createBranch(userMessageId, modelId ?? undefined);
     setBranchingMessageId(null);

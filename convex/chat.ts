@@ -13,6 +13,8 @@ import { getBasePrompt, getRegexFallbackPrompt } from "./lib/prompts";
 import {
   dedupeProducts,
   parseFunctionCallsFromContent,
+  parseFallbackToolCallsFromContent,
+  hasOpenFallbackToolCall,
 } from "./lib/toolHelpers";
 
 const TOOLS = [
@@ -420,7 +422,7 @@ export const streamAnswer = action({
             body: JSON.stringify({
               // Use models array for automatic fallback on errors
               models: [
-                args.modelId ?? "google/gemini-2.0-flash-exp:free",
+                args.modelId ?? "moonshotai/kimi-k2.5",
                 "anthropic/claude-sonnet-4",
                 "google/gemini-2.0-flash-001",
               ],
@@ -558,26 +560,24 @@ export const streamAnswer = action({
                 // [AGENTIC LOGIC] Regex Tool Parsing Fallback
                 // Only check if enabled for this model to avoid perf hit on all models
                 if (capabilities.toolFallback === "regex") {
-                  const searchRegex = /\[\[SEARCH: (.*?)\]\]/;
-                  const match = contentBuffer.match(searchRegex);
-                  if (match) {
-                    const query = match[1];
-                    console.log(
-                      `[AGENTIC] Detected manual search command: ${query}`,
-                    );
-
-                    // Synthesize a tool call
-                    accumulatedToolCalls.push({
-                      id: `call_${Date.now()}`,
-                      type: "function",
-                      function: {
-                        name: "search_web",
-                        arguments: JSON.stringify({ query }),
-                      },
-                    });
-
-                    // We treat this as a "stop" event to execute the tool immediately
+                  const parsed = parseFallbackToolCallsFromContent(
+                    contentBuffer,
+                    { allowWebSearch: !!args.webSearch },
+                  );
+                  // Always strip fallback tool markup from assistant text (even if we
+                  // fail to parse it into executable tool calls).
+                  if (parsed.cleaned !== contentBuffer) {
+                    contentBuffer = parsed.cleaned;
+                  }
+                  if (parsed.toolCalls.length > 0) {
+                    accumulatedToolCalls.push(...parsed.toolCalls);
+                    // Stop streaming and execute the tool(s) immediately.
                     break streamLoop;
+                  }
+                  // If a tool call looks like it's being streamed but isn't complete yet,
+                  // don't flush partial markup to the DB. Wait for the closing bracket/tag.
+                  if (hasOpenFallbackToolCall(contentBuffer)) {
+                    continue;
                   }
                 }
 

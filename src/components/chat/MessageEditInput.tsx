@@ -11,6 +11,7 @@ import { useIsMobile } from "../../hooks/useIsMobile";
 import { useNavigate } from "@tanstack/react-router";
 import { v4 as uuidv4 } from "uuid";
 import { toast } from "sonner";
+import { useSelectedModelId } from "../../hooks/useSelectedModelId";
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -57,9 +58,7 @@ export function MessageEditInput({
     setSessionId(newId);
   }, []);
 
-  const [selectedModelId, setSelectedModelId] = useState(
-    "google/gemini-2.0-flash-exp:free",
-  );
+  const [selectedModelId, setSelectedModelId] = useSelectedModelId();
 
   const [searchEnabled, setSearchEnabled] = useState(false);
   const [reasoningEffort, setReasoningEffort] = useState<string | null>(null);
@@ -71,10 +70,6 @@ export function MessageEditInput({
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const savedModel = localStorage.getItem("t3_selected_model");
-    if (savedModel) {
-      setSelectedModelId(savedModel);
-    }
     const savedReasoning = localStorage.getItem("t3_reasoning_effort");
     if (savedReasoning !== null) {
       setReasoningEffort(savedReasoning);
@@ -327,8 +322,8 @@ export function MessageEditInput({
         })),
       });
 
-      // Save model selection
-      localStorage.setItem("t3_selected_model", selectedModelId);
+      // Ensure the global model picker reflects the model used for this request.
+      setSelectedModelId(selectedModelId);
 
       // CRITICAL: Close UI and Navigate IMMEDIATELY before starting the slow stream
       onSubmit();

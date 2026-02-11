@@ -186,7 +186,7 @@ export function getModelCapabilities(
   modelId: string | undefined,
 ): ModelCapability {
   if (!modelId) {
-    return MODEL_CAPABILITIES["moonshotai/moonshot-v1-8k"]; // Default safe
+    return MODEL_CAPABILITIES["moonshotai/kimi-k2.5"]; // Default
   }
 
   // Specific override for known capabilities if not found in map
