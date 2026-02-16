@@ -43,7 +43,6 @@ import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
 import {
   useNavigate,
-  useParams,
   Link,
   useLocation,
   useRouter,
@@ -111,7 +110,10 @@ export const Sidebar = ({ isOpen: externalOpen, onToggle }: SidebarProps) => {
   const router = useRouter();
   const location = useLocation();
   const convex = useConvex();
-  const { threadId: activeThreadId } = useParams({ strict: false }) as any;
+  const activeThreadId = useMemo(() => {
+    const match = location.pathname.match(/^\/chat\/([^/]+)$/);
+    return match?.[1] ?? null;
+  }, [location.pathname]);
   const isMobile = useIsMobile();
   const isNestedExplore =
     location.pathname.includes("/explore/category") ||
