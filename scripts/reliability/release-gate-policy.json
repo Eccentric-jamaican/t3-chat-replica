@@ -1,0 +1,18 @@
+{
+  "snapshot": {
+    "maxOpenCircuits": 0,
+    "maxRateLimitAlertsInWindow": 2,
+    "maxBulkheadActiveLeases": 120,
+    "maxQueuedToolJobs": 120,
+    "maxFailedToolJobs": 80,
+    "maxOldestQueuedAgeMs": 300000,
+    "maxOldestRunningAgeMs": 300000
+  },
+  "burnRate": {
+    "enabled": true,
+    "shortWindowMaxBurnRate": 3,
+    "longWindowMaxBurnRate": 1.5,
+    "lookbackReports": 8,
+    "minReportsForLongWindow": 3
+  }
+}

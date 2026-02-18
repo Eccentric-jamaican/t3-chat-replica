@@ -8,7 +8,7 @@ import {
   MutationCtx,
 } from "./_generated/server";
 import { Id } from "./_generated/dataModel";
-import { getAuthUserId } from "./auth";
+import { requireMessageAccess, requireThreadAccess } from "./lib/authGuards";
 
 /**
  * Verify the current user has access to a thread.
@@ -20,41 +20,9 @@ async function verifyThreadAccess(
   ctx: QueryCtx | MutationCtx,
   threadId: Id<"threads">,
   sessionId?: string,
+  functionName = "messages.unknown",
 ): Promise<void> {
-  const thread = await ctx.db.get(threadId);
-  if (!thread) {
-    throw new Error("Thread not found");
-  }
-
-  const userId = await getAuthUserId(ctx);
-
-  // If thread belongs to an authenticated user
-  if (thread.userId) {
-    if (!userId || thread.userId !== userId) {
-      console.log("[SECURITY] Message access denied:", {
-        threadId,
-        threadOwner: thread.userId,
-        requestingUser: userId ?? "anonymous",
-        timestamp: new Date().toISOString(),
-      });
-      throw new Error(
-        "Access denied: You don't have permission to access this thread",
-      );
-    }
-  } else {
-    // Anonymous thread - sessionId is required and must match
-    if (!sessionId || thread.sessionId !== sessionId) {
-      console.log("[SECURITY] Anonymous message access denied:", {
-        threadId,
-        threadSession: thread.sessionId,
-        requestingSession: sessionId ?? "none",
-        timestamp: new Date().toISOString(),
-      });
-      throw new Error(
-        "Access denied: You don't have permission to access this thread",
-      );
-    }
-  }
+  await requireThreadAccess(ctx, { threadId, sessionId, functionName });
 }
 
 /**
@@ -64,19 +32,16 @@ async function verifyMessageAccess(
   ctx: QueryCtx | MutationCtx,
   messageId: Id<"messages">,
   sessionId?: string,
+  functionName = "messages.unknown",
 ): Promise<void> {
-  const message = await ctx.db.get(messageId);
-  if (!message) {
-    throw new Error("Message not found");
-  }
-  await verifyThreadAccess(ctx, message.threadId, sessionId);
+  await requireMessageAccess(ctx, { messageId, sessionId, functionName });
 }
 
 export const list = query({
   args: { threadId: v.id("threads"), sessionId: v.optional(v.string()) },
   handler: async (ctx, args) => {
     // Verify ownership before returning messages
-    await verifyThreadAccess(ctx, args.threadId, args.sessionId);
+    await verifyThreadAccess(ctx, args.threadId, args.sessionId, "messages.list");
 
     const messages = await ctx.db
       .query("messages")
@@ -140,7 +105,7 @@ export const send = mutation({
   },
   handler: async (ctx, args) => {
     // Verify ownership before sending message
-    await verifyThreadAccess(ctx, args.threadId, args.sessionId);
+    await verifyThreadAccess(ctx, args.threadId, args.sessionId, "messages.send");
 
     const { sessionId: _, ...messageData } = args;
     const messageId = await ctx.db.insert("messages", {
@@ -174,7 +139,12 @@ export const saveToolCalls = mutation({
   },
   handler: async (ctx, args) => {
     // Verify ownership before modifying
-    await verifyMessageAccess(ctx, args.messageId, args.sessionId);
+    await verifyMessageAccess(
+      ctx,
+      args.messageId,
+      args.sessionId,
+      "messages.saveToolCalls",
+    );
 
     const existing = await ctx.db.get(args.messageId);
     const toolCalls = [...(existing?.toolCalls || []), ...args.toolCalls];
@@ -190,7 +160,12 @@ export const saveReasoningContent = mutation({
   },
   handler: async (ctx, args) => {
     // Verify ownership before modifying
-    await verifyMessageAccess(ctx, args.messageId, args.sessionId);
+    await verifyMessageAccess(
+      ctx,
+      args.messageId,
+      args.sessionId,
+      "messages.saveReasoningContent",
+    );
 
     const existing = await ctx.db.get(args.messageId);
     const reasoningContent =
@@ -224,7 +199,12 @@ export const saveProducts = mutation({
   },
   handler: async (ctx, args) => {
     // Verify ownership before modifying
-    await verifyMessageAccess(ctx, args.messageId, args.sessionId);
+    await verifyMessageAccess(
+      ctx,
+      args.messageId,
+      args.sessionId,
+      "messages.saveProducts",
+    );
 
     await ctx.db.patch(args.messageId, { products: args.products });
   },
@@ -238,7 +218,12 @@ export const initializeAssistantMessage = mutation({
   },
   handler: async (ctx, args) => {
     // Verify ownership before creating message
-    await verifyThreadAccess(ctx, args.threadId, args.sessionId);
+    await verifyThreadAccess(
+      ctx,
+      args.threadId,
+      args.sessionId,
+      "messages.initializeAssistantMessage",
+    );
 
     return await ctx.db.insert("messages", {
       threadId: args.threadId,
@@ -266,7 +251,12 @@ export const appendContent = mutation({
   },
   handler: async (ctx, args): Promise<{ aborted: boolean }> => {
     // Verify ownership before modifying
-    await verifyMessageAccess(ctx, args.messageId, args.sessionId);
+    await verifyMessageAccess(
+      ctx,
+      args.messageId,
+      args.sessionId,
+      "messages.appendContent",
+    );
 
     const message = await ctx.db.get(args.messageId);
     if (!message) throw new Error("Message not found");
@@ -296,7 +286,12 @@ export const updateStatus = mutation({
   },
   handler: async (ctx, args) => {
     // Verify ownership before modifying
-    await verifyMessageAccess(ctx, args.messageId, args.sessionId);
+    await verifyMessageAccess(
+      ctx,
+      args.messageId,
+      args.sessionId,
+      "messages.updateStatus",
+    );
 
     await ctx.db.patch(args.messageId, { status: args.status });
   },
@@ -306,7 +301,12 @@ export const abort = mutation({
   args: { messageId: v.id("messages"), sessionId: v.optional(v.string()) },
   handler: async (ctx, args) => {
     // Verify ownership before modifying
-    await verifyMessageAccess(ctx, args.messageId, args.sessionId);
+    await verifyMessageAccess(
+      ctx,
+      args.messageId,
+      args.sessionId,
+      "messages.abort",
+    );
 
     await ctx.db.patch(args.messageId, { status: "aborted" });
   },
@@ -316,7 +316,12 @@ export const abortLatestInThread = mutation({
   args: { threadId: v.id("threads"), sessionId: v.optional(v.string()) },
   handler: async (ctx, args) => {
     // Verify ownership before modifying
-    await verifyThreadAccess(ctx, args.threadId, args.sessionId);
+    await verifyThreadAccess(
+      ctx,
+      args.threadId,
+      args.sessionId,
+      "messages.abortLatestInThread",
+    );
 
     console.log("abortLatestInThread called for thread:", args.threadId);
     const latest = await ctx.db
@@ -342,7 +347,12 @@ export const getStatus = query({
   args: { messageId: v.id("messages"), sessionId: v.optional(v.string()) },
   handler: async (ctx, args) => {
     // Verify ownership before returning status
-    await verifyMessageAccess(ctx, args.messageId, args.sessionId);
+    await verifyMessageAccess(
+      ctx,
+      args.messageId,
+      args.sessionId,
+      "messages.getStatus",
+    );
 
     const msg = await ctx.db.get(args.messageId);
     return msg?.status;
@@ -358,7 +368,12 @@ export const isThreadStreaming = query({
     if (!args.threadId) return false;
 
     // Verify ownership before checking streaming status
-    await verifyThreadAccess(ctx, args.threadId, args.sessionId);
+    await verifyThreadAccess(
+      ctx,
+      args.threadId,
+      args.sessionId,
+      "messages.isThreadStreaming",
+    );
 
     const latest = await ctx.db
       .query("messages")
@@ -379,7 +394,7 @@ export const update = mutation({
   },
   handler: async (ctx, args) => {
     // Verify ownership before modifying
-    await verifyMessageAccess(ctx, args.id, args.sessionId);
+    await verifyMessageAccess(ctx, args.id, args.sessionId, "messages.update");
 
     await ctx.db.patch(args.id, { content: args.content });
   },
@@ -394,7 +409,12 @@ export const deleteAfter = mutation({
   },
   handler: async (ctx, args) => {
     // Verify ownership before deleting
-    await verifyThreadAccess(ctx, args.threadId, args.sessionId);
+    await verifyThreadAccess(
+      ctx,
+      args.threadId,
+      args.sessionId,
+      "messages.deleteAfter",
+    );
 
     const messages = await ctx.db
       .query("messages")

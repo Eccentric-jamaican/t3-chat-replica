@@ -7,6 +7,7 @@ import {
 import { v } from "convex/values";
 import { getApplicationToken } from "./ebay";
 import { internal } from "./_generated/api";
+import { fetchWithRetry } from "./lib/network";
 
 type EbayCategoryNode = {
   category?: {
@@ -63,13 +64,20 @@ async function fetchCategoryTreeId(token: string, marketplaceId: string) {
   );
   url.searchParams.set("marketplace_id", marketplaceId);
 
-  const response = await fetch(url.toString(), {
-    method: "GET",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
+  const response = await fetchWithRetry(
+    url.toString(),
+    {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
     },
-  });
+    {
+      timeoutMs: 8_000,
+      retries: 2,
+    },
+  );
 
   if (!response.ok) {
     const errorBody = await response.text();
@@ -87,13 +95,20 @@ async function fetchCategoryTreeId(token: string, marketplaceId: string) {
 
 async function fetchCategoryTree(token: string, treeId: string) {
   const url = `https://api.ebay.com/commerce/taxonomy/v1/category_tree/${treeId}`;
-  const response = await fetch(url, {
-    method: "GET",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
+  const response = await fetchWithRetry(
+    url,
+    {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
     },
-  });
+    {
+      timeoutMs: 8_000,
+      retries: 2,
+    },
+  );
 
   if (!response.ok) {
     const errorBody = await response.text();

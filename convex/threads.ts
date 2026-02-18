@@ -1,7 +1,8 @@
 import { v } from "convex/values";
 import { mutation, query, internalQuery, QueryCtx, MutationCtx } from "./_generated/server";
 import { Id, Doc } from "./_generated/dataModel";
-import { getAuthUserId, safeGetAuthUser } from "./auth";
+import { getAuthUserId } from "./auth";
+import { requireAuthenticatedUserId, requireThreadAccess as enforceThreadAccess } from "./lib/authGuards";
 
 const isDebugMode = process.env.CONVEX_DEBUG_LOGS === "true";
 const shareTokenPrefix = "share_";
@@ -26,62 +27,25 @@ function generateShareToken() {
 async function verifyThreadAccess(
   ctx: QueryCtx | MutationCtx,
   threadId: Id<"threads">,
-  sessionId?: string
+  sessionId?: string,
+  functionName = "threads.verifyThreadAccess",
 ): Promise<{ thread: Doc<"threads">; userId: string | null }> {
-  const thread = await ctx.db.get(threadId);
-  if (!thread) {
-    throw new Error("Thread not found");
-  }
-
-  const userId = await getAuthUserId(ctx);
-
-  // If thread belongs to an authenticated user
-  if (thread.userId) {
-    if (!userId || thread.userId !== userId) {
-      console.log("[SECURITY] Thread access denied:", {
-        threadId,
-        threadOwner: thread.userId,
-        requestingUser: userId ?? "anonymous",
-        timestamp: new Date().toISOString(),
-      });
-      throw new Error("Access denied: You don't have permission to access this thread");
-    }
-  } else {
-    // Anonymous thread - verify sessionId matches
-    if (!sessionId || thread.sessionId !== sessionId) {
-      console.log("[SECURITY] Anonymous thread access denied:", {
-        threadId,
-        threadSession: thread.sessionId,
-        requestingSession: sessionId ?? "none",
-        timestamp: new Date().toISOString(),
-      });
-      throw new Error("Access denied: You don't have permission to access this thread");
-    }
-  }
-
-  return { thread, userId };
+  return await enforceThreadAccess(ctx, {
+    threadId,
+    sessionId,
+    functionName,
+  });
 }
 
 // Internal auth check for actions (single DB read, no extra data returned)
 export const internalVerifyThreadAccess = internalQuery({
   args: { threadId: v.id("threads"), sessionId: v.optional(v.string()) },
   handler: async (ctx, args) => {
-    const thread = await ctx.db.get(args.threadId);
-    if (!thread) {
-      throw new Error("Thread not found");
-    }
-
-    const userId = await getAuthUserId(ctx);
-
-    if (thread.userId) {
-      if (!userId || thread.userId !== userId) {
-        throw new Error("Access denied: You don't have permission to access this thread");
-      }
-    } else {
-      if (!args.sessionId || thread.sessionId !== args.sessionId) {
-        throw new Error("Access denied: You don't have permission to access this thread");
-      }
-    }
+    await enforceThreadAccess(ctx, {
+      threadId: args.threadId,
+      sessionId: args.sessionId,
+      functionName: "threads.internalVerifyThreadAccess",
+    });
 
     return { ok: true };
   },
@@ -126,7 +90,12 @@ export const create = mutation({
 export const get = query({
   args: { id: v.id("threads"), sessionId: v.optional(v.string()) },
   handler: async (ctx, args) => {
-    const { thread } = await verifyThreadAccess(ctx, args.id, args.sessionId);
+    const { thread } = await verifyThreadAccess(
+      ctx,
+      args.id,
+      args.sessionId,
+      "threads.get",
+    );
     return thread;
   },
 });
@@ -190,7 +159,7 @@ export const remove = mutation({
   args: { id: v.id("threads"), sessionId: v.optional(v.string()) },
   handler: async (ctx, args) => {
     // Verify ownership before deleting
-    await verifyThreadAccess(ctx, args.id, args.sessionId);
+    await verifyThreadAccess(ctx, args.id, args.sessionId, "threads.remove");
 
     if (isDebugMode) {
       console.log("[THREADS] remove - Authorized deletion:", { threadId: args.id });
@@ -214,7 +183,12 @@ export const togglePinned = mutation({
   args: { id: v.id("threads"), sessionId: v.optional(v.string()) },
   handler: async (ctx, args) => {
     // Verify ownership before modifying
-    const { thread } = await verifyThreadAccess(ctx, args.id, args.sessionId);
+    const { thread } = await verifyThreadAccess(
+      ctx,
+      args.id,
+      args.sessionId,
+      "threads.togglePinned",
+    );
     await ctx.db.patch(args.id, { isPinned: !thread.isPinned });
   },
 });
@@ -223,7 +197,7 @@ export const rename = mutation({
   args: { id: v.id("threads"), title: v.string(), sessionId: v.optional(v.string()) },
   handler: async (ctx, args) => {
     // Verify ownership before modifying
-    await verifyThreadAccess(ctx, args.id, args.sessionId);
+    await verifyThreadAccess(ctx, args.id, args.sessionId, "threads.rename");
     await ctx.db.patch(args.id, { title: args.title });
   },
 });
@@ -235,6 +209,7 @@ export const createShareToken = mutation({
       ctx,
       args.threadId,
       args.sessionId,
+      "threads.createShareToken",
     );
 
     const existing = await ctx.db
@@ -335,18 +310,13 @@ export const createShareFork = mutation({
 export const claimThreads = mutation({
   args: { sessionId: v.string() },
   handler: async (ctx, args) => {
-    const user = await safeGetAuthUser(ctx);
+    const userId = await requireAuthenticatedUserId(ctx, "threads.claimThreads");
 
     if (isDebugMode) {
       console.log("[THREADS] claimThreads - Auth state:", {
-        isAuthenticated: !!user,
-        userId: user?._id ?? null,
+        isAuthenticated: true,
+        userId,
       });
-    }
-
-    if (!user) {
-      if (isDebugMode) console.log("[THREADS] claimThreads - REJECTED: Not authenticated");
-      throw new Error("Must be authenticated to claim threads");
     }
 
     // Find all threads with this sessionId that don't have a userId
@@ -366,7 +336,7 @@ export const claimThreads = mutation({
     }
 
     for (const thread of unclaimedThreads) {
-      await ctx.db.patch(thread._id, { userId: user._id });
+      await ctx.db.patch(thread._id, { userId });
       claimedCount++;
     }
 
@@ -374,7 +344,7 @@ export const claimThreads = mutation({
       console.log("[THREADS] claimThreads - Complete:", { claimedCount });
     }
 
-    return { claimedCount, userId: user._id };
+    return { claimedCount, userId };
   },
 });
 
@@ -383,16 +353,14 @@ export const claimThreads = mutation({
 export const adminClaimThreads = mutation({
   args: { sessionId: v.string() },
   handler: async (ctx, args) => {
-    const user = await safeGetAuthUser(ctx);
-
-    if (!user) {
-      console.log("[SECURITY] adminClaimThreads - REJECTED: Not authenticated");
-      throw new Error("Must be authenticated to claim threads");
-    }
+    const userId = await requireAuthenticatedUserId(
+      ctx,
+      "threads.adminClaimThreads",
+    );
 
     if (isDebugMode) {
       console.log("[THREADS] adminClaimThreads - Authorized claim:", {
-        userId: user._id,
+        userId,
       });
     }
 
@@ -405,7 +373,7 @@ export const adminClaimThreads = mutation({
     let claimedCount = 0;
 
     for (const thread of unclaimedThreads) {
-      await ctx.db.patch(thread._id, { userId: user._id });
+      await ctx.db.patch(thread._id, { userId });
       claimedCount++;
     }
 
@@ -416,6 +384,6 @@ export const adminClaimThreads = mutation({
       });
     }
 
-    return { claimedCount, totalThreads: threads.length, userId: user._id };
+    return { claimedCount, totalThreads: threads.length, userId };
   },
 });

@@ -1,3 +1,5 @@
+import { fetchWithRetry } from "../lib/network";
+
 type SendEmailInput = {
   to: string;
   subject: string;
@@ -25,21 +27,30 @@ export async function sendEmail({
     throw new Error("Missing required env var EMAIL_FROM");
   }
 
-  const response = await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
+  const response = await fetchWithRetry(
+    "https://api.resend.com/emails",
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        from: resolvedFrom,
+        to,
+        subject,
+        html,
+        text,
+        ...(replyTo ? { reply_to: replyTo } : {}),
+      }),
     },
-    body: JSON.stringify({
-      from: resolvedFrom,
-      to,
-      subject,
-      html,
-      text,
-      ...(replyTo ? { reply_to: replyTo } : {}),
-    }),
-  });
+    {
+      timeoutMs: 10_000,
+      // Email send is non-idempotent; avoid automatic retries to reduce
+      // duplicate-send risk without an explicit idempotency key.
+      retries: 0,
+    },
+  );
 
   if (!response.ok) {
     const errorText = await response.text();

@@ -1,28 +1,36 @@
 import { v } from "convex/values";
 import { mutation, query, QueryCtx, MutationCtx } from "./_generated/server";
 import { Id, Doc } from "./_generated/dataModel";
-import { getAuthUserId } from "./auth";
+import {
+  assertOwnedByUser,
+  getOptionalAuthenticatedUserId,
+  requireAuthenticatedUserId,
+} from "./lib/authGuards";
+import { throwFunctionError } from "./lib/functionErrors";
 
 async function verifyListAccess(
   ctx: QueryCtx | MutationCtx,
-  listId: Id<"favoriteLists">
+  listId: Id<"favoriteLists">,
+  functionName: string,
 ): Promise<{ list: Doc<"favoriteLists">; userId: string }> {
-  const userId = await getAuthUserId(ctx);
-  if (!userId) {
-    throw new Error("Must be authenticated");
-  }
+  const userId = await requireAuthenticatedUserId(ctx, functionName);
   const list = await ctx.db.get(listId);
-  if (!list || list.userId !== userId) {
-    throw new Error("List not found or access denied");
+  if (!list) {
+    throwFunctionError("not_found", functionName, "List not found");
   }
+  assertOwnedByUser(userId, list.userId, functionName, {
+    forbiddenMessage: "List not found or access denied",
+  });
   return { list, userId };
 }
 
 export const createList = mutation({
   args: { name: v.string() },
   handler: async (ctx, args) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Must be authenticated");
+    const userId = await requireAuthenticatedUserId(
+      ctx,
+      "favorites.createList",
+    );
     return await ctx.db.insert("favoriteLists", {
       userId,
       name: args.name,
@@ -34,7 +42,7 @@ export const createList = mutation({
 export const renameList = mutation({
   args: { listId: v.id("favoriteLists"), name: v.string() },
   handler: async (ctx, args) => {
-    await verifyListAccess(ctx, args.listId);
+    await verifyListAccess(ctx, args.listId, "favorites.renameList");
     await ctx.db.patch(args.listId, { name: args.name });
   },
 });
@@ -42,7 +50,7 @@ export const renameList = mutation({
 export const deleteList = mutation({
   args: { listId: v.id("favoriteLists") },
   handler: async (ctx, args) => {
-    await verifyListAccess(ctx, args.listId);
+    await verifyListAccess(ctx, args.listId, "favorites.deleteList");
     // Delete all favorites associated with this list
     const favorites = await ctx.db
       .query("favorites")
@@ -63,8 +71,10 @@ export const toggleFavorite = mutation({
     item: v.any(),
   },
   handler: async (ctx, args) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Must be authenticated");
+    const userId = await requireAuthenticatedUserId(
+      ctx,
+      "favorites.toggleFavorite",
+    );
 
     // Check if it exists in the specific list (or general if listId is undefined)
     const existing = await ctx.db
@@ -103,8 +113,10 @@ export const removeFromList = mutation({
     externalId: v.string(),
   },
   handler: async (ctx, args) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Must be authenticated");
+    const userId = await requireAuthenticatedUserId(
+      ctx,
+      "favorites.removeFromList",
+    );
 
     const favorites = await ctx.db
       .query("favorites")
@@ -127,7 +139,7 @@ export const removeFromList = mutation({
 export const listFavorites = query({
   args: {},
   handler: async (ctx) => {
-    const userId = await getAuthUserId(ctx);
+    const userId = await getOptionalAuthenticatedUserId(ctx);
     if (!userId) return null;
 
     const favorites = await ctx.db
@@ -147,7 +159,7 @@ export const listFavorites = query({
 export const getUserFavoritesIds = query({
   args: {},
   handler: async (ctx) => {
-    const userId = await getAuthUserId(ctx);
+    const userId = await getOptionalAuthenticatedUserId(ctx);
     if (!userId) return [];
 
     const favorites = await ctx.db

@@ -2,20 +2,41 @@ import { v } from "convex/values";
 import { action } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
-import {
-  searchEbayItems,
-  getEbayItemDetails as fetchEbayDetails,
-} from "./ebay";
-import { searchGlobalItems } from "./global";
+import { getAuthUserId } from "./auth";
+import { getEbayItemDetails as fetchEbayDetails } from "./ebay";
 import { getModelCapabilities } from "./lib/models";
 import { normalizeEbaySearchArgs } from "./lib/ebaySearch";
 import { getBasePrompt, getRegexFallbackPrompt } from "./lib/prompts";
+import {
+  acquireBulkheadSlot,
+  isBulkheadSaturatedError,
+  releaseBulkheadSlot,
+} from "./lib/bulkhead";
+import {
+  assertCircuitClosed,
+  recordCircuitError,
+  recordCircuitResponse,
+} from "./lib/circuitBreaker";
 import {
   dedupeProducts,
   parseFunctionCallsFromContent,
   parseFallbackToolCallsFromContent,
   hasOpenFallbackToolCall,
 } from "./lib/toolHelpers";
+import {
+  buildProductSearchCacheKey,
+  normalizeToolCacheText,
+} from "./lib/toolCacheKeys";
+import {
+  getRateLimits,
+  buildRateLimitErrorMessage,
+  isRateLimitContentionError,
+} from "./lib/rateLimit";
+import {
+  getToolCacheConfig,
+  getToolCacheNamespaces,
+} from "./lib/reliabilityConfig";
+import { enqueueToolJobAndWait } from "./lib/toolJobClient";
 
 const TOOLS = [
   {
@@ -125,6 +146,16 @@ function getMaxTokensForEffort(effort: string): number {
   }
 }
 
+function buildProductToolSummary(products: Array<{ source?: string }>) {
+  const ebayCount = products.filter((item) => item.source === "ebay").length;
+  const globalCount = products.filter((item) => item.source === "global").length;
+  const summaryParts: string[] = [];
+  if (ebayCount > 0) summaryParts.push(`${ebayCount} items on eBay`);
+  if (globalCount > 0) summaryParts.push(`${globalCount} global items`);
+  if (summaryParts.length === 0) summaryParts.push("no items");
+  return `I found ${summaryParts.join(" and ")}. They have been displayed to the user.`;
+}
+
 
 export const streamAnswer = action({
   args: {
@@ -152,6 +183,7 @@ export const streamAnswer = action({
     let isAborted = false;
     let activeController: AbortController | null = null;
     let activeReader: ReadableStreamDefaultReader<Uint8Array> | null = null;
+    let openRouterSessionLease: string | null = null;
     let lastAbortCheck = Date.now();
     const toolResultsCache = new Map<string, string>();
     const toolUsageCounts = new Map<string, number>();
@@ -172,6 +204,55 @@ export const streamAnswer = action({
       threadId: args.threadId,
       sessionId: args.clientSessionId,
     });
+
+    // Global generation rate limit for both authenticated and anonymous thread owners.
+    const userId = await getAuthUserId(ctx);
+    const principal = userId
+      ? `user:${userId}`
+      : args.clientSessionId
+        ? `session:${args.clientSessionId}`
+        : null;
+    if (!principal) {
+      throw new Error("Missing identity for rate limiting");
+    }
+    const limitKey = `chat_stream:${principal}`;
+    const emitRateLimitEvent = async (
+      outcome: "blocked" | "contention_fallback",
+      retryAfterMs?: number,
+    ) => {
+      try {
+        await ctx.scheduler.runAfter(0, internal.rateLimit.recordEvent, {
+          source: "chat_action",
+          bucket: "chat_stream",
+          key: limitKey,
+          outcome,
+          retryAfterMs,
+        });
+      } catch {
+        // Observability should not interrupt the request flow.
+      }
+    };
+    const rateLimits = getRateLimits();
+    const toolCacheConfig = getToolCacheConfig();
+    const toolCacheNamespaces = getToolCacheNamespaces();
+    let limit;
+    try {
+      limit = await ctx.runMutation(internal.rateLimit.checkAndIncrement, {
+        key: limitKey,
+        max: rateLimits.chatStream.max,
+        windowMs: rateLimits.chatStream.windowMs,
+      });
+    } catch (error) {
+      if (isRateLimitContentionError(error)) {
+        await emitRateLimitEvent("contention_fallback", 1000);
+        throw new Error("Too many requests. Please retry in a moment.");
+      }
+      throw error;
+    }
+    if (!limit.allowed) {
+      await emitRateLimitEvent("blocked", limit.retryAfterMs);
+      throw new Error(buildRateLimitErrorMessage(limit.retryAfterMs));
+    }
 
     // Content buffering for reduced DB writes
     let contentBuffer = "";
@@ -261,6 +342,29 @@ export const streamAnswer = action({
     }
 
     try {
+      try {
+        openRouterSessionLease = await acquireBulkheadSlot(
+          ctx,
+          "openrouter_chat",
+        );
+      } catch (error) {
+        if (isBulkheadSaturatedError(error)) {
+          const retryAfterMs =
+            typeof (error as { retryAfterMs?: unknown }).retryAfterMs ===
+            "number"
+              ? (error as { retryAfterMs: number }).retryAfterMs
+              : 1_000;
+          const retryAfterSeconds = Math.max(
+            Math.ceil(retryAfterMs / 1000),
+            1,
+          );
+          throw new Error(
+            `AI service is temporarily busy. Please retry in about ${retryAfterSeconds}s.`,
+          );
+        }
+        throw error;
+      }
+
       if (args.messageId) {
         currentMessageId = args.messageId;
         if (currentSessionId) {
@@ -409,46 +513,54 @@ export const streamAnswer = action({
         const controller = new AbortController();
         activeController = controller;
 
-        const response = await fetch(
-          "https://openrouter.ai/api/v1/chat/completions",
-          {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${apiKey}`,
-              "Content-Type": "application/json",
-              "HTTP-Referer": "https://sendcat.app",
-              "X-Title": "Sendcat",
-            },
-            body: JSON.stringify({
-              // Use models array for automatic fallback on errors
-              models: [
-                args.modelId ?? "moonshotai/kimi-k2.5",
-                "anthropic/claude-sonnet-4",
-                "google/gemini-2.0-flash-001",
-              ],
-              messages: openRouterMessages,
-              tools: activeTools.length > 0 ? activeTools : undefined,
-              // Tool choice & parallel calls - only if tools exist
-              ...(activeTools.length > 0
-                ? {
-                    tool_choice: toolLimitsReached ? "none" : "auto",
-                    parallel_tool_calls: false,
-                  }
-                : {}),
-              ...(args.reasoningEffort && args.reasoningType === "effort"
-                ? { reasoning: { effort: args.reasoningEffort } }
-                : args.reasoningEffort && args.reasoningType === "max_tokens"
+        let response: Response;
+        try {
+          await assertCircuitClosed(ctx, "openrouter_chat");
+          response = await fetch(
+            "https://openrouter.ai/api/v1/chat/completions",
+            {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${apiKey}`,
+                "Content-Type": "application/json",
+                "HTTP-Referer": "https://sendcat.app",
+                "X-Title": "Sendcat",
+              },
+              body: JSON.stringify({
+                // Use models array for automatic fallback on errors
+                models: [
+                  args.modelId ?? "moonshotai/kimi-k2.5",
+                  "anthropic/claude-sonnet-4",
+                  "google/gemini-2.0-flash-001",
+                ],
+                messages: openRouterMessages,
+                tools: activeTools.length > 0 ? activeTools : undefined,
+                // Tool choice & parallel calls - only if tools exist
+                ...(activeTools.length > 0
                   ? {
-                      reasoning: {
-                        max_tokens: getMaxTokensForEffort(args.reasoningEffort),
-                      },
+                      tool_choice: toolLimitsReached ? "none" : "auto",
+                      parallel_tool_calls: false,
                     }
                   : {}),
-              stream: true,
-            }),
-            signal: controller.signal,
-          },
-        );
+                ...(args.reasoningEffort && args.reasoningType === "effort"
+                  ? { reasoning: { effort: args.reasoningEffort } }
+                  : args.reasoningEffort && args.reasoningType === "max_tokens"
+                    ? {
+                        reasoning: {
+                          max_tokens: getMaxTokensForEffort(args.reasoningEffort),
+                        },
+                      }
+                    : {}),
+                stream: true,
+              }),
+              signal: controller.signal,
+            },
+          );
+          await recordCircuitResponse(ctx, "openrouter_chat", response.status);
+        } catch (error) {
+          await recordCircuitError(ctx, "openrouter_chat", error);
+          throw error;
+        }
 
         if (!response.ok)
           throw new Error(`OpenRouter API error: ${await response.text()}`);
@@ -732,60 +844,55 @@ export const streamAnswer = action({
                     result = `Web search limit reached (${MAX_WEB_SEARCH_PER_TURN} per turn). Use existing information to answer.`;
                   } else {
                     webSearchCount++;
-                    const serperKey = process.env.SERPER_API_KEY;
-                    if (!serperKey) {
-                      result =
-                        "Error: SERPER_API_KEY not configured in environment variables.";
+                    const rawQuery =
+                      typeof argsObj.query === "string" ? argsObj.query : "";
+                    const searchQuery = rawQuery.trim();
+                    if (!searchQuery) {
+                      result = "Error: Missing search query.";
                     } else {
-                      console.log(
-                        `[SEARCH_WEB] Executing search for query: ${argsObj.query}`,
+                      const cacheKey = normalizeToolCacheText(searchQuery);
+                      const cachedResult = await ctx.runQuery(
+                        internal.toolCache.get,
+                        {
+                          namespace: toolCacheNamespaces.webSearch,
+                          key: cacheKey,
+                        },
                       );
-                      try {
-                        const res = await fetch(
-                          "https://google.serper.dev/search",
-                          {
-                            method: "POST",
-                            headers: {
-                              "X-API-KEY": serperKey,
-                              "Content-Type": "application/json",
-                            },
-                            body: JSON.stringify({
-                              q: argsObj.query,
-                              num: 5,
-                            }),
-                          },
-                        );
+                      if (cachedResult) {
+                        result = cachedResult;
+                      } else {
+                        const jobOutcome = await enqueueToolJobAndWait<{
+                          kind: "search_web";
+                          textResult: string;
+                        }>(ctx, {
+                          source: "chat_action",
+                          toolName: "search_web",
+                          args: { query: searchQuery },
+                        });
 
-                        console.log(
-                          `[SEARCH_WEB] Response status: ${res.status}`,
-                        );
-
-                        if (!res.ok) {
-                          await res.text(); // Consume the body to prevent resource leaks
-                          console.error(`Serper API error: ${res.status}`);
-                          result = `Search API error: ${res.statusText}`;
+                        if (jobOutcome.status === "completed") {
+                          result =
+                            jobOutcome.result?.textResult ||
+                            `Search completed for "${searchQuery}".`;
+                          try {
+                            await ctx.runMutation(internal.toolCache.set, {
+                              namespace: toolCacheNamespaces.webSearch,
+                              key: cacheKey,
+                              value: result,
+                              ttlMs: toolCacheConfig.webSearchTtlMs,
+                            });
+                          } catch (cacheError) {
+                            console.warn(
+                              "[SEARCH_WEB] Failed to write tool cache",
+                              cacheError,
+                            );
+                          }
+                        } else if (jobOutcome.status === "failed") {
+                          result = `Search failed: ${jobOutcome.error}`;
                         } else {
-                          const data = await res.json();
-                          console.log(
-                            `[SEARCH_WEB] Got ${data.organic?.length || 0} results`,
-                          );
-                          // Format results as a simple text list for the model
-                          const results =
-                            data.organic
-                              ?.slice(0, 5)
-                              .map(
-                                (item: any, i: number) =>
-                                  `${i + 1}. ${item.title} - ${item.link}`,
-                              )
-                              .join("\n") || "No results found";
-
-                          result = `Search results for "${argsObj.query}":\n\n${results}`;
+                          result =
+                            "Live web search is queued and still running. Continue with known information.";
                         }
-                      } catch (fetchError: any) {
-                        console.error(
-                          `Serper fetch error: ${fetchError.message}`,
-                        );
-                        result = `Search failed: ${fetchError.message}`;
                       }
                     }
                   }
@@ -819,101 +926,42 @@ export const streamAnswer = action({
                         }
                       }
 
-                      let ebayError: string | null = null;
-                      let globalError: string | null = null;
-                      const globalSkipped =
-                        globalSearchCount >= MAX_GLOBAL_SEARCH_PER_TURN;
+                      const productCacheKey = buildProductSearchCacheKey({
+                        query: normalized.query,
+                        limit: normalized.limit,
+                        categoryId,
+                        categoryName: normalized.categoryName,
+                        minPrice: normalized.minPrice,
+                        maxPrice: normalized.maxPrice,
+                        condition: normalized.condition,
+                        shipping: normalized.shipping,
+                        sellerRating: normalized.sellerRating,
+                        location: normalized.location,
+                        marketplaceId,
+                      });
 
-                      if (globalSkipped) {
-                        toolLimitsReached = true;
-                      } else {
-                        globalSearchCount++;
-                      }
-
-                      const globalLimit = Math.min(
-                        12,
-                        normalized.limit ?? 12,
+                      const cachedProductsRaw = await ctx.runQuery(
+                        internal.toolCache.get,
+                        {
+                          namespace: toolCacheNamespaces.productSearch,
+                          key: productCacheKey,
+                        },
                       );
 
-                      const [ebayResult, globalResult] =
-                        await Promise.allSettled([
-                          searchEbayItems(normalized.query, {
-                            limit: normalized.limit,
-                            categoryId,
-                            minPrice: normalized.minPrice,
-                            maxPrice: normalized.maxPrice,
-                            condition: normalized.condition,
-                            shipping: normalized.shipping,
-                            minSellerRating: normalized.sellerRating,
-                            location: normalized.location,
-                            marketplaceId,
-                          }),
-                          globalSkipped
-                            ? Promise.resolve([])
-                            : searchGlobalItems(normalized.query, {
-                                limit: globalLimit,
-                                location: normalized.location,
-                              }),
-                        ]);
-
-                      const ebayItems =
-                        ebayResult.status === "fulfilled"
-                          ? ebayResult.value
-                          : [];
-                      if (ebayResult.status === "rejected") {
-                        ebayError =
-                          ebayResult.reason?.message || "Unknown eBay error";
+                      let cachedProducts: any[] | null = null;
+                      if (cachedProductsRaw) {
+                        try {
+                          const parsed = JSON.parse(cachedProductsRaw);
+                          if (Array.isArray(parsed)) {
+                            cachedProducts = parsed;
+                          }
+                        } catch {
+                          // Ignore malformed cache payload and fall through to live fetch.
+                        }
                       }
 
-                      const globalItems =
-                        globalResult.status === "fulfilled"
-                          ? globalResult.value
-                          : [];
-                      if (globalResult.status === "rejected") {
-                        globalError =
-                          globalResult.reason?.message ||
-                          "Unknown global search error";
-                      }
-
-                      if (process.env.EBAY_ENV !== "production") {
-                        console.log(
-                          `eBay found ${ebayItems.length} items for "${normalized.query}"`,
-                        );
-                      }
-
-                      const combined = dedupeProducts([
-                        ...ebayItems,
-                        ...globalItems,
-                      ]);
-
-                      const summaryParts: string[] = [];
-                      if (!ebayError) {
-                        summaryParts.push(`${ebayItems.length} items on eBay`);
-                      }
-                      if (!globalError && !globalSkipped) {
-                        summaryParts.push(
-                          `${globalItems.length} global items`,
-                        );
-                      }
-                      if (summaryParts.length === 0) {
-                        summaryParts.push("no items");
-                      }
-
-                      result = `I found ${summaryParts.join(
-                        " and ",
-                      )}. They have been displayed to the user.`;
-
-                      if (globalSkipped) {
-                        result += ` Global search limit reached (${MAX_GLOBAL_SEARCH_PER_TURN} per turn).`;
-                      }
-                      if (globalError) {
-                        result += ` Global search failed: ${globalError}.`;
-                      }
-                      if (ebayError) {
-                        result += ` eBay search failed: ${ebayError}.`;
-                      }
-
-                      if (combined.length > 0) {
+                      if (cachedProducts && cachedProducts.length > 0) {
+                        const combined = dedupeProducts(cachedProducts);
                         await ctx.runMutation(
                           internal.messages.internalSaveProducts,
                           {
@@ -921,6 +969,84 @@ export const streamAnswer = action({
                             products: combined,
                           },
                         );
+                        result = buildProductToolSummary(combined);
+                      } else {
+                        const globalSkipped =
+                          globalSearchCount >= MAX_GLOBAL_SEARCH_PER_TURN;
+
+                        if (globalSkipped) {
+                          toolLimitsReached = true;
+                        } else {
+                          globalSearchCount++;
+                        }
+
+                        const globalLimit = Math.min(
+                          12,
+                          normalized.limit ?? 12,
+                        );
+
+                        const jobOutcome = await enqueueToolJobAndWait<{
+                          kind: "search_products";
+                          products: any[];
+                        }>(ctx, {
+                          source: "chat_action",
+                          toolName: "search_products",
+                          args: {
+                            query: normalized.query,
+                            limit: normalized.limit,
+                            categoryId,
+                            categoryName: normalized.categoryName,
+                            minPrice: normalized.minPrice,
+                            maxPrice: normalized.maxPrice,
+                            condition: normalized.condition,
+                            shipping: normalized.shipping,
+                            sellerRating: normalized.sellerRating,
+                            location: normalized.location,
+                            marketplaceId,
+                            includeGlobal: !globalSkipped,
+                            globalLimit,
+                          },
+                        });
+
+                        if (jobOutcome.status === "completed") {
+                          const combined = Array.isArray(jobOutcome.result?.products)
+                            ? dedupeProducts(jobOutcome.result.products)
+                            : [];
+                          result = buildProductToolSummary(combined);
+                          if (globalSkipped) {
+                            result += ` Global search limit reached (${MAX_GLOBAL_SEARCH_PER_TURN} per turn).`;
+                          }
+                          if (combined.length > 0) {
+                            await ctx.runMutation(
+                              internal.messages.internalSaveProducts,
+                              {
+                                messageId: currentMessageId!,
+                                products: combined,
+                              },
+                            );
+                          }
+
+                          if (combined.length > 0 && !globalSkipped) {
+                            try {
+                              await ctx.runMutation(internal.toolCache.set, {
+                                namespace: toolCacheNamespaces.productSearch,
+                                key: productCacheKey,
+                                value: JSON.stringify(combined),
+                                ttlMs: toolCacheConfig.productSearchTtlMs,
+                              });
+                            } catch (cacheError) {
+                              console.warn(
+                                "[SEARCH_PRODUCTS] Failed to write tool cache",
+                                cacheError,
+                              );
+                            }
+                          }
+                        } else if (jobOutcome.status === "failed") {
+                          result = `Product search failed: ${jobOutcome.error}`;
+                        } else {
+                          result =
+                            "Product search is queued and still running. Continue with known information.";
+                        }
                       }
                     }
                   }
@@ -945,19 +1071,40 @@ export const streamAnswer = action({
                     if (!query) {
                       result = "Error: Missing global search query.";
                     } else {
-                      const items = await searchGlobalItems(query, {
-                        limit,
-                        location,
-                      });
-                      result = `I found ${items.length} global items. They have been displayed to the user.`;
-
-                      await ctx.runMutation(
-                        internal.messages.internalSaveProducts,
-                        {
-                          messageId: currentMessageId!,
-                          products: items,
+                      const jobOutcome = await enqueueToolJobAndWait<{
+                        kind: "search_global";
+                        products: any[];
+                      }>(ctx, {
+                        source: "chat_action",
+                        toolName: "search_global",
+                        args: {
+                          query,
+                          limit,
+                          location,
                         },
-                      );
+                      });
+
+                      if (jobOutcome.status === "completed") {
+                        const items = Array.isArray(jobOutcome.result?.products)
+                          ? dedupeProducts(jobOutcome.result.products)
+                          : [];
+                        result = `I found ${items.length} global items. They have been displayed to the user.`;
+
+                        if (items.length > 0) {
+                          await ctx.runMutation(
+                            internal.messages.internalSaveProducts,
+                            {
+                              messageId: currentMessageId!,
+                              products: items,
+                            },
+                          );
+                        }
+                      } else if (jobOutcome.status === "failed") {
+                        result = `Global search failed: ${jobOutcome.error}`;
+                      } else {
+                        result =
+                          "Global search is queued and still running. Continue with known information.";
+                      }
                     }
                   }
                 }
@@ -1078,7 +1225,11 @@ export const streamAnswer = action({
       }
       throw err;
     } finally {
-      // no-op cleanup
+      await releaseBulkheadSlot(
+        ctx,
+        "openrouter_chat",
+        openRouterSessionLease,
+      );
     }
   },
 });

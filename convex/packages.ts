@@ -1,5 +1,8 @@
 import { query, mutation } from "./_generated/server";
-import { getAuthUserId } from "./auth";
+import {
+  getOptionalAuthenticatedUserId,
+  requireAuthenticatedUserId,
+} from "./lib/authGuards";
 
 /**
  * List all packages for the current authenticated user.
@@ -7,7 +10,7 @@ import { getAuthUserId } from "./auth";
 export const list = query({
   args: {},
   handler: async (ctx) => {
-    const userId = await getAuthUserId(ctx);
+    const userId = await getOptionalAuthenticatedUserId(ctx);
     if (!userId) return [];
 
     return await ctx.db
@@ -24,8 +27,7 @@ export const list = query({
 export const seed = mutation({
   args: {},
   handler: async (ctx) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Unauthorized");
+    const userId = await requireAuthenticatedUserId(ctx, "packages.seed");
 
     const existing = await ctx.db
       .query("packages")

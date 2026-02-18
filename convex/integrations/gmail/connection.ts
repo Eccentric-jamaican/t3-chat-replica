@@ -2,6 +2,7 @@ import { query, mutation, action } from "../../_generated/server";
 import { internal } from "../../_generated/api";
 import { getAuthUserId } from "../../auth";
 import { encrypt } from "../crypto";
+import { requireAuthenticatedUserId } from "../../lib/authGuards";
 
 /**
  * Returns the current user's Gmail connection status.
@@ -37,8 +38,10 @@ export const getStatus = query({
 export const disconnect = mutation({
   args: {},
   handler: async (ctx) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Authentication required");
+    const userId = await requireAuthenticatedUserId(
+      ctx,
+      "integrations.gmail.connection.disconnect",
+    );
 
     const connection = await ctx.db
       .query("integrationsGmail")
@@ -58,9 +61,10 @@ export const disconnect = mutation({
 export const startOAuth = action({
   args: {},
   handler: async (ctx) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Authentication required");
-    const userId = identity.subject;
+    const userId = await requireAuthenticatedUserId(
+      ctx,
+      "integrations.gmail.connection.startOAuth",
+    );
 
     const clientId = process.env.GMAIL_OAUTH_CLIENT_ID;
     const siteUrl = process.env.CONVEX_SITE_URL;
@@ -93,9 +97,10 @@ export const startOAuth = action({
 export const triggerSync = action({
   args: {},
   handler: async (ctx): Promise<any> => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Authentication required");
-    const userId = identity.subject;
+    const userId = await requireAuthenticatedUserId(
+      ctx,
+      "integrations.gmail.connection.triggerSync",
+    );
 
     return await ctx.runAction(internal.integrations.gmail.sync.syncGmail as any, {
       userId,

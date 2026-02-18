@@ -1,0 +1,9 @@
+{
+  "comparison": {
+    "maxP95RegressionRatio": 1.25,
+    "maxP95AbsoluteRegressionMs": 1000,
+    "maxFiveXxRateRegression": 0.02,
+    "maxNetworkErrorRateRegression": 0.02,
+    "maxUnknownStatusRateRegression": 0.02
+  }
+}

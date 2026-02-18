@@ -1,0 +1,48 @@
+{
+  "version": "phase-1-11-2026-02-17",
+  "endpoints": {
+    "/api/chat": {
+      "maxP95Ms": 12000,
+      "maxFiveXxRate": 0.05,
+      "maxNetworkErrorRate": 0.05,
+      "maxUnknownStatusRate": 0.1,
+      "allowedStatuses": [200, 401, 429, 503]
+    },
+    "/api/gmail/push": {
+      "maxP95Ms": 1500,
+      "maxFiveXxRate": 0.01,
+      "maxNetworkErrorRate": 0.02,
+      "maxUnknownStatusRate": 0.05,
+      "allowedStatuses": [200, 400, 403, 429]
+    },
+    "/api/whatsapp/webhook": {
+      "maxP95Ms": 1500,
+      "maxFiveXxRate": 0.01,
+      "maxNetworkErrorRate": 0.02,
+      "maxUnknownStatusRate": 0.05,
+      "allowedStatuses": [200, 400, 403, 429]
+    }
+  },
+  "alerting": {
+    "webhook": {
+      "warning": {
+        "p95LatencyMs": 1200,
+        "fiveXxRate": 0.005
+      },
+      "critical": {
+        "p95LatencyMs": 1500,
+        "fiveXxRate": 0.01
+      }
+    },
+    "chat": {
+      "warning": {
+        "p95LatencyMs": 10000,
+        "fiveXxRate": 0.03
+      },
+      "critical": {
+        "p95LatencyMs": 12000,
+        "fiveXxRate": 0.05
+      }
+    }
+  }
+}

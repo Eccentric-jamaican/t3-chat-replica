@@ -311,4 +311,136 @@ export default defineSchema({
   })
     .index("by_thread", ["threadId"])
     .index("by_share_token", ["shareToken"]),
+
+  rateLimitWindows: defineTable({
+    key: v.string(),
+    windowStart: v.number(),
+    count: v.number(),
+    expiresAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_key_window", ["key", "windowStart"])
+    .index("by_expires_at", ["expiresAt"]),
+
+  rateLimitEvents: defineTable({
+    source: v.union(
+      v.literal("chat_action"),
+      v.literal("chat_http"),
+      v.literal("http"),
+    ),
+    bucket: v.string(),
+    key: v.string(),
+    outcome: v.union(
+      v.literal("blocked"),
+      v.literal("contention_fallback"),
+    ),
+    retryAfterMs: v.optional(v.number()),
+    path: v.optional(v.string()),
+    method: v.optional(v.string()),
+    dedupeKey: v.optional(v.string()),
+    createdAt: v.number(),
+    expiresAt: v.number(),
+  })
+    .index("by_expires_at", ["expiresAt"])
+    .index("by_bucket_created", ["bucket", "createdAt"])
+    .index("by_dedupe_key", ["dedupeKey"])
+    .index("by_outcome_created", ["outcome", "createdAt"]),
+
+  rateLimitAlerts: defineTable({
+    alertKey: v.string(),
+    bucket: v.string(),
+    outcome: v.union(
+      v.literal("blocked"),
+      v.literal("contention_fallback"),
+    ),
+    threshold: v.number(),
+    observed: v.number(),
+    windowMinutes: v.number(),
+    notifiedByEmail: v.optional(v.boolean()),
+    createdAt: v.number(),
+    expiresAt: v.number(),
+  })
+    .index("by_alert_key", ["alertKey"])
+    .index("by_expires_at", ["expiresAt"])
+    .index("by_created_at", ["createdAt"]),
+
+  idempotencyKeys: defineTable({
+    scope: v.string(),
+    key: v.string(),
+    firstSeenAt: v.number(),
+    lastSeenAt: v.number(),
+    hitCount: v.number(),
+    expiresAt: v.number(),
+  })
+    .index("by_scope_key", ["scope", "key"])
+    .index("by_expires_at", ["expiresAt"])
+    .index("by_scope_first_seen", ["scope", "firstSeenAt"])
+    .index("by_first_seen", ["firstSeenAt"]),
+
+  outboundCircuitBreakers: defineTable({
+    provider: v.string(),
+    state: v.union(
+      v.literal("closed"),
+      v.literal("open"),
+      v.literal("half_open"),
+    ),
+    failureCount: v.number(),
+    successCount: v.number(),
+    lastFailureAt: v.optional(v.number()),
+    lastSuccessAt: v.optional(v.number()),
+    cooldownUntil: v.optional(v.number()),
+    lastError: v.optional(v.string()),
+    updatedAt: v.number(),
+  })
+    .index("by_provider", ["provider"])
+    .index("by_updated_at", ["updatedAt"]),
+
+  outboundBulkheadLeases: defineTable({
+    provider: v.string(),
+    leaseId: v.string(),
+    acquiredAt: v.number(),
+    expiresAt: v.number(),
+  })
+    .index("by_provider_lease", ["provider", "leaseId"])
+    .index("by_provider_expires", ["provider", "expiresAt"])
+    .index("by_expires_at", ["expiresAt"]),
+
+  toolResultCache: defineTable({
+    namespace: v.string(),
+    key: v.string(),
+    value: v.string(),
+    createdAt: v.number(),
+    expiresAt: v.number(),
+  })
+    .index("by_namespace_key", ["namespace", "key"])
+    .index("by_expires_at", ["expiresAt"]),
+
+  toolJobs: defineTable({
+    source: v.union(v.literal("chat_action"), v.literal("chat_http")),
+    toolName: v.string(),
+    argsJson: v.string(),
+    status: v.union(
+      v.literal("queued"),
+      v.literal("running"),
+      v.literal("completed"),
+      v.literal("failed"),
+    ),
+    attempts: v.number(),
+    maxAttempts: v.number(),
+    availableAt: v.number(),
+    leaseExpiresAt: v.optional(v.number()),
+    resultJson: v.optional(v.string()),
+    lastError: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    completedAt: v.optional(v.number()),
+    expiresAt: v.number(),
+  })
+    .index("by_status_available", ["status", "availableAt"])
+    .index("by_tool_status_available", ["toolName", "status", "availableAt"])
+    .index("by_status_lease", ["status", "leaseExpiresAt"])
+    .index("by_status_updated", ["status", "updatedAt"])
+    .index("by_tool_status_updated", ["toolName", "status", "updatedAt"])
+    .index("by_expires_at", ["expiresAt"])
+    .index("by_created_at", ["createdAt"]),
 });

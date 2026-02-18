@@ -1,4 +1,5 @@
 import { decrypt } from "../crypto";
+import { fetchWithRetry } from "../../lib/network";
 
 function looksEncrypted(token: string): boolean {
   return token.split(":").length === 3;
@@ -16,16 +17,23 @@ export async function refreshAccessToken(
   encryptedRefreshToken: string,
 ): Promise<{ accessToken: string; expiresAt: number }> {
   const refreshToken = await decrypt(encryptedRefreshToken);
-  const response = await fetch("https://oauth2.googleapis.com/token", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      client_id: process.env.GMAIL_OAUTH_CLIENT_ID!,
-      client_secret: process.env.GMAIL_OAUTH_CLIENT_SECRET!,
-      refresh_token: refreshToken,
-      grant_type: "refresh_token",
-    }),
-  });
+  const response = await fetchWithRetry(
+    "https://oauth2.googleapis.com/token",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        client_id: process.env.GMAIL_OAUTH_CLIENT_ID!,
+        client_secret: process.env.GMAIL_OAUTH_CLIENT_SECRET!,
+        refresh_token: refreshToken,
+        grant_type: "refresh_token",
+      }),
+    },
+    {
+      timeoutMs: 10_000,
+      retries: 2,
+    },
+  );
 
   if (!response.ok) {
     const text = await response.text();
@@ -101,9 +109,16 @@ export async function listMessages(
     url.searchParams.set("pageToken", opts.pageToken);
   }
 
-  const res = await fetch(url.toString(), {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
+  const res = await fetchWithRetry(
+    url.toString(),
+    {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    },
+    {
+      timeoutMs: 10_000,
+      retries: 2,
+    },
+  );
 
   if (!res.ok) {
     throw new Error(`Gmail list failed (${res.status})`);
@@ -122,9 +137,15 @@ export async function getMessage(
   accessToken: string,
   messageId: string,
 ): Promise<any> {
-  const res = await fetch(
+  const res = await fetchWithRetry(
     `https://gmail.googleapis.com/gmail/v1/users/me/messages/${messageId}?format=full`,
-    { headers: { Authorization: `Bearer ${accessToken}` } },
+    {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    },
+    {
+      timeoutMs: 10_000,
+      retries: 2,
+    },
   );
   if (!res.ok) {
     throw new Error(`Gmail get message failed (${res.status})`);
@@ -141,9 +162,15 @@ export async function getAttachment(
   messageId: string,
   attachmentId: string,
 ): Promise<{ data?: string; size?: number }> {
-  const res = await fetch(
+  const res = await fetchWithRetry(
     `https://gmail.googleapis.com/gmail/v1/users/me/messages/${messageId}/attachments/${attachmentId}`,
-    { headers: { Authorization: `Bearer ${accessToken}` } },
+    {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    },
+    {
+      timeoutMs: 10_000,
+      retries: 2,
+    },
   );
   if (!res.ok) {
     throw new Error(`Gmail attachment get failed (${res.status})`);
@@ -165,9 +192,16 @@ export async function getHistory(
   url.searchParams.set("historyTypes", "messageAdded");
   url.searchParams.set("maxResults", "100");
 
-  const res = await fetch(url.toString(), {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
+  const res = await fetchWithRetry(
+    url.toString(),
+    {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    },
+    {
+      timeoutMs: 10_000,
+      retries: 2,
+    },
+  );
   if (!res.ok) {
     throw new Error(`Gmail history failed (${res.status})`);
   }
@@ -181,7 +215,7 @@ export async function setupWatch(
   accessToken: string,
   topicName: string,
 ): Promise<{ historyId: string; expiration: string }> {
-  const res = await fetch(
+  const res = await fetchWithRetry(
     "https://gmail.googleapis.com/gmail/v1/users/me/watch",
     {
       method: "POST",
@@ -193,6 +227,10 @@ export async function setupWatch(
         topicName,
         labelIds: ["INBOX"],
       }),
+    },
+    {
+      timeoutMs: 10_000,
+      retries: 2,
     },
   );
   if (!res.ok) {

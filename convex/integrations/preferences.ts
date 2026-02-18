@@ -1,6 +1,9 @@
 import { v } from "convex/values";
 import { query, mutation, internalQuery } from "../_generated/server";
-import { getAuthUserId } from "../auth";
+import {
+  getOptionalAuthenticatedUserId,
+  requireAuthenticatedUserId,
+} from "../lib/authGuards";
 
 export const getByUserId = internalQuery({
   args: { userId: v.string() },
@@ -15,7 +18,7 @@ export const getByUserId = internalQuery({
 export const get = query({
   args: {},
   handler: async (ctx) => {
-    const userId = await getAuthUserId(ctx);
+    const userId = await getOptionalAuthenticatedUserId(ctx);
     if (!userId) return null;
     return await ctx.db
       .query("userPreferences")
@@ -31,8 +34,10 @@ export const update = mutation({
     whatsappSyncEnabled: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Authentication required");
+    const userId = await requireAuthenticatedUserId(
+      ctx,
+      "integrations.preferences.update",
+    );
 
     const existing = await ctx.db
       .query("userPreferences")

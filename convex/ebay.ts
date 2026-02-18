@@ -2,6 +2,7 @@
  * eBay API Helper for Convex
  * Handles OAuth Client Credentials Flow and Browse API searches.
  */
+import { fetchWithRetry } from "./lib/network";
 
 interface EbayTokenResponse {
   access_token: string;
@@ -43,7 +44,7 @@ export async function getApplicationToken(scopes?: string) {
 
   const auth = btoa(`${clientId}:${clientSecret}`);
 
-  const response = await fetch(
+  const response = await fetchWithRetry(
     "https://api.ebay.com/identity/v1/oauth2/token",
     {
       method: "POST",
@@ -55,6 +56,10 @@ export async function getApplicationToken(scopes?: string) {
         grant_type: "client_credentials",
         scope: scopes ?? "https://api.ebay.com/oauth/api_scope",
       }),
+    },
+    {
+      timeoutMs: 8000,
+      retries: 2,
     },
   );
 
@@ -150,14 +155,21 @@ export async function searchEbayItems(
 
   console.log(`[eBay Search] Query: "${query}", URL: ${url.toString()}`);
 
-  const response = await fetch(url.toString(), {
-    method: "GET",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "X-EBAY-C-MARKETPLACE-ID": marketplaceId,
-      "Content-Type": "application/json",
+  const response = await fetchWithRetry(
+    url.toString(),
+    {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "X-EBAY-C-MARKETPLACE-ID": marketplaceId,
+        "Content-Type": "application/json",
+      },
     },
-  });
+    {
+      timeoutMs: 8000,
+      retries: 2,
+    },
+  );
 
   if (!response.ok) {
     const errorBody = await response.text();
@@ -198,13 +210,20 @@ export async function getEbayItemDetails(itemId: string) {
 
   const url = `https://api.ebay.com/buy/browse/v1/item/${itemId}?fieldgroups=PRODUCT`;
 
-  const response = await fetch(url, {
-    method: "GET",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "X-EBAY-C-MARKETPLACE-ID": marketplaceId,
+  const response = await fetchWithRetry(
+    url,
+    {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "X-EBAY-C-MARKETPLACE-ID": marketplaceId,
+      },
     },
-  });
+    {
+      timeoutMs: 8000,
+      retries: 2,
+    },
+  );
 
   if (!response.ok) {
     const errorBody = await response.text();

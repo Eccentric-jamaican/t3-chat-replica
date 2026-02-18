@@ -10,8 +10,10 @@
 
 import type * as affiliate from "../affiliate.js";
 import type * as auth from "../auth.js";
+import type * as bulkhead from "../bulkhead.js";
 import type * as chat from "../chat.js";
 import type * as chatHttp from "../chatHttp.js";
+import type * as circuitBreaker from "../circuitBreaker.js";
 import type * as crons from "../crons.js";
 import type * as ebay from "../ebay.js";
 import type * as ebayTaxonomy from "../ebayTaxonomy.js";
@@ -19,6 +21,7 @@ import type * as explore from "../explore.js";
 import type * as favorites from "../favorites.js";
 import type * as global from "../global.js";
 import type * as http from "../http.js";
+import type * as idempotency from "../idempotency.js";
 import type * as integrations_crypto from "../integrations/crypto.js";
 import type * as integrations_email from "../integrations/email.js";
 import type * as integrations_emailTemplates_layout from "../integrations/emailTemplates/layout.js";
@@ -45,15 +48,33 @@ import type * as integrations_types from "../integrations/types.js";
 import type * as integrations_whatsapp from "../integrations/whatsapp.js";
 import type * as integrations_whatsapp_messaging from "../integrations/whatsapp/messaging.js";
 import type * as integrations_whatsapp_verify from "../integrations/whatsapp/verify.js";
+import type * as lib_authGuards from "../lib/authGuards.js";
+import type * as lib_bulkhead from "../lib/bulkhead.js";
+import type * as lib_circuitBreaker from "../lib/circuitBreaker.js";
 import type * as lib_ebaySearch from "../lib/ebaySearch.js";
+import type * as lib_functionBoundaries from "../lib/functionBoundaries.js";
+import type * as lib_functionErrors from "../lib/functionErrors.js";
+import type * as lib_functionRateLimit from "../lib/functionRateLimit.js";
+import type * as lib_httpContracts from "../lib/httpContracts.js";
+import type * as lib_httpErrors from "../lib/httpErrors.js";
 import type * as lib_models from "../lib/models.js";
+import type * as lib_network from "../lib/network.js";
 import type * as lib_prompts from "../lib/prompts.js";
+import type * as lib_rateLimit from "../lib/rateLimit.js";
+import type * as lib_reliabilityConfig from "../lib/reliabilityConfig.js";
+import type * as lib_toolCacheKeys from "../lib/toolCacheKeys.js";
 import type * as lib_toolHelpers from "../lib/toolHelpers.js";
+import type * as lib_toolJobClient from "../lib/toolJobClient.js";
+import type * as lib_toolJobQueue from "../lib/toolJobQueue.js";
 import type * as messages from "../messages.js";
+import type * as ops from "../ops.js";
 import type * as packages from "../packages.js";
 import type * as profiles from "../profiles.js";
+import type * as rateLimit from "../rateLimit.js";
 import type * as streamSessions from "../streamSessions.js";
 import type * as threads from "../threads.js";
+import type * as toolCache from "../toolCache.js";
+import type * as toolJobs from "../toolJobs.js";
 
 import type {
   ApiFromModules,
@@ -64,8 +85,10 @@ import type {
 declare const fullApi: ApiFromModules<{
   affiliate: typeof affiliate;
   auth: typeof auth;
+  bulkhead: typeof bulkhead;
   chat: typeof chat;
   chatHttp: typeof chatHttp;
+  circuitBreaker: typeof circuitBreaker;
   crons: typeof crons;
   ebay: typeof ebay;
   ebayTaxonomy: typeof ebayTaxonomy;
@@ -73,6 +96,7 @@ declare const fullApi: ApiFromModules<{
   favorites: typeof favorites;
   global: typeof global;
   http: typeof http;
+  idempotency: typeof idempotency;
   "integrations/crypto": typeof integrations_crypto;
   "integrations/email": typeof integrations_email;
   "integrations/emailTemplates/layout": typeof integrations_emailTemplates_layout;
@@ -99,15 +123,33 @@ declare const fullApi: ApiFromModules<{
   "integrations/whatsapp": typeof integrations_whatsapp;
   "integrations/whatsapp/messaging": typeof integrations_whatsapp_messaging;
   "integrations/whatsapp/verify": typeof integrations_whatsapp_verify;
+  "lib/authGuards": typeof lib_authGuards;
+  "lib/bulkhead": typeof lib_bulkhead;
+  "lib/circuitBreaker": typeof lib_circuitBreaker;
   "lib/ebaySearch": typeof lib_ebaySearch;
+  "lib/functionBoundaries": typeof lib_functionBoundaries;
+  "lib/functionErrors": typeof lib_functionErrors;
+  "lib/functionRateLimit": typeof lib_functionRateLimit;
+  "lib/httpContracts": typeof lib_httpContracts;
+  "lib/httpErrors": typeof lib_httpErrors;
   "lib/models": typeof lib_models;
+  "lib/network": typeof lib_network;
   "lib/prompts": typeof lib_prompts;
+  "lib/rateLimit": typeof lib_rateLimit;
+  "lib/reliabilityConfig": typeof lib_reliabilityConfig;
+  "lib/toolCacheKeys": typeof lib_toolCacheKeys;
   "lib/toolHelpers": typeof lib_toolHelpers;
+  "lib/toolJobClient": typeof lib_toolJobClient;
+  "lib/toolJobQueue": typeof lib_toolJobQueue;
   messages: typeof messages;
+  ops: typeof ops;
   packages: typeof packages;
   profiles: typeof profiles;
+  rateLimit: typeof rateLimit;
   streamSessions: typeof streamSessions;
   threads: typeof threads;
+  toolCache: typeof toolCache;
+  toolJobs: typeof toolJobs;
 }>;
 
 /**

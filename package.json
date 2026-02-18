@@ -13,7 +13,14 @@
     "build": "vite build",
     "preview": "vite preview",
     "test": "vitest run",
-    "posthog:dashboard": "node scripts/posthog/create-dashboard.mjs"
+    "posthog:dashboard": "node scripts/posthog/create-dashboard.mjs",
+    "reliability:drill": "node scripts/reliability/run-load-drills.mjs",
+    "reliability:snapshot": "npx convex run ops:getReliabilitySnapshot",
+    "reliability:probe": "node scripts/reliability/run-synthetic-probes.mjs",
+    "reliability:gate": "node scripts/reliability/run-release-gate.mjs",
+    "reliability:canary": "node scripts/reliability/run-canary-checks.mjs",
+    "reliability:gameday": "node scripts/reliability/run-game-day.mjs",
+    "reliability:dashboard": "node scripts/reliability/build-slo-dashboard.mjs"
   },
   "dependencies": {
     "@convex-dev/better-auth": "^0.10.10",
@@ -56,6 +63,7 @@
     "svix": "^1.84.1",
     "tailwind-merge": "^3.4.0",
     "uuid": "^13.0.0",
+    "zod": "^4.3.6",
     "vite-tsconfig-paths": "^6.0.2"
   },
   "devDependencies": {

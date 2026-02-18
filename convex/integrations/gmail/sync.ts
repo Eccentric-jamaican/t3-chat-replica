@@ -1,6 +1,11 @@
 import { v } from "convex/values";
 import { internalAction } from "../../_generated/server";
 import { internal } from "../../_generated/api";
+import {
+  assertFunctionArgs,
+  incrementalSyncArgsSchema,
+  syncGmailArgsSchema,
+} from "../../lib/functionBoundaries";
 import { classifyGmailMessage } from "./classify";
 import {
   buildFocusedSnippet,
@@ -211,9 +216,15 @@ export const syncGmail = internalAction({
     maxMessages: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
+    const input = assertFunctionArgs(
+      syncGmailArgsSchema,
+      args,
+      "integrations.gmail.sync.syncGmail",
+    );
+
     const connection = await ctx.runQuery(
       internal.integrations.gmail.oauth.getGmailConnection,
-      { userId: args.userId },
+      { userId: input.userId },
     );
     if (!connection || connection.status !== "active") {
       throw new Error("Gmail not connected");
@@ -221,7 +232,7 @@ export const syncGmail = internalAction({
 
     const prefs = await ctx.runQuery(
       internal.integrations.preferences.getByUserId,
-      { userId: args.userId },
+      { userId: input.userId },
     );
     if (prefs && prefs.gmailSyncEnabled === false) {
       console.log("[Gmail Sync] Skipped (disabled by user)");
@@ -241,8 +252,8 @@ export const syncGmail = internalAction({
       );
     }
 
-    const daysBack = args.daysBack ?? 7;
-    const maxMessages = Math.min(Math.max(args.maxMessages ?? 500, 1), 2000);
+    const daysBack = input.daysBack ?? 7;
+    const maxMessages = Math.min(Math.max(input.maxMessages ?? 500, 1), 2000);
 
     // Gmail list is paginated; scan more than a single page so we don't miss
     // relevant receipts in busy inboxes. Also run targeted merchant queries
@@ -258,7 +269,7 @@ export const syncGmail = internalAction({
       }
     };
 
-    if (args.query) {
+    if (input.query) {
       // Targeted sync: only process messages matching the query.
       let pageToken: string | undefined;
       for (let page = 0; page < 5 && messages.length < maxMessages; page += 1) {
@@ -266,7 +277,7 @@ export const syncGmail = internalAction({
           daysBack,
           maxResults: 100,
           pageToken,
-          query: args.query,
+          query: input.query,
         });
         addMessages(pageRes.messages ?? []);
         if (!pageRes.nextPageToken) break;
@@ -367,8 +378,8 @@ export const syncGmail = internalAction({
       // Create evidence record
       const evidenceId = await ctx.runMutation(
         internal.integrations.evidence.createEvidence,
-        {
-          userId: args.userId,
+          {
+          userId: input.userId,
           source: "gmail" as const,
           sourceMessageId: msgRef.id,
           merchant: classification.merchant,
@@ -433,7 +444,7 @@ export const syncGmail = internalAction({
         for (const order of orderNumbers) {
           existingDraft = await ctx.runQuery(
             internal.integrations.evidence.getDraftByOrderNumber,
-            { userId: args.userId, orderNumber: order },
+            { userId: input.userId, orderNumber: order },
           );
           if (existingDraft) break;
         }
@@ -443,7 +454,7 @@ export const syncGmail = internalAction({
             existingDraft = await ctx.runQuery(
               internal.integrations.evidence.getDraftByTrackingNumber,
               {
-                userId: args.userId,
+                userId: input.userId,
                 trackingNumber: tracking.number,
               },
             );
@@ -537,7 +548,7 @@ export const syncGmail = internalAction({
             await ctx.runMutation(
               internal.integrations.evidence.createPackagePreAlert,
               {
-                userId: args.userId,
+                userId: input.userId,
                 purchaseDraftId: existingDraft._id,
                 trackingNumber: tracking.number,
                 carrier: tracking.carrier ?? undefined,
@@ -547,7 +558,7 @@ export const syncGmail = internalAction({
 
           await mergeDuplicateDrafts(
             ctx,
-            args.userId,
+            input.userId,
             primarySnapshot,
             splitOrderNumbers(
               primarySnapshot.orderNumber ?? extraction.orderNumber,
@@ -569,7 +580,7 @@ export const syncGmail = internalAction({
           const draftId = await ctx.runMutation(
             internal.integrations.evidence.createPurchaseDraft,
             {
-              userId: args.userId,
+              userId: input.userId,
               evidenceId,
               merchant: extraction.merchant,
               storeName: extraction.storeName,
@@ -588,7 +599,7 @@ export const syncGmail = internalAction({
             await ctx.runMutation(
               internal.integrations.evidence.createPackagePreAlert,
               {
-                userId: args.userId,
+                userId: input.userId,
                 purchaseDraftId: draftId,
                 trackingNumber: tracking.number,
                 carrier: tracking.carrier ?? undefined,
@@ -655,9 +666,15 @@ export const incrementalSync = internalAction({
     newHistoryId: v.string(),
   },
   handler: async (ctx, args) => {
+    const input = assertFunctionArgs(
+      incrementalSyncArgsSchema,
+      args,
+      "integrations.gmail.sync.incrementalSync",
+    );
+
     const connection = await ctx.runQuery(
       internal.integrations.gmail.oauth.getConnectionByEmail,
-      { email: args.emailAddress },
+      { email: input.emailAddress },
     );
     if (!connection || connection.status !== "active") return;
 
@@ -992,7 +1009,7 @@ export const incrementalSync = internalAction({
     // Update historyId to the new one
     await ctx.runMutation(internal.integrations.gmail.oauth.updateHistoryId, {
       connectionId: connection._id,
-      historyId: args.newHistoryId,
+      historyId: input.newHistoryId,
       lastSyncAt: Date.now(),
     });
 

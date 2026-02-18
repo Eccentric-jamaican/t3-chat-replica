@@ -1,0 +1,33 @@
+{
+  "version": "2026-02-18",
+  "defaults": {
+    "owner": "reliability-platform",
+    "secondary": "sendcat-oncall"
+  },
+  "surfaces": {
+    "/api/chat": {
+      "owner": "chat-runtime",
+      "secondary": "reliability-platform"
+    },
+    "/api/gmail/push": {
+      "owner": "integrations-gmail",
+      "secondary": "reliability-platform"
+    },
+    "/api/whatsapp/webhook": {
+      "owner": "integrations-whatsapp",
+      "secondary": "reliability-platform"
+    },
+    "snapshot:open_circuits": {
+      "owner": "reliability-platform",
+      "secondary": "chat-runtime"
+    },
+    "snapshot:tool_jobs_queued": {
+      "owner": "chat-runtime",
+      "secondary": "reliability-platform"
+    },
+    "snapshot:tool_jobs_failed": {
+      "owner": "chat-runtime",
+      "secondary": "reliability-platform"
+    }
+  }
+}

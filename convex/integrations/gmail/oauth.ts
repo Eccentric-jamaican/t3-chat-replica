@@ -1,6 +1,10 @@
 import { v } from "convex/values";
 import { internalMutation, internalQuery } from "../../_generated/server";
 import { encrypt } from "../crypto";
+import {
+  assertFunctionArgs,
+  gmailStoreConnectionArgsSchema,
+} from "../../lib/functionBoundaries";
 
 export const storeGmailConnection = internalMutation({
   args: {
@@ -12,19 +16,25 @@ export const storeGmailConnection = internalMutation({
     historyId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const encryptedAccessToken = await encrypt(args.accessToken);
+    const input = assertFunctionArgs(
+      gmailStoreConnectionArgsSchema,
+      args,
+      "integrations.gmail.oauth.storeGmailConnection",
+    );
+
+    const encryptedAccessToken = await encrypt(input.accessToken);
     const existing = await ctx.db
       .query("integrationsGmail")
-      .withIndex("by_user", (q) => q.eq("userId", args.userId))
+      .withIndex("by_user", (q) => q.eq("userId", input.userId))
       .unique();
 
     if (existing) {
       await ctx.db.patch(existing._id, {
-        email: args.email,
-        encryptedRefreshToken: args.encryptedRefreshToken,
+        email: input.email,
+        encryptedRefreshToken: input.encryptedRefreshToken,
         accessToken: encryptedAccessToken,
-        accessTokenExpiresAt: args.accessTokenExpiresAt,
-        historyId: args.historyId,
+        accessTokenExpiresAt: input.accessTokenExpiresAt,
+        historyId: input.historyId,
         status: "active" as const,
         lastSyncAt: Date.now(),
       });
@@ -32,12 +42,12 @@ export const storeGmailConnection = internalMutation({
     }
 
     return await ctx.db.insert("integrationsGmail", {
-      userId: args.userId,
-      email: args.email,
-      encryptedRefreshToken: args.encryptedRefreshToken,
+      userId: input.userId,
+      email: input.email,
+      encryptedRefreshToken: input.encryptedRefreshToken,
       accessToken: encryptedAccessToken,
-      accessTokenExpiresAt: args.accessTokenExpiresAt,
-      historyId: args.historyId,
+      accessTokenExpiresAt: input.accessTokenExpiresAt,
+      historyId: input.historyId,
       status: "active",
       connectedAt: Date.now(),
     });

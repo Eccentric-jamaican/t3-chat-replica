@@ -10,13 +10,33 @@ import { internal } from "../_generated/api";
 import { getAuthUserId } from "../auth";
 import { extractPurchaseData, extractFromImage } from "./extractor";
 import { getWhatsAppMediaUrl } from "./whatsapp/messaging";
+import { requireAuthenticatedUserId } from "../lib/authGuards";
+import {
+  assertFunctionArgs,
+  processWhatsappWebhookArgsSchema,
+} from "../lib/functionBoundaries";
+import { enforceFunctionRateLimit } from "../lib/functionRateLimit";
+import { getRateLimits } from "../lib/rateLimit";
+
+function getRequiredEnv(name: string) {
+  const value = process.env[name];
+  if (!value) {
+    throw new Error(`[misconfigured:${name}] missing`);
+  }
+  return value;
+}
 
 // ── Webhook processing ─────────────────────────────────────────────────
 
 export const processWebhook = internalAction({
   args: { payload: v.any() },
   handler: async (ctx, args) => {
-    const entries = args.payload.entry || [];
+    const input = assertFunctionArgs(
+      processWhatsappWebhookArgsSchema,
+      args,
+      "integrations.whatsapp.processWebhook",
+    );
+    const entries = input.payload.entry || [];
     const apiKey = process.env.OPENROUTER_API_KEY;
     if (!apiKey) {
       console.error("[WhatsApp] OPENROUTER_API_KEY not configured");
@@ -136,7 +156,7 @@ async function processImageMessage(
   }
 
   // Download and store in Convex storage
-  const accessToken = process.env.WHATSAPP_ACCESS_TOKEN!;
+  const accessToken = getRequiredEnv("WHATSAPP_ACCESS_TOKEN");
   const response = await fetch(mediaUrl, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
@@ -194,7 +214,7 @@ async function processDocumentMessage(
   const mediaUrl = await getWhatsAppMediaUrl(message.document.id);
   if (!mediaUrl) return;
 
-  const accessToken = process.env.WHATSAPP_ACCESS_TOKEN!;
+  const accessToken = getRequiredEnv("WHATSAPP_ACCESS_TOKEN");
   const response = await fetch(mediaUrl, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
@@ -428,8 +448,18 @@ export const getLinkingStatus = query({
 export const requestLinkingCode = mutation({
   args: {},
   handler: async (ctx) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Authentication required");
+    const userId = await requireAuthenticatedUserId(
+      ctx,
+      "integrations.whatsapp.requestLinkingCode",
+    );
+
+    const rateLimits = getRateLimits();
+    await enforceFunctionRateLimit(ctx, {
+      functionName: "integrations.whatsapp.requestLinkingCode",
+      key: `whatsapp_linking_code:user:${userId}`,
+      max: rateLimits.whatsappLinkingCode.max,
+      windowMs: rateLimits.whatsappLinkingCode.windowMs,
+    });
 
     const code = Math.random().toString(36).substring(2, 8).toUpperCase();
     const expiresAt = Date.now() + 10 * 60_000; // 10 minutes
@@ -462,8 +492,10 @@ export const requestLinkingCode = mutation({
 export const disconnectWhatsapp = mutation({
   args: {},
   handler: async (ctx) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Authentication required");
+    const userId = await requireAuthenticatedUserId(
+      ctx,
+      "integrations.whatsapp.disconnectWhatsapp",
+    );
 
     const link = await ctx.db
       .query("integrationsWhatsapp")

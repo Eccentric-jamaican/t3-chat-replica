@@ -4,8 +4,12 @@ import {
   internalQuery,
   query,
   mutation,
+  QueryCtx,
+  MutationCtx,
 } from "../_generated/server";
-import { getAuthUserId } from "../auth";
+import { Id } from "../_generated/dataModel";
+import { assertOwnedByUser, requireAuthenticatedUserId } from "../lib/authGuards";
+import { throwFunctionError } from "../lib/functionErrors";
 
 // ── Internal functions (called from actions) ───────────────────────────
 
@@ -313,6 +317,22 @@ export const createPackagePreAlert = internalMutation({
 
 // ── Public queries (called from frontend) ──────────────────────────────
 
+async function requireOwnedDraft(
+  ctx: QueryCtx | MutationCtx,
+  draftId: Id<"purchaseDrafts">,
+  functionName: string,
+) {
+  const userId = await requireAuthenticatedUserId(ctx, functionName);
+  const draft = await ctx.db.get(draftId);
+  if (!draft) {
+    throwFunctionError("not_found", functionName, "Draft not found");
+  }
+  assertOwnedByUser(userId, draft.userId, functionName, {
+    forbiddenMessage: "Draft not found or access denied",
+  });
+  return { draft, userId };
+}
+
 export const listDrafts = query({
   args: {
     status: v.optional(
@@ -324,8 +344,10 @@ export const listDrafts = query({
     ),
   },
   handler: async (ctx, args) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Authentication required");
+    const userId = await requireAuthenticatedUserId(
+      ctx,
+      "integrations.evidence.listDrafts",
+    );
 
     if (args.status) {
       return await ctx.db
@@ -345,14 +367,26 @@ export const listDrafts = query({
 export const listPreAlerts = query({
   args: { purchaseDraftId: v.optional(v.id("purchaseDrafts")) },
   handler: async (ctx, args) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Authentication required");
+    const userId = await requireAuthenticatedUserId(
+      ctx,
+      "integrations.evidence.listPreAlerts",
+    );
 
     if (args.purchaseDraftId) {
       const draft = await ctx.db.get(args.purchaseDraftId);
-      if (!draft || draft.userId !== userId) {
-        throw new Error("Draft not found or access denied");
+      if (!draft) {
+        throwFunctionError(
+          "not_found",
+          "integrations.evidence.listPreAlerts",
+          "Draft not found",
+        );
       }
+      assertOwnedByUser(
+        userId,
+        draft.userId,
+        "integrations.evidence.listPreAlerts",
+        { forbiddenMessage: "Draft not found or access denied" },
+      );
       return await ctx.db
         .query("packagePreAlerts")
         .withIndex("by_purchase_draft", (q) =>
@@ -370,8 +404,10 @@ export const listPreAlerts = query({
 export const getDraft = query({
   args: { draftId: v.id("purchaseDrafts") },
   handler: async (ctx, args) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Authentication required");
+    const userId = await requireAuthenticatedUserId(
+      ctx,
+      "integrations.evidence.getDraft",
+    );
 
     const draft = await ctx.db.get(args.draftId);
     if (!draft || draft.userId !== userId) return null;
@@ -393,13 +429,11 @@ export const updateDraft = mutation({
     }),
   },
   handler: async (ctx, args) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Authentication required");
-
-    const draft = await ctx.db.get(args.draftId);
-    if (!draft || draft.userId !== userId) {
-      throw new Error("Draft not found or access denied");
-    }
+    await requireOwnedDraft(
+      ctx,
+      args.draftId,
+      "integrations.evidence.updateDraft",
+    );
 
     await ctx.db.patch(args.draftId, args.updates);
   },
@@ -408,13 +442,11 @@ export const updateDraft = mutation({
 export const confirmDraft = mutation({
   args: { draftId: v.id("purchaseDrafts") },
   handler: async (ctx, args) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Authentication required");
-
-    const draft = await ctx.db.get(args.draftId);
-    if (!draft || draft.userId !== userId) {
-      throw new Error("Access denied");
-    }
+    await requireOwnedDraft(
+      ctx,
+      args.draftId,
+      "integrations.evidence.confirmDraft",
+    );
 
     await ctx.db.patch(args.draftId, {
       status: "confirmed",
@@ -443,13 +475,11 @@ export const confirmDraft = mutation({
 export const rejectDraft = mutation({
   args: { draftId: v.id("purchaseDrafts") },
   handler: async (ctx, args) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Authentication required");
-
-    const draft = await ctx.db.get(args.draftId);
-    if (!draft || draft.userId !== userId) {
-      throw new Error("Access denied");
-    }
+    await requireOwnedDraft(
+      ctx,
+      args.draftId,
+      "integrations.evidence.rejectDraft",
+    );
 
     await ctx.db.patch(args.draftId, { status: "rejected" });
   },
@@ -461,13 +491,11 @@ export const uploadInvoice = mutation({
     storageId: v.id("_storage"),
   },
   handler: async (ctx, args) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Authentication required");
-
-    const draft = await ctx.db.get(args.draftId);
-    if (!draft || draft.userId !== userId) {
-      throw new Error("Access denied");
-    }
+    await requireOwnedDraft(
+      ctx,
+      args.draftId,
+      "integrations.evidence.uploadInvoice",
+    );
 
     await ctx.db.patch(args.draftId, {
       invoiceStorageId: args.storageId,
@@ -479,8 +507,10 @@ export const uploadInvoice = mutation({
 export const generateUploadUrl = mutation({
   args: {},
   handler: async (ctx) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Authentication required");
+    await requireAuthenticatedUserId(
+      ctx,
+      "integrations.evidence.generateUploadUrl",
+    );
     return await ctx.storage.generateUploadUrl();
   },
 });
