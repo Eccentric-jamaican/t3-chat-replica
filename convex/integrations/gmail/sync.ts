@@ -333,7 +333,7 @@ export const syncGmail = internalAction({
 
     if (!messages?.length) {
       console.log("[Gmail Sync] No messages found");
-      return { processed: 0, draftsCreated: 0 };
+      return { processed: 0, draftsCreated: 0, draftsUpdated: 0 };
     }
 
     let scanned = 0;
