@@ -15,6 +15,8 @@ const ALERT_RULES = [
   { bucket: "gmail_push", outcome: "contention_fallback", threshold: 5 },
   { bucket: "chat_stream", outcome: "blocked", threshold: 25 },
   { bucket: "chat_stream", outcome: "contention_fallback", threshold: 3 },
+  { bucket: "chat_admission", outcome: "blocked", threshold: 25 },
+  { bucket: "chat_admission", outcome: "contention_fallback", threshold: 3 },
 ] as const;
 
 function parseSentryDsn(dsn: string) {
@@ -158,9 +160,11 @@ export const recordEvent = internalMutation({
     bucket: v.string(),
     key: v.string(),
     outcome: v.union(
+      v.literal("allowed"),
       v.literal("blocked"),
       v.literal("contention_fallback"),
     ),
+    reason: v.optional(v.string()),
     retryAfterMs: v.optional(v.number()),
     path: v.optional(v.string()),
     method: v.optional(v.string()),
@@ -168,7 +172,7 @@ export const recordEvent = internalMutation({
   handler: async (ctx, args) => {
     const now = Date.now();
     const dedupeWindowStart = now - (now % EVENT_DEDUPE_WINDOW_MS);
-    const dedupeKey = `${args.source}|${args.bucket}|${args.key}|${args.outcome}|${dedupeWindowStart}`;
+    const dedupeKey = `${args.source}|${args.bucket}|${args.key}|${args.outcome}|${args.reason ?? ""}|${dedupeWindowStart}`;
 
     const existing = await ctx.db
       .query("rateLimitEvents")
@@ -280,6 +284,7 @@ export const getEventSummary = internalQuery({
     const summary: Record<string, number> = {};
     const bucketOutcomeSummary: Record<string, number> = {};
     let total = 0;
+    const byBucketOutcomeReason: Record<string, number> = {};
 
     for (const row of rows) {
       if (row.createdAt < cutoff) continue;
@@ -288,6 +293,9 @@ export const getEventSummary = internalQuery({
       summary[sourceKey] = (summary[sourceKey] ?? 0) + 1;
       const bucketKey = `${row.bucket}:${row.outcome}`;
       bucketOutcomeSummary[bucketKey] = (bucketOutcomeSummary[bucketKey] ?? 0) + 1;
+      const reasonKey = `${row.bucket}:${row.outcome}:${row.reason ?? "none"}`;
+      byBucketOutcomeReason[reasonKey] =
+        (byBucketOutcomeReason[reasonKey] ?? 0) + 1;
     }
 
     return {
@@ -295,6 +303,7 @@ export const getEventSummary = internalQuery({
       windowMinutes,
       bySourceBucketOutcome: summary,
       byBucketOutcome: bucketOutcomeSummary,
+      byBucketOutcomeReason,
     };
   },
 });

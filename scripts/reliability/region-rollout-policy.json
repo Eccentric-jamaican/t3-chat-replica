@@ -1,0 +1,21 @@
+{
+  "version": "2026-02-19",
+  "launchMode": "single_region",
+  "expectedPeakConcurrentStreams": {
+    "activeStandbyThreshold": 20000,
+    "activeActiveThreshold": 60000
+  },
+  "loadPressure": {
+    "lookbackReports": 6,
+    "minBreachesToTrigger": 3,
+    "maxP95Ms": 5000,
+    "max429Rate": 0.15,
+    "max5xxRate": 0.02
+  },
+  "opsSnapshot": {
+    "windowMinutes": 30,
+    "maxOpenCircuits": 1,
+    "maxRateLimitAlertsInWindow": 5,
+    "maxQueuedToolJobs": 100
+  }
+}

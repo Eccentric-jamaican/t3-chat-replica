@@ -2,11 +2,20 @@ import { internal } from "../_generated/api";
 import { getToolJobConfig } from "./reliabilityConfig";
 
 type QueueSource = "chat_action" | "chat_http";
+type ToolBackpressureReason =
+  | "queue_saturated"
+  | "queue_timeout"
+  | "dead_letter";
+type ToolBackpressureInfo = {
+  reason: ToolBackpressureReason;
+  retryable: boolean;
+  retryAfterMs?: number;
+};
 
 type ToolJobClientResult<T = any> =
   | { status: "completed"; result: T }
-  | { status: "failed"; error: string }
-  | { status: "timeout" };
+  | { status: "failed"; error: string; backpressure?: ToolBackpressureInfo }
+  | { status: "timeout"; backpressure: ToolBackpressureInfo };
 
 function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -50,6 +59,11 @@ export async function enqueueToolJobAndWait<T = any>(
       return {
         status: "failed",
         error: "Tool queue is temporarily saturated. Please retry in a moment.",
+        backpressure: {
+          reason: "queue_saturated",
+          retryable: true,
+          retryAfterMs: 1000,
+        },
       };
     }
     return {
@@ -97,8 +111,27 @@ export async function enqueueToolJobAndWait<T = any>(
       };
     }
 
+    if (job.status === "dead_letter") {
+      return {
+        status: "failed",
+        error: job.deadLetterReason ?? job.lastError ?? "Tool job dead-lettered",
+        backpressure: {
+          reason: "dead_letter",
+          retryable: true,
+          retryAfterMs: 1500,
+        },
+      };
+    }
+
     await delay(pollMs);
   }
 
-  return { status: "timeout" };
+  return {
+    status: "timeout",
+    backpressure: {
+      reason: "queue_timeout",
+      retryable: true,
+      retryAfterMs: Math.max(Math.floor(waitTimeoutMs / 4), 1000),
+    },
+  };
 }

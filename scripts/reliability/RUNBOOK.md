@@ -33,6 +33,7 @@ Machine-readable copy: `scripts/reliability/slo-baseline.json`.
    - rate limiting / replay pressure
    - circuit breaker state
    - bulkhead saturation
+   - region posture (`config.regionTopology` in reliability snapshot)
 
 ## Core Operator Commands
 
@@ -48,6 +49,8 @@ npm run reliability:gate -- --profile=quick
 npm run reliability:canary -- --control-url=https://control.convex.site --candidate-url=https://candidate.convex.site --profile=quick
 npm run reliability:gameday -- --profiles=burst,soak
 npm run reliability:dashboard
+npm run reliability:region-readiness -- --expected-peak-streams=5000
+npm run reliability:milestone-gate -- --milestone=m1_1k --chat-auth-pool-file=.output/reliability/chat-auth-pool-loadtestmulti-20260219c-1-20.json --chat-load-scale=0.5 --chat-concurrency-scale=0.5
 ```
 
 Ownership reference:
@@ -73,7 +76,8 @@ npx convex run circuitBreaker:listStatuses '{"limit":20}'
 Bulkhead in-flight pressure:
 
 ```bash
-npx convex run bulkhead:listInFlightByProvider '{"provider":"openrouter_chat","limit":100}'
+npx convex run bulkhead:listInFlightByProvider '{"provider":"openrouter_chat_primary","limit":100}'
+npx convex run bulkhead:listInFlightByProvider '{"provider":"openrouter_chat_secondary","limit":100}'
 npx convex run bulkhead:listInFlightByProvider '{"provider":"serper_search","limit":100}'
 npx convex run bulkhead:listInFlightByProvider '{"provider":"gmail_oauth","limit":100}'
 ```
@@ -121,10 +125,11 @@ Signal:
 
 Actions:
 
-1. Identify provider (`openrouter_chat`, `serper_search`, `gmail_oauth`, `ebay_search`, `global_search`).
+1. Identify provider (`openrouter_chat_primary`, `openrouter_chat_secondary`, `serper_search`, `gmail_oauth`, `ebay_search`, `global_search`).
 2. Check provider status and token/quota validity.
 3. Keep circuit protection enabled; do not bypass.
 4. If flapping, increase `CIRCUIT_*_COOLDOWN_MS` first, then retest.
+5. If primary route is degraded, confirm `FF_PROVIDER_FAILOVER_ENABLED=true` and validate secondary route health before tuning thresholds.
 
 ### C) Bulkhead saturation
 
@@ -182,7 +187,7 @@ Actions:
 
 1. Confirm worker saturation vs upstream failure:
    - check `bulkheads.inFlightByProvider.tool_job_worker`
-   - check circuit states for `serper_search` and `openrouter_chat` if related
+   - check circuit states for `serper_search`, `openrouter_chat_primary`, and `openrouter_chat_secondary` if related
 2. Increase worker capacity conservatively:
    - `BULKHEAD_TOOL_JOB_MAX` (<= 20% per change)
    - `TOOL_JOB_MAX_PER_RUN`
@@ -190,15 +195,58 @@ Actions:
      - `TOOL_JOB_RUNMAX_WEB`
      - `TOOL_JOB_RUNMAX_PROD`
      - `TOOL_JOB_RUNMAX_GLOB`
+   - per-QoS running caps:
+     - `TOOL_JOB_RUNMAX_QOS_REALTIME`
+     - `TOOL_JOB_RUNMAX_QOS_INTERACTIVE`
+     - `TOOL_JOB_RUNMAX_QOS_BATCH`
 3. If backlog is dominated by one tool type, tune per-tool queued caps:
    - `TOOL_JOB_QMAX_WEB`
    - `TOOL_JOB_QMAX_PROD`
    - `TOOL_JOB_QMAX_GLOB`
-4. Tune lease/poll windows if jobs are frequently timing out:
+4. Monitor queue lag alerts:
+   - `toolJobs:monitorQueueHealth`
+   - inspect `toolQueueAlerts` in snapshot.
+5. Tune lease/poll windows if jobs are frequently timing out:
    - `TOOL_JOB_LEASE_MS`
    - `TOOL_JOB_WAIT_MS`
    - `TOOL_JOB_POLL_MS`
-5. Re-run quick drill and compare snapshots before/after.
+6. If dead-letter backlog grows:
+   - inspect `toolJobs.recentDeadLetters`
+   - use `toolJobs:requeueDeadLetter` after upstream mitigation.
+7. Re-run quick drill and compare snapshots before/after.
+
+### G) Region rollout trigger evaluation (single-region launch)
+
+Signal:
+
+- business forecast or launch telemetry indicates sustained higher concurrent chat demand
+- repeated load-pressure breaches despite tuning and queue/admission controls
+
+Actions:
+
+1. Run trigger check:
+   - `npm run reliability:region-readiness -- --expected-peak-streams=<forecast>`
+2. Inspect generated report in `.output/reliability/region-readiness-*.json`.
+3. If `activateMultiRegionProgram=true`, open a multi-region execution ticket and attach:
+   - latest region-readiness report
+   - latest release-gate report
+   - latest load-drill artifacts
+4. If not triggered, keep single-region posture and continue capacity tuning on current phase gates.
+
+### H) Phase 5.6 milestone gate execution
+
+Signal:
+
+- release candidate needs milestone evidence (`m1_1k`, `m2_5k`, `m3_20k`)
+
+Actions:
+
+1. Ensure a valid chat auth pool file exists for the run.
+2. Execute milestone gate:
+   - `npm run reliability:milestone-gate -- --milestone=m1_1k --chat-auth-pool-file=<pool-file>`
+3. Review artifact:
+   - `.output/reliability/milestone-gate-<milestone>-<timestamp>.json`
+4. If failed, tune relevant reliability knobs and rerun before promotion.
 
 ## Release Gate Procedure
 

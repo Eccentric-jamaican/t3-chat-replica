@@ -1206,3 +1206,540 @@
 - `npm run reliability:gate -- --base-url=https://admired-antelope-676.convex.site --profile=quick` -> passed.
   - report:
     - `.output/reliability/release-gate-2026-02-18T04-03-30-712Z.json`
+
+## 2026-02-19 - Redis Admission Control (Dual-Run + Fail-Fast) Implementation + Validation
+
+### Goal
+- Add Redis-backed hot-path admission control for chat traffic to reduce Convex limiter contention at higher QPS while preserving fail-fast behavior.
+
+### Implemented
+- Added `@upstash/redis` dependency.
+- Added `convex/lib/admissionControl.ts`:
+  - enforce mode: per-user inflight, global inflight, global msg/s, global tool/s checks
+  - shadow mode: non-mutating would-block evaluation
+  - strict release with ticket key + TTL fallback
+- Added admission config surface in `convex/lib/reliabilityConfig.ts`:
+  - `ADMISSION_REDIS_ENABLED`
+  - `ADMISSION_REDIS_SHADOW_MODE`
+  - `ADMISSION_REDIS_URL`
+  - `ADMISSION_REDIS_TOKEN`
+  - `ADMISSION_REDIS_KEY_PREFIX`
+  - `ADMISSION_USER_MAX_INFLIGHT`
+  - `ADMISSION_GLOBAL_MAX_INFLIGHT`
+  - `ADMISSION_GLOBAL_MAX_MSG_PER_SEC`
+  - `ADMISSION_GLOBAL_MAX_TOOL_PER_SEC`
+  - `ADMISSION_EST_TOOL_CALLS_PER_MSG`
+  - `ADMISSION_TICKET_TTL_MS`
+  - `ADMISSION_RETRY_AFTER_MS`
+- Integrated admission checks into both chat entry points:
+  - `convex/chatHttp.ts` (`/api/chat`)
+  - `convex/chat.ts` (`chat:streamAnswer`)
+- Dual-run behavior:
+  - legacy Convex limiter remains authoritative only when admission is disabled or shadow mode is enabled
+  - enforce mode uses Redis admission as gate
+- Fail-fast behavior:
+  - admission denials return/throw `rate_limited` with `Retry-After`
+  - downstream bulkhead saturation still maps to `503` in HTTP path
+- Added observability buckets:
+  - `chat_admission`
+  - `chat_admission_shadow`
+- Added alert rules in `convex/rateLimit.ts` for `chat_admission` pressure.
+- Included admission config in `ops:getReliabilitySnapshot`.
+- Documented new admission env vars in `scripts/reliability/README.md`.
+
+### Validation
+- `npx vitest run convex/lib/admissionControl.test.ts convex/lib/reliabilityConfig.test.ts convex/http.contract.test.ts` -> passed (`39/39`).
+- `npm test` currently has one unrelated pre-existing failure in `convex/lib/circuitBreaker.test.ts` (`429` classification expectation mismatch).
+
+## 2026-02-19 - Reliability Drill SLO Hardening (2xx Success-Rate Gate) + Findings
+
+### Goal
+- Prevent false-positive drill passes when latency is low but most requests are admission rejections (`429`).
+
+### Implemented
+- Updated SLO evaluator in `scripts/reliability/run-load-drills.mjs`:
+  - computes `2xx_success_rate`
+  - supports optional `minTwoXxRate` threshold
+  - includes a `2xx_success_rate` check in scenario results when configured
+- Updated chat drill SLO in `scripts/reliability/run-load-drills.mjs`:
+  - `minTwoXxRate: 0.9` for `chat_stream_http`
+- Updated baseline config in `scripts/reliability/slo-baseline.json`:
+  - `/api/chat.minTwoXxRate: 0.9`
+  - version bumped to `phase-1-11b-2026-02-19`
+- Updated docs in `scripts/reliability/README.md`:
+  - added `2xx success rate >= 90%` under chat SLO gates
+
+### Validation
+- `npm run reliability:drill -- --profile=standard --scenarios=chat_stream_http --base-url=https://admired-antelope-676.convex.site --auth-token=<token> --thread-id=j97eb0ep90wycedjdjeybsz60d81d4mt` -> passed.
+  - report: `.output/reliability/load-drill-standard-2026-02-19T00-43-20-822Z.json`
+  - check: `2xx_success_rate = 1.0` (PASS vs `0.9`)
+- `npm run reliability:drill -- --profile=burst --scenarios=chat_stream_http --base-url=https://admired-antelope-676.convex.site --auth-token=<token> --thread-id=j97eb0ep90wycedjdjeybsz60d81d4mt` -> failed as expected.
+  - report: `.output/reliability/load-drill-burst-2026-02-19T00-43-40-682Z.json`
+  - check: `2xx_success_rate = 0.4` (FAIL vs `0.9`)
+- `npm run reliability:drill -- --profile=soak --scenarios=chat_stream_http --base-url=https://admired-antelope-676.convex.site --auth-token=<token> --thread-id=j97eb0ep90wycedjdjeybsz60d81d4mt` -> failed as expected.
+  - report: `.output/reliability/load-drill-soak-2026-02-19T00-45-27-162Z.json`
+  - check: `2xx_success_rate = 0.0752` (FAIL vs `0.9`)
+
+### Findings
+- Previous SLO gate allowed high-`429` runs to pass if latency/5xx/error-rate were within limits.
+- New gate now correctly distinguishes:
+  - healthy success throughput (`standard`: PASS)
+  - heavy admission rejection regimes (`burst`/`soak`: FAIL)
+- This makes drill pass/fail align with user-perceived availability instead of only backend responsiveness on rejected requests.
+
+## 2026-02-19 - Multi-User Chat Pressure Drill (Auth Pool + Stage Scaling) Implementation + Findings
+
+### Goal
+- Pressure test `/api/chat` with multiple authenticated users instead of a single token, and amplify chat drill intensity in a controlled way.
+
+### Implemented
+- Added multi-user chat auth pool support to `scripts/reliability/run-load-drills.mjs`:
+  - accepts `--chat-auth-pool-file` or `--chat-auth-pool-json`
+  - supports env vars:
+    - `RELIABILITY_CHAT_AUTH_POOL_FILE`
+    - `RELIABILITY_CHAT_AUTH_POOL_JSON`
+  - round-robin assignment of `{ authToken, threadId }` per request
+  - report now includes:
+    - `chatAuthPoolSize`
+    - `chatStageScale` (`load`, `concurrency`, `duration`)
+- Added chat stage scaling flags:
+  - `--chat-load-scale`
+  - `--chat-concurrency-scale`
+  - `--chat-duration-scale`
+- Added auth-pool generator script:
+  - `scripts/reliability/generate-chat-auth-pool.mjs`
+  - npm command: `npm run reliability:pool`
+  - flow:
+    - sign-in existing seeded user email (fallback sign-up)
+    - fetch Convex bearer token from `/api/auth/convex/token`
+    - create per-user thread via `threads:create`
+    - output pool JSON with `authToken` + `threadId`
+- Documented usage and flags in `scripts/reliability/README.md`.
+
+### Validation Runs
+- Generated 40-user pool:
+  - `npm run reliability:pool -- --count=40 --app-origin=http://localhost:3000 --convex-url=https://admired-antelope-676.convex.cloud --prefix=loadtestmulti --seed=20260219a`
+  - output:
+    - `.output/reliability/chat-auth-pool-loadtestmulti-20260219a-1-40.json`
+- Multi-user standard pressure:
+  - `npm run reliability:drill -- --profile=standard --scenarios=chat_stream_http --chat-auth-pool-file=.output/reliability/chat-auth-pool-loadtestmulti-20260219a-1-40.json --chat-load-scale=10 --chat-concurrency-scale=10 --base-url=https://admired-antelope-676.convex.site`
+  - report:
+    - `.output/reliability/load-drill-standard-2026-02-19T01-00-09-597Z.json`
+- Multi-user burst pressure:
+  - `npm run reliability:drill -- --profile=burst --scenarios=chat_stream_http --chat-auth-pool-file=.output/reliability/chat-auth-pool-loadtestmulti-20260219a-1-40.json --chat-load-scale=20 --chat-concurrency-scale=20 --base-url=https://admired-antelope-676.convex.site`
+  - report:
+    - `.output/reliability/load-drill-burst-2026-02-19T01-00-33-213Z.json`
+- Multi-user soak pressure:
+  - `npm run reliability:drill -- --profile=soak --scenarios=chat_stream_http --chat-auth-pool-file=.output/reliability/chat-auth-pool-loadtestmulti-20260219a-1-40.json --chat-concurrency-scale=20 --chat-duration-scale=1 --base-url=https://admired-antelope-676.convex.site`
+  - report:
+    - `.output/reliability/load-drill-soak-2026-02-19T01-02-15-512Z.json`
+
+### Findings (Multi-User)
+- Standard (`pool=40`, `load x10`, `concurrency x10`):
+  - `total=180`, statuses: `200=54`, `503=125`, `500=1`
+  - SLO: `FAIL` (`5xx_rate=0.70`, `2xx_success_rate=0.30`)
+- Burst (`pool=40`, `load x20`, `concurrency x20`):
+  - `total=600`, statuses: `200=234`, `503=366`
+  - SLO: `FAIL` (`5xx_rate=0.61`, `2xx_success_rate=0.39`)
+- Soak (`pool=40`, `concurrency x20`, `90s`):
+  - `total=5989`, statuses: `200=238`, `429=5568`, `503=183`
+  - SLO: `FAIL` (`2xx_success_rate=0.0397`)
+- Convex pressure telemetry in last 30 minutes:
+  - `rateLimit:getEventSummary` reported `chat_stream:blocked=718`
+- Interpretation:
+  - system remains fail-fast under pressure (rejects dominate instead of collapse)
+  - current throughput ceilings are constrained by configured bulkhead/rate-limit/admission guardrails
+  - multi-user pressure path is now reproducible with explicit artifacts and knobs
+
+## 2026-02-19 - Controlled Tuning Pass (Dev) + Post-Tuning Capacity Sweep
+
+### Goal
+- Raise chat throughput headroom in dev and find the next failure plateau using the new multi-user drill harness.
+
+### Runtime Tuning Applied (Convex ownDev env)
+- `BULKHEAD_OPENROUTER_MAX_CONCURRENT=120` (from default `24`)
+- `RATE_LIMIT_CHAT_STREAM_MAX=1000` (from default `30`)
+- `RATE_LIMIT_CHAT_STREAM_WINDOW_MS=300000` (unchanged duration, higher cap)
+- Note: attempted `RATE_LIMIT_CHAT_STREAM_MAX=2000`, but config parser caps at `1000`, so it fell back to default; corrected to `1000`.
+
+### Verification
+- `ops:getReliabilitySnapshot` confirms:
+  - `bulkheads.openrouter_chat.maxConcurrent = 120`
+  - `rateLimits.chatStream.max = 1000`
+
+### Pre/Post Comparison (same 40-user pool, same scales)
+- **Pre-tuning standard**  
+  - report: `.output/reliability/load-drill-standard-2026-02-19T01-00-09-597Z.json`
+  - `total=180`, `p95=2353ms`, statuses `200=54, 500=1, 503=125`, `2xx=30.0%` -> FAIL
+- **Post-tuning standard**  
+  - report: `.output/reliability/load-drill-standard-2026-02-19T01-12-29-095Z.json`
+  - `total=180`, `p95=2024ms`, statuses `200=180`, `2xx=100%` -> PASS
+- **Pre-tuning burst**  
+  - report: `.output/reliability/load-drill-burst-2026-02-19T01-00-33-213Z.json`
+  - `total=600`, `p95=2519ms`, statuses `200=234, 503=366`, `2xx=39.0%` -> FAIL
+- **Post-tuning burst**  
+  - report: `.output/reliability/load-drill-burst-2026-02-19T01-12-53-365Z.json`
+  - `total=600`, `p95=2233ms`, statuses `200=600`, `2xx=100%` -> PASS
+
+### Post-Tuning Capacity Sweep
+- Generated fresh pool (`20` users):
+  - `.output/reliability/chat-auth-pool-loadtestmulti-20260219c-1-20.json`
+- Soak (`concurrency x10`) report:
+  - `.output/reliability/load-drill-soak-2026-02-19T01-31-17-360Z.json`
+  - `total=1366`, `p95=2102ms`, statuses `200=1366`, `2xx=100%` -> PASS
+- Burst (`load x80`, `concurrency x80`) report:
+  - `.output/reliability/load-drill-burst-2026-02-19T01-32-21-811Z.json`
+  - `total=2400`, `p95=4567ms`, statuses `200=2194, 429=206`, `2xx=91.42%` -> PASS
+- Burst (`load x100`, `concurrency x100`) report:
+  - `.output/reliability/load-drill-burst-2026-02-19T01-33-03-395Z.json`
+  - `total=3000`, `p95=5800ms`, statuses `200=2498, 429=501, 502=1`, `2xx=83.27%` -> FAIL (fails `minTwoXxRate`)
+
+### Findings
+- The tuning removed the prior `503`-dominated bottleneck at moderate/high burst profiles.
+- New practical plateau (with current SLO rule `2xx >= 90%`) is between:
+  - burst scale `x80` (PASS)
+  - burst scale `x100` (FAIL)
+- Under very high burst, degradation mode shifts from `503` saturation to `429` admission/rate-limit pressure while core latency remains within threshold.
+
+## 2026-02-19 - Phase 5.0 Program Setup (Large-Scale Baseline Contracts)
+
+### Goal
+- Start the large-scale architecture track by locking measurable SLO/capacity targets, architecture decisions, and rollout guardrails before deep refactors.
+
+### Implemented
+- Added Phase 5.0 program setup contract doc:
+  - `docs/phase5-program-setup.md`
+  - defines tiered chat SLO targets:
+    - Tier L (`1k` streams)
+    - Tier G (`5k` streams)
+    - Tier X (`20k` streams)
+  - includes milestone gates (`M1`, `M2`, `M3`) and rollback triggers
+- Added architecture decision record:
+  - `docs/chat-gateway-adr.md`
+  - records decisions for:
+    - control-plane/data-plane split
+    - Redis role (admission counters only, not source of truth)
+    - async queue semantics for tools
+    - provider failover policy
+- Added rollout matrix and feature-flag contract:
+  - `docs/chat-rollout-matrix.md`
+  - defines staged rollout (`Dev Shadow -> Dev Enforce -> Canary -> Prod Ramp`)
+  - defines rollback conditions and operational step requirements
+- Updated roadmap status:
+  - `reliability-roadmap.md` now marks Phase 5 as in progress through 5.0
+  - added explicit 5.0 delivered artifacts references
+
+### Validation
+- Documentation artifacts are present and cross-referenced in the roadmap.
+- Phase 5 now has concrete execution contracts to reference for all follow-on implementation.
+
+## 2026-02-19 - Phase 5.1 / 5.2 (Gateway Split + Redis Admission Enforce Hardening) Implementation + Validation
+
+### Goal
+- Complete gateway adapter rollout foundations and harden Redis admission behavior for staged enforce operation at scale.
+
+### Implemented
+- Gateway split + diagnostics:
+  - Added gateway adapter and mode resolver in `convex/chatGateway.ts`.
+  - Routed `/api/chat` through `runChatGatewayRequest(...)` in `convex/http.ts`.
+  - Added `GET /api/chat/health` with origin guard and readiness checks.
+  - Health payload now includes admission enforce policy + retry jitter config.
+- Staged admission enforce controls:
+  - Added env-driven admission dimension switches in `convex/lib/reliabilityConfig.ts`:
+    - `ADMISSION_ENFORCE_USER_INFLIGHT`
+    - `ADMISSION_ENFORCE_GLOBAL_INFLIGHT`
+    - `ADMISSION_ENFORCE_GLOBAL_MSG_RATE`
+    - `ADMISSION_ENFORCE_GLOBAL_TOOL_RATE`
+  - Enforce path now supports soft-allow when a breached dimension is disabled, with `softBlockedReasons` captured for telemetry.
+- Standardized jittered retry behavior:
+  - Added `resolveAdmissionRetryAfterMs(...)` in `convex/lib/admissionControl.ts`.
+  - Added env knobs:
+    - `ADMISSION_RETRY_AFTER_JITTER_PCT`
+    - `ADMISSION_ALLOWED_EVENT_SAMPLE_PCT`
+- Admission telemetry + dashboard signals:
+  - Extended `rateLimitEvents` schema:
+    - `outcome` includes `allowed`
+    - optional `reason`
+  - Added sampled allow + reason-tagged admission event emission in:
+    - `convex/chat.ts`
+    - `convex/chatHttp.ts`
+  - Extended ops snapshot in `convex/ops.ts`:
+    - `chatAdmission.enforce`
+    - `chatAdmission.shadow`
+    - `chatAdmission.topReasons`
+    - `chatAdmission.falsePositivePressure`
+    - `rateLimitPressure.byBucketOutcomeReason`
+  - Redacted `config.admission.redisToken` in ops snapshot output.
+- Contract/test coverage updates:
+  - `convex/lib/admissionControl.test.ts`
+  - `convex/lib/reliabilityConfig.test.ts`
+  - `convex/chatGateway.test.ts`
+  - `convex/http.contract.test.ts` (added `/api/chat/health` behavior checks)
+
+### Validation
+- `npx vitest run convex/lib/admissionControl.test.ts convex/lib/reliabilityConfig.test.ts convex/chatGateway.test.ts convex/http.contract.test.ts` -> passed (`49/49`).
+- `npx convex codegen` -> completed and regenerated bindings.
+- `npx convex dev --once` -> deployed schema/function changes.
+- Runtime verification:
+  - `GET https://admired-antelope-676.convex.site/api/chat/health` returns healthy payload with admission policy and retry jitter fields.
+  - `npx convex run ops:getReliabilitySnapshot '{"minutes":15,"limit":20}'` returns new `chatAdmission` and `byBucketOutcomeReason` sections with `redisToken` redacted.
+
+### Notes
+- Vitest still reports a known post-run close-timeout warning in this repository; test assertions complete successfully.
+
+## 2026-02-19 - Phase 5.3 (Async Tool Execution Plane Hardening) Implementation + Validation
+
+### Goal
+- Improve queue resilience under fanout pressure with explicit QoS, DLQ semantics, queue lag monitoring, and user-visible backpressure signals.
+
+### Implemented
+- QoS + inflight controls:
+  - Added tool QoS classes and priority-aware claim selection in:
+    - `convex/lib/toolJobQueue.ts`
+  - Added class-level running caps in `convex/lib/reliabilityConfig.ts`:
+    - `TOOL_JOB_RUNMAX_QOS_REALTIME`
+    - `TOOL_JOB_RUNMAX_QOS_INTERACTIVE`
+    - `TOOL_JOB_RUNMAX_QOS_BATCH`
+  - Extended queue config with:
+    - `deadLetterRetentionMs` (`TOOL_JOB_DLQ_TTL_MS`)
+- DLQ semantics:
+  - `toolJobs.fail` now transitions exhausted jobs to `dead_letter` instead of silent terminal `failed`.
+  - Added DLQ metadata:
+    - `deadLetterReason`
+    - `deadLetterAt`
+  - Added queue operations:
+    - `toolJobs:listDeadLetters`
+    - `toolJobs:requeueDeadLetter`
+- Queue lag SLO alerts:
+  - Added alert table:
+    - `toolQueueAlerts`
+  - Added monitor workflow in `convex/toolJobs.ts`:
+    - `toolJobs:monitorQueueHealth`
+    - `toolJobs:raiseQueueAlertIfNeeded`
+    - `toolJobs:listRecentQueueAlerts`
+  - Added queue health cron in `convex/crons.ts`:
+    - `monitor-tool-queue-health` (every 5 minutes)
+  - Added queue alert knobs in `convex/lib/reliabilityConfig.ts`:
+    - `TOOL_QUEUE_ALERTS_ENABLED`
+    - `TOOL_QUEUE_ALERT_WINDOW_MIN`
+    - `TOOL_QUEUE_ALERT_COOLDOWN_MS`
+    - `TOOL_QUEUE_ALERT_MAX_QUEUED`
+    - `TOOL_QUEUE_ALERT_MAX_DLQ`
+    - `TOOL_QUEUE_ALERT_MAX_QUEUED_AGE_MS`
+    - `TOOL_QUEUE_ALERT_MAX_RUNNING_AGE_MS`
+    - `TOOL_QUEUE_SENTRY_DSN` (optional override)
+- Backpressure surfaced to chat flows:
+  - Extended tool-job client outcomes in `convex/lib/toolJobClient.ts`:
+    - structured backpressure reasons: `queue_saturated`, `queue_timeout`, `dead_letter`
+  - SSE path now emits `tool-backpressure` events in `convex/chatHttp.ts`.
+  - Action path now returns explicit temporary-load fallback text in `convex/chat.ts`.
+- Ops snapshot coverage extended in `convex/ops.ts`:
+  - `config.toolQueueAlerts`
+  - `toolQueueAlerts.recent`
+  - `toolQueueAlerts.alertsInWindow`
+  - `toolJobs.byStatus.deadLetter`
+  - `toolJobs.recentDeadLetters`
+
+### Validation
+- Tests:
+  - `npx vitest run convex/lib/toolJobQueue.test.ts convex/lib/toolJobClient.test.ts convex/lib/reliabilityConfig.test.ts convex/lib/admissionControl.test.ts convex/chatGateway.test.ts convex/http.contract.test.ts` -> passed (`57/57`).
+- Convex deploy/codegen:
+  - `npx convex codegen` -> completed.
+  - `npx convex dev --once` -> deployed schema/functions successfully.
+- Runtime checks:
+  - `npx convex run toolJobs:getQueueStats '{"limit":200}'` -> returns new `deadLetter` metrics.
+  - `npx convex run toolJobs:monitorQueueHealth '{}'` -> monitor action executes with `createdAlerts=0` on healthy state.
+  - `npx convex run ops:getReliabilitySnapshot '{"minutes":15,"limit":20}'` -> includes new queue alert + DLQ snapshot sections.
+
+### Notes
+- Added `qosClass` as an optional field in `toolJobs` schema to avoid migration failures on existing historical rows.
+- Vitest post-run close-timeout warning persists; assertions and exits are successful.
+
+## 2026-02-19 - Phase 5.4 (Provider Routing + Resilience) Implementation + Validation
+
+### Goal
+- Add provider-route abstraction with route-specific resilience controls and actionable upstream failures, while keeping `/api/chat` contract stable.
+
+### Implemented
+- Added provider router module:
+  - `convex/lib/chatProviderRouter.ts`
+  - route abstraction: `primary` / `secondary`
+  - model-class policy (`fast` / `agent`)
+  - shared execution wrapper: `executeChatProviderRequest(...)`
+  - client-safe mapper: `toClientSafeUpstreamError(...)`
+- Integrated router into chat execution paths:
+  - `convex/chatHttp.ts`
+  - `convex/chat.ts`
+  - SSE path now emits `provider-route` metadata when upstream route acquisition succeeds.
+- Added route-level resilience controls:
+  - circuits:
+    - `openrouter_chat_primary`
+    - `openrouter_chat_secondary`
+  - bulkheads:
+    - `openrouter_chat_primary`
+    - `openrouter_chat_secondary`
+- Added runtime route config in `convex/lib/reliabilityConfig.ts`:
+  - `CHAT_PROVIDER_PRIMARY_TIMEOUT_MS`
+  - `CHAT_PROVIDER_PRIMARY_RETRIES`
+  - `CHAT_PROVIDER_SECONDARY_TIMEOUT_MS`
+  - `CHAT_PROVIDER_SECONDARY_RETRIES`
+  - `CHAT_MODEL_FAST_PRIMARY`
+  - `CHAT_MODEL_FAST_SECONDARY`
+  - `CHAT_MODEL_AGENT_PRIMARY`
+  - `CHAT_MODEL_AGENT_SECONDARY`
+  - `CHAT_DEFAULT_MODEL_CLASS`
+- Added route-specific knobs:
+  - `CIRCUIT_OPENROUTER_PRIMARY_THRESHOLD`
+  - `CIRCUIT_OPENROUTER_PRIMARY_COOLDOWN_MS`
+  - `CIRCUIT_OPENROUTER_SECONDARY_THRESHOLD`
+  - `CIRCUIT_OPENROUTER_SECONDARY_COOLDOWN_MS`
+  - `BULKHEAD_OR_PRI_MAX_CONCURRENT`
+  - `BULKHEAD_OR_PRI_LEASE_TTL_MS`
+  - `BULKHEAD_OR_SEC_MAX_CONCURRENT`
+  - `BULKHEAD_OR_SEC_LEASE_TTL_MS`
+- Added/upgraded upstream taxonomy behavior:
+  - added `upstream_quota_exceeded` handling for HTTP `402`
+  - kept existing code family for timeout/rate-limit/unavailable/auth/bad-request/internal classes
+- Adjusted model-routing semantics for correctness:
+  - primary route now uses only the user-requested model
+  - secondary route carries fallback model candidates (when failover is enabled)
+  - avoids accidental primary-route model substitution when a user explicitly selects a model
+
+### Validation
+- Unit/contract tests:
+  - `npx vitest run convex/lib/chatProviderRouter.test.ts convex/lib/reliabilityConfig.test.ts convex/chatGateway.test.ts convex/http.contract.test.ts`
+  - passed (`47/47`)
+- Deployment/codegen:
+  - `npx convex dev --once` (post-change deploy) completed
+- Runtime checks:
+  - `GET https://admired-antelope-676.convex.site/api/chat/health`
+    - confirms route/circuit/bulkhead config is present in health payload
+  - `npx convex run ops:getReliabilitySnapshot '{"minutes":15,"limit":10}'`
+    - confirms `config.chatProviderRoutes`
+    - confirms primary/secondary circuit + bulkhead config visibility
+- Browser/MCP smoke checks (localhost app against dev Convex):
+  - direct `/api/chat` invocation now surfaces actionable upstream codes:
+    - `upstream_bad_request` for invalid/missing endpoint model selection
+    - `upstream_quota_exceeded` for provider quota ceilings
+    - `upstream_unavailable` when circuit is open (includes retry hint)
+
+### Notes
+- Observed OpenRouter responses in this dev environment include credit-cap `402` errors and model endpoint `404` errors; taxonomy now surfaces those as explicit client-safe classes instead of generic `upstream_error`.
+- Vitest close-timeout warning persists in this repository after successful assertions.
+
+## 2026-02-19 - Phase 5 Scope Decision (Regional Strategy)
+
+### Decision
+- Proceed with a **single-region launch architecture** for Jamaica + English-speaking Caribbean.
+- Defer full multi-region deployment topology (active-active / active-standby traffic steering) to a post-launch stage.
+
+### Why
+- Current launch geography and expected early footprint do not justify immediate cross-region operational complexity.
+- Current priority is higher confidence in throughput, fail-fast behavior, and release safety on one region.
+- Multi-region readiness hooks can be added now at low cost to avoid future refactor spikes.
+
+### Execution impact
+- Phase `5.5` is re-scoped to:
+  - single-region hardening runbooks
+  - region-aware observability/config hooks
+  - explicit thresholds that trigger full multi-region rollout
+- Phase `5.6` remains unchanged and is the next capacity-validation gate track.
+
+## 2026-02-19 - Phase 5.5 Start (Single-Region Readiness Hooks)
+
+### Goal
+- Start the re-scoped 5.5 track by adding low-cost region-readiness metadata without introducing cross-region runtime complexity.
+
+### Implemented
+- Added region topology config parser in `convex/lib/reliabilityConfig.ts`:
+  - `RELIABILITY_REGION_ID` (default: `us-east-1`)
+  - `RELIABILITY_TOPOLOGY_MODE` (default: `single_region`)
+  - `RELIABILITY_REGION_READINESS_ONLY` (default: `true`)
+- Exposed region posture in gateway diagnostics:
+  - `convex/chatGateway.ts`
+  - health payload now includes `regionTopology`
+- Exposed region posture in operator snapshot:
+  - `convex/ops.ts`
+  - `ops:getReliabilitySnapshot` now includes `config.regionTopology`
+- Added config parsing tests:
+  - `convex/lib/reliabilityConfig.test.ts`
+- Updated operator docs:
+  - `scripts/reliability/README.md`
+  - `scripts/reliability/RUNBOOK.md`
+- Added explicit region rollout trigger assets:
+  - policy: `scripts/reliability/region-rollout-policy.json`
+  - evaluator: `scripts/reliability/run-region-readiness-check.mjs`
+  - npm command: `reliability:region-readiness`
+  - trigger reference: `docs/region-rollout-triggers.md`
+
+### Validation
+- `npx vitest run convex/lib/reliabilityConfig.test.ts convex/chatGateway.test.ts convex/http.contract.test.ts` -> passed (`42/42`).
+- `npx convex dev --once` -> deployed successfully.
+- Runtime checks:
+  - `GET /api/chat/health` now returns:
+    - `regionTopology.regionId`
+    - `regionTopology.topologyMode`
+    - `regionTopology.readinessOnly`
+  - `ops:getReliabilitySnapshot` now returns `config.regionTopology`.
+  - `npm run reliability:region-readiness -- --expected-peak-streams=5000`
+    - decision: `NOT_TRIGGERED`
+    - recommended topology: `single_region`
+  - `npm run reliability:region-readiness -- --expected-peak-streams=400000`
+    - decision: `TRIGGERED`
+    - recommended topology: `active_active`
+
+## 2026-02-19 - Phase 5.6 Start (Milestone Drill/Gate Foundations)
+
+### Goal
+- Start phase 5.6 by adding milestone-level drill profiles and milestone-specific release gating for chat SLOs.
+
+### Implemented
+- Expanded drill profile support in `scripts/reliability/run-load-drills.mjs`:
+  - new profiles:
+    - `m1_1k`
+    - `m2_5k`
+    - `m3_20k`
+- Added milestone-aware chat SLO checks in drill harness:
+  - `429_rate`
+  - `p95_first_token_latency`
+  - optional chat auth pool unique coverage / unique users checks
+- Added synthetic multi-user rotation strategies for larger pools:
+  - `round_robin` / `stride` / `random`
+  - CLI flags:
+    - `--chat-rotation-mode`
+    - `--chat-rotation-stride`
+    - `--chat-rotation-seed`
+    - `--chat-min-unique-coverage`
+    - `--chat-min-unique-users`
+- Added milestone gate policy and runner:
+  - `scripts/reliability/milestone-gate-policy.json`
+  - `scripts/reliability/run-milestone-gate.mjs`
+  - npm script: `reliability:milestone-gate`
+- Updated docs/runbook:
+  - `scripts/reliability/README.md`
+  - `scripts/reliability/RUNBOOK.md`
+  - `docs/phase5-milestone-gates.md`
+
+### Validation
+- `npm run reliability:region-readiness -- --expected-peak-streams=5000`
+  - pass (decision `NOT_TRIGGERED`, recommended `single_region`)
+- `npm run reliability:region-readiness -- --expected-peak-streams=400000`
+  - pass (decision `TRIGGERED`, recommended `active_active`)
+- artifacts generated:
+  - `.output/reliability/region-readiness-2026-02-19T11-17-12-048Z.json`
+  - `.output/reliability/region-readiness-2026-02-19T11-17-25-343Z.json`
+  - `.output/reliability/region-readiness-2026-02-19T11-22-25-948Z.json`
+- milestone drill/gate smoke:
+  - `npm run reliability:drill -- --profile=m1_1k --scenarios=chat_stream_http --chat-auth-pool-file=.output/reliability/chat-auth-pool-loadtestmulti-20260219c-1-20.json --chat-load-scale=0.05 --chat-concurrency-scale=0.2 --chat-duration-scale=0.02 --chat-rotation-mode=stride --chat-rotation-stride=11`
+    - executed successfully, gate result `FAIL` due chat `500` statuses in this dev environment
+  - `npm run reliability:milestone-gate -- --milestone=m1_1k --chat-auth-pool-file=.output/reliability/chat-auth-pool-loadtestmulti-20260219c-1-20.json --chat-load-scale=0.02 --chat-concurrency-scale=0.1 --chat-duration-scale=0.01 --chat-rotation-mode=stride --chat-rotation-stride=7`
+    - command completed and emitted milestone artifact
+    - `scenarioChecks` failed on `2xx_success_rate`, `5xx_rate`, `unknown_status_rate`
+    - `snapshotChecks` passed
+    - artifact: `.output/reliability/milestone-gate-m1_1k-2026-02-19T11-39-18-610Z.json`
+  - `npm run reliability:milestone-gate -- --milestone=m2_5k --chat-auth-pool-file=.output/reliability/chat-auth-pool-loadtestmulti-20260219a-1-40.json --chat-load-scale=0.01 --chat-concurrency-scale=0.08 --chat-duration-scale=0.005 --chat-rotation-mode=random`
+    - command completed and emitted milestone artifact
+    - artifact: `.output/reliability/milestone-gate-m2_5k-2026-02-19T11-41-55-297Z.json`
+  - `npm run reliability:milestone-gate -- --milestone=m3_20k --chat-auth-pool-file=.output/reliability/chat-auth-pool-loadtestmulti-20260219a-1-40.json --chat-load-scale=0.005 --chat-concurrency-scale=0.05 --chat-duration-scale=0.003 --chat-rotation-mode=random`
+    - command completed and emitted milestone artifact
+    - artifact: `.output/reliability/milestone-gate-m3_20k-2026-02-19T11-44-36-650Z.json`

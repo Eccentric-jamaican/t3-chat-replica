@@ -2,6 +2,8 @@ import { internal } from "../_generated/api";
 import { getCircuitConfig } from "./reliabilityConfig";
 
 export type CircuitProvider =
+  | "openrouter_chat_primary"
+  | "openrouter_chat_secondary"
   | "openrouter_chat"
   | "serper_search"
   | "gmail_oauth"

@@ -9,6 +9,10 @@ import {
   timingSafeEqual,
 } from "./integrations/crypto";
 import { chatHandler } from "./chatHttp";
+import {
+  chatGatewayHealthHandler,
+  runChatGatewayRequest,
+} from "./chatGateway";
 import { fetchWithRetry } from "./lib/network";
 import {
   assertCircuitClosed,
@@ -82,6 +86,19 @@ function enforceJsonRequestGuards(request: Request, maxBytes: number) {
 
 function isAllowedOrigin(origin: string | null) {
   return !!origin && allowedOrigins.includes(origin);
+}
+
+function isAuthTokenValidationError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  const normalized = message.toLowerCase();
+  return (
+    normalized.includes("could not validate token") ||
+    normalized.includes("token expired") ||
+    normalized.includes("invalid token") ||
+    normalized.includes("could not parse jwt payload") ||
+    normalized.includes("jwt format") ||
+    normalized.includes("jwt signature")
+  );
 }
 
 function getClientIp(request: Request) {
@@ -793,14 +810,22 @@ export async function chatPostHandler(ctx: any, request: Request) {
 
   let response: Response;
   try {
-    response = await chatHandler(ctx, request);
+    response = await runChatGatewayRequest(ctx, request, chatHandler);
   } catch (error) {
-    console.error("[/api/chat] Unhandled error", error);
-    response = createHttpErrorResponse({
-      status: 500,
-      code: "internal_error",
-      message: "Internal error",
-    });
+    if (isAuthTokenValidationError(error)) {
+      response = createHttpErrorResponse({
+        status: 401,
+        code: "unauthorized",
+        message: "Unauthorized",
+      });
+    } else {
+      console.error("[/api/chat] Unhandled error", error);
+      response = createHttpErrorResponse({
+        status: 500,
+        code: "internal_error",
+        message: "Internal error",
+      });
+    }
   }
   if (origin && isAllowedOrigin(origin)) {
     response.headers.set("Access-Control-Allow-Origin", origin);
@@ -813,6 +838,59 @@ http.route({
   path: "/api/chat",
   method: "POST",
   handler: httpAction(chatPostHandler),
+});
+
+export async function chatGatewayHealthGetHandler(ctx: any, request: Request) {
+  const origin = request.headers.get("Origin");
+  if (origin && !isAllowedOrigin(origin)) {
+    return createHttpErrorResponse({
+      status: 403,
+      code: "forbidden",
+      message: "Forbidden origin",
+    });
+  }
+
+  const response = await chatGatewayHealthHandler(ctx, request);
+  if (origin && isAllowedOrigin(origin)) {
+    response.headers.set("Access-Control-Allow-Origin", origin);
+    response.headers.set("Access-Control-Allow-Credentials", "true");
+  }
+  return response;
+}
+
+export async function chatGatewayHealthOptionsHandler(
+  _ctx: any,
+  request: Request,
+) {
+  const origin = request.headers.get("Origin");
+  if (origin && !isAllowedOrigin(origin)) {
+    return createHttpErrorResponse({
+      status: 403,
+      code: "forbidden",
+      message: "Forbidden origin",
+    });
+  }
+
+  const headers = new Headers();
+  if (origin && isAllowedOrigin(origin)) {
+    headers.set("Access-Control-Allow-Origin", origin);
+    headers.set("Access-Control-Allow-Credentials", "true");
+    headers.set("Access-Control-Allow-Methods", "GET, OPTIONS");
+    headers.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  }
+  return new Response(null, { status: 200, headers });
+}
+
+http.route({
+  path: "/api/chat/health",
+  method: "GET",
+  handler: httpAction(chatGatewayHealthGetHandler),
+});
+
+http.route({
+  path: "/api/chat/health",
+  method: "OPTIONS",
+  handler: httpAction(chatGatewayHealthOptionsHandler),
 });
 
 export default http;

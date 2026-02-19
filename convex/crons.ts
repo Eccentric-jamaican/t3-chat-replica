@@ -75,4 +75,12 @@ crons.interval(
   {},
 );
 
+// Monitor tool queue lag/backpressure and raise deduplicated alerts.
+crons.interval(
+  "monitor-tool-queue-health",
+  { minutes: 5 },
+  internal.toolJobs.monitorQueueHealth,
+  {},
+);
+
 export default crons;

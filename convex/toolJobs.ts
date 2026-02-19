@@ -11,8 +11,10 @@ import { normalizeEbaySearchArgs } from "./lib/ebaySearch";
 import { dedupeProducts } from "./lib/toolHelpers";
 import {
   createToolJobCounts,
+  createToolJobQosCounts,
   isToolJobName,
   pickClaimableToolJob,
+  TOOL_JOB_QOS_BY_NAME,
   TOOL_JOB_NAMES,
   ToolJobName,
 } from "./lib/toolJobQueue";
@@ -28,7 +30,10 @@ import {
   recordCircuitError,
   recordCircuitResponse,
 } from "./lib/circuitBreaker";
-import { getToolJobConfig } from "./lib/reliabilityConfig";
+import {
+  getToolJobConfig,
+  getToolQueueAlertConfig,
+} from "./lib/reliabilityConfig";
 
 type ToolJobResult =
   | {
@@ -74,6 +79,85 @@ function buildProductSummary(products: Array<{ source?: string }>) {
   if (globalCount > 0) parts.push(`${globalCount} global items`);
   if (parts.length === 0) parts.push("no items");
   return `Found ${parts.join(" and ")}. They have been displayed to the user.`;
+}
+
+function parseSentryDsn(dsn: string) {
+  try {
+    const url = new URL(dsn);
+    const publicKey = url.username;
+    const projectId = url.pathname.replace(/^\/+/, "");
+    if (!publicKey || !projectId) return null;
+    return {
+      dsn,
+      endpoint: `${url.protocol}//${url.host}/api/${projectId}/envelope/`,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function randomHex(len: number) {
+  const chars = "abcdef0123456789";
+  let out = "";
+  for (let i = 0; i < len; i++) {
+    out += chars[Math.floor(Math.random() * chars.length)];
+  }
+  return out;
+}
+
+async function sendSentryToolQueueAlert(input: {
+  dsn: string;
+  kind: string;
+  observed: number;
+  threshold: number;
+  windowMinutes: number;
+}) {
+  const parsed = parseSentryDsn(input.dsn);
+  if (!parsed) return false;
+
+  const eventId = randomHex(32);
+  const timestamp = new Date().toISOString();
+  const message = `Tool queue alert: ${input.kind}`;
+  const payload = {
+    event_id: eventId,
+    message,
+    level: "warning",
+    platform: "javascript",
+    timestamp,
+    logger: "convex.toolJobs.monitor",
+    tags: {
+      feature: "tool_queue_monitor",
+      kind: input.kind,
+    },
+    extra: {
+      observed: input.observed,
+      threshold: input.threshold,
+      windowMinutes: input.windowMinutes,
+    },
+  };
+
+  const envelope =
+    `${JSON.stringify({ event_id: eventId, sent_at: timestamp, dsn: parsed.dsn })}\n` +
+    `${JSON.stringify({ type: "event" })}\n` +
+    `${JSON.stringify(payload)}`;
+
+  const response = await fetchWithRetry(
+    parsed.endpoint,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-sentry-envelope",
+      },
+      body: envelope,
+    },
+    {
+      timeoutMs: 1500,
+      retries: 0,
+      retryOnNetworkError: false,
+    },
+  );
+
+  return response.ok;
 }
 
 async function searchEbayItemsProtected(
@@ -321,6 +405,7 @@ export const enqueue = internalMutation({
     return await ctx.db.insert("toolJobs", {
       source: args.source,
       toolName: args.toolName,
+      qosClass: TOOL_JOB_QOS_BY_NAME[args.toolName],
       argsJson: args.argsJson,
       status: "queued",
       attempts: 0,
@@ -345,6 +430,8 @@ export const get = internalQuery({
       maxAttempts: job.maxAttempts,
       resultJson: job.resultJson,
       lastError: job.lastError,
+      deadLetterReason: job.deadLetterReason,
+      deadLetterAt: job.deadLetterAt,
       availableAt: job.availableAt,
       updatedAt: job.updatedAt,
       createdAt: job.createdAt,
@@ -376,6 +463,7 @@ export const claimNext = internalMutation({
     }
 
     const runningByTool = createToolJobCounts();
+    const runningByQos = createToolJobQosCounts();
     for (const toolName of TOOL_JOB_NAMES) {
       const cap = config.maxRunningByTool[toolName];
       const runningForTool = await ctx.db
@@ -385,6 +473,8 @@ export const claimNext = internalMutation({
         )
         .take(cap + 1);
       runningByTool[toolName] = runningForTool.length;
+      const qosClass = TOOL_JOB_QOS_BY_NAME[toolName];
+      runningByQos[qosClass] += runningForTool.length;
     }
 
     const candidates = await ctx.db
@@ -398,6 +488,8 @@ export const claimNext = internalMutation({
       candidates,
       runningByTool,
       config.maxRunningByTool,
+      runningByQos,
+      config.maxRunningByQos,
     );
 
     if (!next) return null;
@@ -472,13 +564,16 @@ export const fail = internalMutation({
     }
 
     await ctx.db.patch(args.jobId, {
-      status: "failed",
+      status: "dead_letter",
       lastError: args.error.slice(0, 600),
+      deadLetterReason: args.error.slice(0, 600),
+      deadLetterAt: now,
       leaseExpiresAt: undefined,
       updatedAt: now,
       completedAt: now,
+      expiresAt: now + config.deadLetterRetentionMs,
     });
-    return { ok: true, status: "failed" as const, retryDelayMs: 0 };
+    return { ok: true, status: "dead_letter" as const, retryDelayMs: 0 };
   },
 });
 
@@ -495,7 +590,7 @@ export const processQueue = internalAction({
     );
     const processed: Array<{
       jobId: Id<"toolJobs">;
-      status: "completed" | "failed" | "requeued";
+      status: "completed" | "dead_letter" | "requeued";
     }> = [];
 
     let workerLease: string | null = null;
@@ -536,7 +631,7 @@ export const processQueue = internalAction({
           });
           processed.push({
             jobId,
-            status: failResult.status === "requeued" ? "requeued" : "failed",
+            status: failResult.status === "requeued" ? "requeued" : "dead_letter",
           });
         }
       }
@@ -555,7 +650,8 @@ export const cleanupExpired = internalMutation({
   args: {},
   handler: async (ctx) => {
     const now = Date.now();
-    let deleted = 0;
+    let deletedJobs = 0;
+    let deletedAlerts = 0;
     while (true) {
       const expired = await ctx.db
         .query("toolJobs")
@@ -564,10 +660,201 @@ export const cleanupExpired = internalMutation({
       if (expired.length === 0) break;
       for (const row of expired) {
         await ctx.db.delete(row._id);
-        deleted += 1;
+        deletedJobs += 1;
       }
     }
-    return { deleted };
+
+    while (true) {
+      const expired = await ctx.db
+        .query("toolQueueAlerts")
+        .withIndex("by_expires_at", (q) => q.lt("expiresAt", now))
+        .take(200);
+      if (expired.length === 0) break;
+      for (const row of expired) {
+        await ctx.db.delete(row._id);
+        deletedAlerts += 1;
+      }
+    }
+    return { deleted: deletedJobs + deletedAlerts, deletedJobs, deletedAlerts };
+  },
+});
+
+const TOOL_QUEUE_ALERT_RETENTION_MS = 14 * 24 * 60 * 60 * 1000;
+
+export const raiseQueueAlertIfNeeded = internalMutation({
+  args: {
+    kind: v.union(
+      v.literal("queued_depth"),
+      v.literal("oldest_queued_age"),
+      v.literal("oldest_running_age"),
+      v.literal("dead_letter_depth"),
+    ),
+    observed: v.number(),
+    threshold: v.number(),
+    windowMinutes: v.number(),
+    cooldownMs: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const now = Date.now();
+    const slot = now - (now % args.cooldownMs);
+    const alertKey = `${args.kind}|${slot}`;
+
+    const existing = await ctx.db
+      .query("toolQueueAlerts")
+      .withIndex("by_alert_key", (q) => q.eq("alertKey", alertKey))
+      .first();
+    if (existing) {
+      return { created: false };
+    }
+
+    const id = await ctx.db.insert("toolQueueAlerts", {
+      alertKey,
+      kind: args.kind,
+      observed: args.observed,
+      threshold: args.threshold,
+      windowMinutes: args.windowMinutes,
+      createdAt: now,
+      expiresAt: now + TOOL_QUEUE_ALERT_RETENTION_MS,
+    });
+
+    return { created: true, alertId: id };
+  },
+});
+
+export const listRecentQueueAlerts = internalQuery({
+  args: {
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const limit = clampInt(args.limit ?? 50, 1, 200);
+    return await ctx.db
+      .query("toolQueueAlerts")
+      .withIndex("by_created_at")
+      .order("desc")
+      .take(limit);
+  },
+});
+
+export const listDeadLetters = internalQuery({
+  args: {
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const limit = clampInt(args.limit ?? 100, 1, 500);
+    return await ctx.db
+      .query("toolJobs")
+      .withIndex("by_status_updated", (q) => q.eq("status", "dead_letter"))
+      .order("desc")
+      .take(limit);
+  },
+});
+
+export const requeueDeadLetter = internalMutation({
+  args: {
+    jobId: v.id("toolJobs"),
+  },
+  handler: async (ctx, args) => {
+    const job = await ctx.db.get(args.jobId);
+    if (!job) return { ok: false, reason: "missing" as const };
+    if (job.status !== "dead_letter") {
+      return { ok: false, reason: "not_dead_letter" as const };
+    }
+
+    const now = Date.now();
+    await ctx.db.patch(args.jobId, {
+      status: "queued",
+      availableAt: now,
+      leaseExpiresAt: undefined,
+      attempts: 0,
+      deadLetterReason: undefined,
+      deadLetterAt: undefined,
+      updatedAt: now,
+      expiresAt: now + getToolJobConfig().retentionMs,
+    });
+    return { ok: true as const };
+  },
+});
+
+export const monitorQueueHealth = internalAction({
+  args: {},
+  handler: async (ctx) => {
+    const alertConfig = getToolQueueAlertConfig();
+    if (!alertConfig.enabled) {
+      return { enabled: false, createdAlerts: 0, sentryAlerts: 0 };
+    }
+
+    const stats = await ctx.runQuery(internal.toolJobs.getQueueStats, {
+      limit: 5000,
+    });
+
+    const checks = [
+      {
+        kind: "queued_depth" as const,
+        observed: stats.byStatus.queued,
+        threshold: alertConfig.maxQueuedJobs,
+      },
+      {
+        kind: "dead_letter_depth" as const,
+        observed: stats.byStatus.deadLetter ?? 0,
+        threshold: alertConfig.maxDeadLetterJobs,
+      },
+      {
+        kind: "oldest_queued_age" as const,
+        observed: stats.oldestQueuedAgeMs,
+        threshold: alertConfig.maxOldestQueuedAgeMs,
+      },
+      {
+        kind: "oldest_running_age" as const,
+        observed: stats.oldestRunningAgeMs,
+        threshold: alertConfig.maxOldestRunningAgeMs,
+      },
+    ];
+
+    const sentryDsn =
+      process.env.TOOL_QUEUE_SENTRY_DSN || process.env.SENTRY_DSN || "";
+    let createdAlerts = 0;
+    let sentryAlerts = 0;
+
+    for (const check of checks) {
+      if (check.observed <= check.threshold) continue;
+
+      const raised = await ctx.runMutation(internal.toolJobs.raiseQueueAlertIfNeeded, {
+        kind: check.kind,
+        observed: check.observed,
+        threshold: check.threshold,
+        windowMinutes: alertConfig.windowMinutes,
+        cooldownMs: alertConfig.cooldownMs,
+      });
+      if (!raised.created) continue;
+
+      createdAlerts += 1;
+      console.warn("[Tool Queue Alert]", {
+        kind: check.kind,
+        observed: check.observed,
+        threshold: check.threshold,
+      });
+
+      if (!sentryDsn) continue;
+      try {
+        const sent = await sendSentryToolQueueAlert({
+          dsn: sentryDsn,
+          kind: check.kind,
+          observed: check.observed,
+          threshold: check.threshold,
+          windowMinutes: alertConfig.windowMinutes,
+        });
+        if (sent) sentryAlerts += 1;
+      } catch (error) {
+        console.error("[Tool Queue Alert] Failed to send Sentry alert", error);
+      }
+    }
+
+    return {
+      enabled: true,
+      createdAlerts,
+      sentryAlerts,
+      windowMinutes: alertConfig.windowMinutes,
+    };
   },
 });
 
@@ -588,11 +875,30 @@ export const getQueueStats = internalQuery({
     let queued = 0;
     let running = 0;
     let failed = 0;
+    let deadLetter = 0;
     let completed = 0;
     const byTool = {
-      search_web: { queued: 0, running: 0, failed: 0, completed: 0 },
-      search_products: { queued: 0, running: 0, failed: 0, completed: 0 },
-      search_global: { queued: 0, running: 0, failed: 0, completed: 0 },
+      search_web: {
+        queued: 0,
+        running: 0,
+        failed: 0,
+        deadLetter: 0,
+        completed: 0,
+      },
+      search_products: {
+        queued: 0,
+        running: 0,
+        failed: 0,
+        deadLetter: 0,
+        completed: 0,
+      },
+      search_global: {
+        queued: 0,
+        running: 0,
+        failed: 0,
+        deadLetter: 0,
+        completed: 0,
+      },
     };
     let oldestQueuedAt: number | null = null;
     let oldestRunningAt: number | null = null;
@@ -614,6 +920,11 @@ export const getQueueStats = internalQuery({
       } else if (job.status === "failed") {
         failed += 1;
         if (toolName) byTool[toolName].failed += 1;
+      } else if (job.status === "dead_letter") {
+        failed += 1;
+        deadLetter += 1;
+        if (toolName) byTool[toolName].deadLetter += 1;
+        if (toolName) byTool[toolName].failed += 1;
       } else if (job.status === "completed") {
         completed += 1;
         if (toolName) byTool[toolName].completed += 1;
@@ -626,6 +937,7 @@ export const getQueueStats = internalQuery({
         queued,
         running,
         failed,
+        deadLetter,
         completed,
       },
       byTool,

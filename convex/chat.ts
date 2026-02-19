@@ -8,15 +8,9 @@ import { getModelCapabilities } from "./lib/models";
 import { normalizeEbaySearchArgs } from "./lib/ebaySearch";
 import { getBasePrompt, getRegexFallbackPrompt } from "./lib/prompts";
 import {
-  acquireBulkheadSlot,
-  isBulkheadSaturatedError,
-  releaseBulkheadSlot,
-} from "./lib/bulkhead";
-import {
-  assertCircuitClosed,
-  recordCircuitError,
-  recordCircuitResponse,
-} from "./lib/circuitBreaker";
+  executeChatProviderRequest,
+  toClientSafeUpstreamError,
+} from "./lib/chatProviderRouter";
 import {
   dedupeProducts,
   parseFunctionCallsFromContent,
@@ -33,10 +27,17 @@ import {
   isRateLimitContentionError,
 } from "./lib/rateLimit";
 import {
+  getAdmissionControlConfig,
+  getChatGatewayFlags,
   getToolCacheConfig,
   getToolCacheNamespaces,
 } from "./lib/reliabilityConfig";
 import { enqueueToolJobAndWait } from "./lib/toolJobClient";
+import {
+  checkAndAcquireAdmission,
+  releaseAdmission,
+  type AdmissionTicket,
+} from "./lib/admissionControl";
 
 const TOOLS = [
   {
@@ -183,7 +184,6 @@ export const streamAnswer = action({
     let isAborted = false;
     let activeController: AbortController | null = null;
     let activeReader: ReadableStreamDefaultReader<Uint8Array> | null = null;
-    let openRouterSessionLease: string | null = null;
     let lastAbortCheck = Date.now();
     const toolResultsCache = new Map<string, string>();
     const toolUsageCounts = new Map<string, number>();
@@ -215,43 +215,140 @@ export const streamAnswer = action({
     if (!principal) {
       throw new Error("Missing identity for rate limiting");
     }
-    const limitKey = `chat_stream:${principal}`;
-    const emitRateLimitEvent = async (
-      outcome: "blocked" | "contention_fallback",
-      retryAfterMs?: number,
-    ) => {
+    const emitRateLimitEvent = async (input: {
+      bucket: string;
+      key: string;
+      outcome: "allowed" | "blocked" | "contention_fallback";
+      reason?: string;
+      retryAfterMs?: number;
+    }) => {
       try {
         await ctx.scheduler.runAfter(0, internal.rateLimit.recordEvent, {
           source: "chat_action",
-          bucket: "chat_stream",
-          key: limitKey,
-          outcome,
-          retryAfterMs,
+          bucket: input.bucket,
+          key: input.key,
+          outcome: input.outcome,
+          reason: input.reason,
+          retryAfterMs: input.retryAfterMs,
         });
       } catch {
         // Observability should not interrupt the request flow.
       }
     };
+    const admissionConfig = getAdmissionControlConfig();
+    const shouldSampleAllowedEvent = () =>
+      admissionConfig.allowedEventSamplePct > 0 &&
+      Math.random() * 100 < admissionConfig.allowedEventSamplePct;
+    const chatGatewayFlags = getChatGatewayFlags();
+    const admissionEventKey = `chat_admission:${principal}`;
+    let admissionTicket: AdmissionTicket | null = null;
+    let shouldFallbackToLegacyRateLimit = false;
+    const effectiveAdmissionMode =
+      chatGatewayFlags.admissionEnforce
+        ? "enforce"
+        : admissionConfig.shadowMode
+          ? "shadow"
+          : "enforce";
+    if (admissionConfig.enabled) {
+      const estimatedToolCalls = args.webSearch
+        ? admissionConfig.estimatedToolCallsPerMessage
+        : Math.max(admissionConfig.estimatedToolCallsPerMessage - 1, 0);
+      const admissionResult = await checkAndAcquireAdmission({
+        principalKey: principal,
+        mode: effectiveAdmissionMode,
+        estimatedToolCalls,
+        config: admissionConfig,
+      });
+      if (admissionResult.mode === "shadow") {
+        if (admissionResult.wouldBlock) {
+          await emitRateLimitEvent({
+            bucket: "chat_admission_shadow",
+            key: admissionEventKey,
+            outcome:
+              admissionResult.reason === "redis_unavailable"
+                ? "contention_fallback"
+                : "blocked",
+            reason: admissionResult.reason,
+            retryAfterMs: admissionResult.retryAfterMs,
+          });
+        } else if (shouldSampleAllowedEvent()) {
+          await emitRateLimitEvent({
+            bucket: "chat_admission_shadow",
+            key: admissionEventKey,
+            outcome: "allowed",
+          });
+        }
+      } else if (admissionResult.mode === "enforce" && !admissionResult.allowed) {
+        const shouldFailOpenOnRedisError =
+          admissionResult.reason === "redis_unavailable" &&
+          !chatGatewayFlags.failClosedOnRedisError;
+        await emitRateLimitEvent({
+          bucket: "chat_admission",
+          key: admissionEventKey,
+          outcome:
+            admissionResult.reason === "redis_unavailable"
+              ? "contention_fallback"
+              : "blocked",
+          reason: admissionResult.reason,
+          retryAfterMs: admissionResult.retryAfterMs,
+        });
+        if (!shouldFailOpenOnRedisError) {
+          throw new Error(
+            buildRateLimitErrorMessage(admissionResult.retryAfterMs),
+          );
+        } else {
+          shouldFallbackToLegacyRateLimit = true;
+        }
+      } else if (admissionResult.mode === "enforce") {
+        admissionTicket = admissionResult.ticket;
+        if (shouldSampleAllowedEvent()) {
+          await emitRateLimitEvent({
+            bucket: "chat_admission",
+            key: admissionEventKey,
+            outcome: "allowed",
+            reason: admissionResult.softBlockedReasons[0],
+          });
+        }
+      }
+    }
+
+    const shouldUseLegacyRateLimit =
+      !admissionConfig.enabled ||
+      effectiveAdmissionMode === "shadow" ||
+      shouldFallbackToLegacyRateLimit;
     const rateLimits = getRateLimits();
     const toolCacheConfig = getToolCacheConfig();
     const toolCacheNamespaces = getToolCacheNamespaces();
-    let limit;
-    try {
-      limit = await ctx.runMutation(internal.rateLimit.checkAndIncrement, {
-        key: limitKey,
-        max: rateLimits.chatStream.max,
-        windowMs: rateLimits.chatStream.windowMs,
-      });
-    } catch (error) {
-      if (isRateLimitContentionError(error)) {
-        await emitRateLimitEvent("contention_fallback", 1000);
-        throw new Error("Too many requests. Please retry in a moment.");
+    if (shouldUseLegacyRateLimit) {
+      const limitKey = `chat_stream:${principal}`;
+      let limit;
+      try {
+        limit = await ctx.runMutation(internal.rateLimit.checkAndIncrement, {
+          key: limitKey,
+          max: rateLimits.chatStream.max,
+          windowMs: rateLimits.chatStream.windowMs,
+        });
+      } catch (error) {
+        if (isRateLimitContentionError(error)) {
+          await emitRateLimitEvent({
+            bucket: "chat_stream",
+            key: limitKey,
+            outcome: "contention_fallback",
+            retryAfterMs: 1000,
+          });
+          throw new Error("Too many requests. Please retry in a moment.");
+        }
+        throw error;
       }
-      throw error;
-    }
-    if (!limit.allowed) {
-      await emitRateLimitEvent("blocked", limit.retryAfterMs);
-      throw new Error(buildRateLimitErrorMessage(limit.retryAfterMs));
+      if (!limit.allowed) {
+        await emitRateLimitEvent({
+          bucket: "chat_stream",
+          key: limitKey,
+          outcome: "blocked",
+          retryAfterMs: limit.retryAfterMs,
+        });
+        throw new Error(buildRateLimitErrorMessage(limit.retryAfterMs));
+      }
     }
 
     // Content buffering for reduced DB writes
@@ -323,6 +420,11 @@ export const streamAnswer = action({
 
     const apiKey = process.env.OPENROUTER_API_KEY;
     if (!apiKey) {
+      await releaseAdmission({
+        ticket: admissionTicket,
+        config: admissionConfig,
+      });
+      admissionTicket = null;
       const msgId = await ctx.runMutation(
         internal.messages.internalInitializeAssistantMessage,
         {
@@ -342,29 +444,6 @@ export const streamAnswer = action({
     }
 
     try {
-      try {
-        openRouterSessionLease = await acquireBulkheadSlot(
-          ctx,
-          "openrouter_chat",
-        );
-      } catch (error) {
-        if (isBulkheadSaturatedError(error)) {
-          const retryAfterMs =
-            typeof (error as { retryAfterMs?: unknown }).retryAfterMs ===
-            "number"
-              ? (error as { retryAfterMs: number }).retryAfterMs
-              : 1_000;
-          const retryAfterSeconds = Math.max(
-            Math.ceil(retryAfterMs / 1000),
-            1,
-          );
-          throw new Error(
-            `AI service is temporarily busy. Please retry in about ${retryAfterSeconds}s.`,
-          );
-        }
-        throw error;
-      }
-
       if (args.messageId) {
         currentMessageId = args.messageId;
         if (currentSessionId) {
@@ -515,55 +594,42 @@ export const streamAnswer = action({
 
         let response: Response;
         try {
-          await assertCircuitClosed(ctx, "openrouter_chat");
-          response = await fetch(
-            "https://openrouter.ai/api/v1/chat/completions",
-            {
-              method: "POST",
-              headers: {
-                Authorization: `Bearer ${apiKey}`,
-                "Content-Type": "application/json",
-                "HTTP-Referer": "https://sendcat.app",
-                "X-Title": "Sendcat",
-              },
-              body: JSON.stringify({
-                // Use models array for automatic fallback on errors
-                models: [
-                  args.modelId ?? "moonshotai/kimi-k2.5",
-                  "anthropic/claude-sonnet-4",
-                  "google/gemini-2.0-flash-001",
-                ],
-                messages: openRouterMessages,
-                tools: activeTools.length > 0 ? activeTools : undefined,
-                // Tool choice & parallel calls - only if tools exist
-                ...(activeTools.length > 0
+          const upstream = await executeChatProviderRequest({
+            ctx,
+            apiKey,
+            requestedModelId: args.modelId,
+            abortSignal: controller.signal,
+            headers: {
+              "HTTP-Referer": "https://sendcat.app",
+              "X-Title": "Sendcat",
+            },
+            payload: {
+              messages: openRouterMessages,
+              tools: activeTools.length > 0 ? activeTools : undefined,
+              // Tool choice & parallel calls - only if tools exist
+              ...(activeTools.length > 0
+                ? {
+                    tool_choice: toolLimitsReached ? "none" : "auto",
+                    parallel_tool_calls: false,
+                  }
+                : {}),
+              ...(args.reasoningEffort && args.reasoningType === "effort"
+                ? { reasoning: { effort: args.reasoningEffort } }
+                : args.reasoningEffort && args.reasoningType === "max_tokens"
                   ? {
-                      tool_choice: toolLimitsReached ? "none" : "auto",
-                      parallel_tool_calls: false,
+                      reasoning: {
+                        max_tokens: getMaxTokensForEffort(args.reasoningEffort),
+                      },
                     }
                   : {}),
-                ...(args.reasoningEffort && args.reasoningType === "effort"
-                  ? { reasoning: { effort: args.reasoningEffort } }
-                  : args.reasoningEffort && args.reasoningType === "max_tokens"
-                    ? {
-                        reasoning: {
-                          max_tokens: getMaxTokensForEffort(args.reasoningEffort),
-                        },
-                      }
-                    : {}),
-                stream: true,
-              }),
-              signal: controller.signal,
             },
-          );
-          await recordCircuitResponse(ctx, "openrouter_chat", response.status);
+          });
+          response = upstream.response;
         } catch (error) {
-          await recordCircuitError(ctx, "openrouter_chat", error);
-          throw error;
+          const upstreamError = toClientSafeUpstreamError(error);
+          throw new Error(upstreamError.message);
         }
 
-        if (!response.ok)
-          throw new Error(`OpenRouter API error: ${await response.text()}`);
         if (!response.body) throw new Error("No response body");
 
         const reader = response.body.getReader();
@@ -888,10 +954,14 @@ export const streamAnswer = action({
                             );
                           }
                         } else if (jobOutcome.status === "failed") {
-                          result = `Search failed: ${jobOutcome.error}`;
+                          if (jobOutcome.backpressure) {
+                            result = `Search temporarily unavailable (${jobOutcome.backpressure.reason}). Please retry shortly.`;
+                          } else {
+                            result = `Search failed: ${jobOutcome.error}`;
+                          }
                         } else {
                           result =
-                            "Live web search is queued and still running. Continue with known information.";
+                            "Live web search is under high load and still queued. Continue with known information for now.";
                         }
                       }
                     }
@@ -1042,10 +1112,14 @@ export const streamAnswer = action({
                             }
                           }
                         } else if (jobOutcome.status === "failed") {
-                          result = `Product search failed: ${jobOutcome.error}`;
+                          if (jobOutcome.backpressure) {
+                            result = `Product search temporarily unavailable (${jobOutcome.backpressure.reason}). Please retry shortly.`;
+                          } else {
+                            result = `Product search failed: ${jobOutcome.error}`;
+                          }
                         } else {
                           result =
-                            "Product search is queued and still running. Continue with known information.";
+                            "Product search is under high load and still queued. Continue with known information for now.";
                         }
                       }
                     }
@@ -1100,10 +1174,14 @@ export const streamAnswer = action({
                           );
                         }
                       } else if (jobOutcome.status === "failed") {
-                        result = `Global search failed: ${jobOutcome.error}`;
+                        if (jobOutcome.backpressure) {
+                          result = `Global search temporarily unavailable (${jobOutcome.backpressure.reason}). Please retry shortly.`;
+                        } else {
+                          result = `Global search failed: ${jobOutcome.error}`;
+                        }
                       } else {
                         result =
-                          "Global search is queued and still running. Continue with known information.";
+                          "Global search is under high load and still queued. Continue with known information for now.";
                       }
                     }
                   }
@@ -1225,11 +1303,10 @@ export const streamAnswer = action({
       }
       throw err;
     } finally {
-      await releaseBulkheadSlot(
-        ctx,
-        "openrouter_chat",
-        openRouterSessionLease,
-      );
+      await releaseAdmission({
+        ticket: admissionTicket,
+        config: admissionConfig,
+      });
     }
   },
 });

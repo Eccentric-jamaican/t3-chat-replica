@@ -6,6 +6,8 @@ import {
 } from "./reliabilityConfig";
 
 export type BulkheadProvider =
+  | "openrouter_chat_primary"
+  | "openrouter_chat_secondary"
   | "openrouter_chat"
   | "serper_search"
   | "gmail_oauth"

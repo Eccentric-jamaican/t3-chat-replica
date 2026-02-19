@@ -331,9 +331,11 @@ export default defineSchema({
     bucket: v.string(),
     key: v.string(),
     outcome: v.union(
+      v.literal("allowed"),
       v.literal("blocked"),
       v.literal("contention_fallback"),
     ),
+    reason: v.optional(v.string()),
     retryAfterMs: v.optional(v.number()),
     path: v.optional(v.string()),
     method: v.optional(v.string()),
@@ -418,12 +420,20 @@ export default defineSchema({
   toolJobs: defineTable({
     source: v.union(v.literal("chat_action"), v.literal("chat_http")),
     toolName: v.string(),
+    qosClass: v.optional(
+      v.union(
+        v.literal("realtime"),
+        v.literal("interactive"),
+        v.literal("batch"),
+      ),
+    ),
     argsJson: v.string(),
     status: v.union(
       v.literal("queued"),
       v.literal("running"),
       v.literal("completed"),
       v.literal("failed"),
+      v.literal("dead_letter"),
     ),
     attempts: v.number(),
     maxAttempts: v.number(),
@@ -431,6 +441,8 @@ export default defineSchema({
     leaseExpiresAt: v.optional(v.number()),
     resultJson: v.optional(v.string()),
     lastError: v.optional(v.string()),
+    deadLetterReason: v.optional(v.string()),
+    deadLetterAt: v.optional(v.number()),
     createdAt: v.number(),
     updatedAt: v.number(),
     completedAt: v.optional(v.number()),
@@ -441,6 +453,24 @@ export default defineSchema({
     .index("by_status_lease", ["status", "leaseExpiresAt"])
     .index("by_status_updated", ["status", "updatedAt"])
     .index("by_tool_status_updated", ["toolName", "status", "updatedAt"])
+    .index("by_expires_at", ["expiresAt"])
+    .index("by_created_at", ["createdAt"]),
+
+  toolQueueAlerts: defineTable({
+    alertKey: v.string(),
+    kind: v.union(
+      v.literal("queued_depth"),
+      v.literal("oldest_queued_age"),
+      v.literal("oldest_running_age"),
+      v.literal("dead_letter_depth"),
+    ),
+    observed: v.number(),
+    threshold: v.number(),
+    windowMinutes: v.number(),
+    createdAt: v.number(),
+    expiresAt: v.number(),
+  })
+    .index("by_alert_key", ["alertKey"])
     .index("by_expires_at", ["expiresAt"])
     .index("by_created_at", ["createdAt"]),
 });

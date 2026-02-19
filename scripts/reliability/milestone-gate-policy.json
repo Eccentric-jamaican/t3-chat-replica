@@ -1,0 +1,81 @@
+{
+  "version": "2026-02-19",
+  "defaults": {
+    "snapshotWindowMinutes": 30,
+    "snapshotLimit": 80
+  },
+  "milestones": {
+    "m1_1k": {
+      "profile": "m1_1k",
+      "requiredScenarios": [
+        "chat_stream_http"
+      ],
+      "slo": {
+        "minTwoXxRate": 0.95,
+        "maxFiveXxRate": 0.01,
+        "max429Rate": 0.04,
+        "maxP95CompletionMs": 20000,
+        "maxP95FirstTokenMs": 3000,
+        "maxNetworkErrorRate": 0.03,
+        "maxUnknownStatusRate": 0.05
+      },
+      "snapshot": {
+        "maxSustainedOpenCircuitMs": 120000,
+        "maxOldestQueuedAgeMs": 60000,
+        "maxOldestRunningAgeMs": 300000
+      },
+      "pool": {
+        "minAuthPoolSize": 20,
+        "minUniqueCoverage": 0.5
+      }
+    },
+    "m2_5k": {
+      "profile": "m2_5k",
+      "requiredScenarios": [
+        "chat_stream_http"
+      ],
+      "slo": {
+        "minTwoXxRate": 0.95,
+        "maxFiveXxRate": 0.005,
+        "max429Rate": 0.04,
+        "maxP95CompletionMs": 18000,
+        "maxP95FirstTokenMs": 2500,
+        "maxNetworkErrorRate": 0.025,
+        "maxUnknownStatusRate": 0.05
+      },
+      "snapshot": {
+        "maxSustainedOpenCircuitMs": 120000,
+        "maxOldestQueuedAgeMs": 45000,
+        "maxOldestRunningAgeMs": 300000
+      },
+      "pool": {
+        "minAuthPoolSize": 50,
+        "minUniqueCoverage": 0.65
+      }
+    },
+    "m3_20k": {
+      "profile": "m3_20k",
+      "requiredScenarios": [
+        "chat_stream_http"
+      ],
+      "slo": {
+        "minTwoXxRate": 0.95,
+        "maxFiveXxRate": 0.003,
+        "max429Rate": 0.05,
+        "maxP95CompletionMs": 15000,
+        "maxP95FirstTokenMs": 2000,
+        "maxNetworkErrorRate": 0.02,
+        "maxUnknownStatusRate": 0.05
+      },
+      "snapshot": {
+        "maxSustainedOpenCircuitMs": 120000,
+        "maxOldestQueuedAgeMs": 30000,
+        "maxOldestRunningAgeMs": 300000
+      },
+      "pool": {
+        "minAuthPoolSize": 100,
+        "minUniqueCoverage": 0.8
+      }
+    }
+  }
+}

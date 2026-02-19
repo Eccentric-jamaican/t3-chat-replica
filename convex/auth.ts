@@ -1,14 +1,16 @@
 import { betterAuth } from "better-auth";
 import { convex } from "@convex-dev/better-auth/plugins";
 import { createClient, type CreateAuth, type AuthFunctions } from "@convex-dev/better-auth";
+import { v } from "convex/values";
 import { components, internal } from "./_generated/api";
 import type { DataModel } from "./_generated/dataModel";
+import { internalAction } from "./_generated/server";
 import authConfig from "./auth.config";
 import { sendEmail } from "./integrations/email";
-import { renderEmail } from "./integrations/emailTemplates/render";
-import { ResetPasswordEmail } from "./integrations/emailTemplates/resetPassword";
-import { WelcomeEmail } from "./integrations/emailTemplates/welcome";
-import React from "react";
+import {
+  buildResetPasswordEmail,
+  buildWelcomeEmail,
+} from "./integrations/emailTemplates/content";
 
 // AuthFunctions must reference the auth module for triggers to work
 const authFunctions: AuthFunctions = internal.auth;
@@ -49,6 +51,36 @@ const getAppUrl = (): string => {
   return productionOrigin || "https://sendcat.app";
 };
 
+export const sendWelcomeEmailInternal = internalAction({
+  args: {
+    email: v.string(),
+    name: v.optional(v.string()),
+  },
+  handler: async (_ctx, args) => {
+    try {
+      const appUrl = getAppUrl();
+      const { html, text } = buildWelcomeEmail({
+        name: args.name,
+        appUrl,
+        brandColor: BRAND_COLOR,
+      });
+      await sendEmail({
+        to: args.email,
+        subject: "Welcome to SendCat",
+        html,
+        text,
+        replyTo: SUPPORT_REPLY_TO,
+        from: process.env.WELCOME_EMAIL_FROM || WELCOME_FROM,
+      });
+      if (isDebugMode) {
+        console.log("[AUTH EMAIL] Welcome email sent:", maskEmail(args.email));
+      }
+    } catch (error) {
+      console.error("[AUTH EMAIL] Failed to send welcome email:", error);
+    }
+  },
+});
+
 /**
  * The auth component client - provides adapter, route registration, and helper methods.
  * Includes triggers to sync Better Auth users to the app's profiles table.
@@ -79,29 +111,10 @@ export const authComponent = createClient<DataModel>(components.betterAuth, {
           });
         }
 
-        try {
-          const appUrl = getAppUrl();
-          const { html, text } = await renderEmail(
-            React.createElement(WelcomeEmail, {
-              name: doc.name,
-              appUrl,
-              brandColor: BRAND_COLOR,
-            })
-          );
-          await sendEmail({
-            to: doc.email,
-            subject: "Welcome to SendCat",
-            html,
-            text,
-            replyTo: SUPPORT_REPLY_TO,
-            from: process.env.WELCOME_EMAIL_FROM || WELCOME_FROM,
-          });
-          if (isDebugMode) {
-            console.log("[AUTH EMAIL] Welcome email sent:", maskEmail(doc.email));
-          }
-        } catch (error) {
-          console.error("[AUTH EMAIL] Failed to send welcome email:", error);
-        }
+        await ctx.scheduler.runAfter(0, internal.auth.sendWelcomeEmailInternal, {
+          email: doc.email,
+          name: doc.name ?? undefined,
+        });
       },
       onUpdate: async (ctx, newDoc, oldDoc) => {
         if (isDebugMode) {
@@ -267,13 +280,11 @@ export const createAuth: CreateAuth<DataModel> = (ctx) => {
           }
         }
 
-        const { html, text } = await renderEmail(
-          React.createElement(ResetPasswordEmail, {
-            name: user.name,
-            resetUrl: url,
-            brandColor: BRAND_COLOR,
-          })
-        );
+        const { html, text } = buildResetPasswordEmail({
+          name: user.name,
+          resetUrl: url,
+          brandColor: BRAND_COLOR,
+        });
 
         await sendEmail({
           to: user.email,

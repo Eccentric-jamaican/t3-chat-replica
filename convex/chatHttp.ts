@@ -9,15 +9,9 @@ import {
   formatValidationIssues,
 } from "./lib/httpErrors";
 import {
-  acquireBulkheadSlot,
-  BulkheadSaturatedError,
-  releaseBulkheadSlot,
-} from "./lib/bulkhead";
-import {
-  assertCircuitClosed,
-  recordCircuitError,
-  recordCircuitResponse,
-} from "./lib/circuitBreaker";
+  executeChatProviderRequest,
+  toClientSafeUpstreamError,
+} from "./lib/chatProviderRouter";
 import {
   getBasePrompt,
   getStrategyPrompt,
@@ -40,12 +34,16 @@ import {
   isRateLimitContentionError,
 } from "./lib/rateLimit";
 import {
+  getAdmissionControlConfig,
   getToolCacheConfig,
   getToolCacheNamespaces,
 } from "./lib/reliabilityConfig";
 import { enqueueToolJobAndWait } from "./lib/toolJobClient";
-
- 
+import {
+  checkAndAcquireAdmission,
+  releaseAdmission,
+  type AdmissionTicket,
+} from "./lib/admissionControl";
 
 const TOOLS = [
   {
@@ -123,6 +121,13 @@ const TOOLS = [
 ];
 
 const MAX_CHAT_REQUEST_BYTES = 64 * 1024;
+
+type ChatHandlerRuntimeOptions = {
+  gatewayMode?: "legacy" | "shadow" | "authoritative";
+  forceAdmissionMode?: "shadow" | "enforce";
+  failClosedOnRedisError?: boolean;
+};
+
 function buildProductToolSummary(products: Array<{ source?: string }>) {
   const ebayCount = products.filter((item) => item.source === "ebay").length;
   const globalCount = products.filter((item) => item.source === "global").length;
@@ -163,7 +168,11 @@ function enforceJsonBodyGuards(request: Request, maxBytes: number) {
   return null;
 }
 
-export async function chatHandler(ctx: any, request: Request) {
+export async function chatHandler(
+  ctx: any,
+  request: Request,
+  runtime: ChatHandlerRuntimeOptions = {},
+) {
   if (request.method !== "POST") {
     return createHttpErrorResponse({
       status: 405,
@@ -217,18 +226,21 @@ export async function chatHandler(ctx: any, request: Request) {
     });
   }
 
-  const limitKey = `chat_stream:user:${userId}`;
-  const emitRateLimitEvent = async (
-    outcome: "blocked" | "contention_fallback",
-    retryAfterMs?: number,
-  ) => {
+  const emitRateLimitEvent = async (input: {
+    bucket: string;
+    key: string;
+    outcome: "allowed" | "blocked" | "contention_fallback";
+    reason?: string;
+    retryAfterMs?: number;
+  }) => {
     try {
       await ctx.scheduler.runAfter(0, internal.rateLimit.recordEvent, {
         source: "chat_http",
-        bucket: "chat_stream",
-        key: limitKey,
-        outcome,
-        retryAfterMs,
+        bucket: input.bucket,
+        key: input.key,
+        outcome: input.outcome,
+        reason: input.reason,
+        retryAfterMs: input.retryAfterMs,
         path: "/api/chat",
         method: request.method,
       });
@@ -236,59 +248,137 @@ export async function chatHandler(ctx: any, request: Request) {
       // Observability should not block the response path.
     }
   };
+  const admissionConfig = getAdmissionControlConfig();
+  const shouldSampleAllowedEvent = () =>
+    admissionConfig.allowedEventSamplePct > 0 &&
+    Math.random() * 100 < admissionConfig.allowedEventSamplePct;
+  const effectiveAdmissionMode =
+    runtime.forceAdmissionMode ??
+    (admissionConfig.shadowMode ? "shadow" : "enforce");
+  const admissionPrincipal = `user:${userId}`;
+  const admissionEventKey = `chat_admission:${admissionPrincipal}`;
+  let admissionTicket: AdmissionTicket | null = null;
+  let shouldFallbackToLegacyRateLimit = false;
 
+  if (admissionConfig.enabled) {
+    const estimatedToolCalls = webSearch
+      ? admissionConfig.estimatedToolCallsPerMessage
+      : Math.max(admissionConfig.estimatedToolCallsPerMessage - 1, 0);
+    const admissionResult = await checkAndAcquireAdmission({
+      principalKey: admissionPrincipal,
+      mode: effectiveAdmissionMode,
+      estimatedToolCalls,
+      config: admissionConfig,
+    });
+
+    if (admissionResult.mode === "shadow") {
+      if (admissionResult.wouldBlock) {
+        await emitRateLimitEvent({
+          bucket: "chat_admission_shadow",
+          key: admissionEventKey,
+          outcome:
+            admissionResult.reason === "redis_unavailable"
+              ? "contention_fallback"
+              : "blocked",
+          reason: admissionResult.reason,
+          retryAfterMs: admissionResult.retryAfterMs,
+        });
+      } else if (shouldSampleAllowedEvent()) {
+        await emitRateLimitEvent({
+          bucket: "chat_admission_shadow",
+          key: admissionEventKey,
+          outcome: "allowed",
+        });
+      }
+    } else if (admissionResult.mode === "enforce" && !admissionResult.allowed) {
+      const failClosedOnRedisError = runtime.failClosedOnRedisError ?? true;
+      const shouldFailOpenOnRedisError =
+        admissionResult.reason === "redis_unavailable" &&
+        !failClosedOnRedisError;
+      await emitRateLimitEvent({
+        bucket: "chat_admission",
+        key: admissionEventKey,
+        outcome:
+          admissionResult.reason === "redis_unavailable"
+            ? "contention_fallback"
+            : "blocked",
+        reason: admissionResult.reason,
+        retryAfterMs: admissionResult.retryAfterMs,
+      });
+      if (!shouldFailOpenOnRedisError) {
+        return createHttpErrorResponse({
+          status: 429,
+          code: "rate_limited",
+          message: buildRateLimitErrorMessage(admissionResult.retryAfterMs),
+          headers: {
+            "Retry-After": buildRetryAfterSeconds(admissionResult.retryAfterMs),
+          },
+        });
+      } else {
+        shouldFallbackToLegacyRateLimit = true;
+      }
+    } else if (admissionResult.mode === "enforce") {
+      admissionTicket = admissionResult.ticket;
+      if (shouldSampleAllowedEvent()) {
+        await emitRateLimitEvent({
+          bucket: "chat_admission",
+          key: admissionEventKey,
+          outcome: "allowed",
+          reason: admissionResult.softBlockedReasons[0],
+        });
+      }
+    }
+  }
+
+  const shouldUseLegacyRateLimit =
+    !admissionConfig.enabled ||
+    effectiveAdmissionMode === "shadow" ||
+    shouldFallbackToLegacyRateLimit;
   const rateLimits = getRateLimits();
   const toolCacheConfig = getToolCacheConfig();
   const toolCacheNamespaces = getToolCacheNamespaces();
-  let limit;
-  try {
-    limit = await ctx.runMutation(internal.rateLimit.checkAndIncrement, {
-      key: limitKey,
-      max: rateLimits.chatStream.max,
-      windowMs: rateLimits.chatStream.windowMs,
-    });
-  } catch (error) {
-    if (isRateLimitContentionError(error)) {
-      await emitRateLimitEvent("contention_fallback", 1000);
+  if (shouldUseLegacyRateLimit) {
+    const limitKey = `chat_stream:user:${userId}`;
+    let limit;
+    try {
+      limit = await ctx.runMutation(internal.rateLimit.checkAndIncrement, {
+        key: limitKey,
+        max: rateLimits.chatStream.max,
+        windowMs: rateLimits.chatStream.windowMs,
+      });
+    } catch (error) {
+      if (isRateLimitContentionError(error)) {
+        await emitRateLimitEvent({
+          bucket: "chat_stream",
+          key: limitKey,
+          outcome: "contention_fallback",
+          retryAfterMs: 1000,
+        });
+        return createHttpErrorResponse({
+          status: 429,
+          code: "rate_limited",
+          message: "Too many requests. Please retry in a moment.",
+          headers: { "Retry-After": "1" },
+        });
+      }
+      throw error;
+    }
+    if (!limit.allowed) {
+      await emitRateLimitEvent({
+        bucket: "chat_stream",
+        key: limitKey,
+        outcome: "blocked",
+        retryAfterMs: limit.retryAfterMs,
+      });
       return createHttpErrorResponse({
         status: 429,
         code: "rate_limited",
-        message: "Too many requests. Please retry in a moment.",
-        headers: { "Retry-After": "1" },
-      });
-    }
-    throw error;
-  }
-  if (!limit.allowed) {
-    await emitRateLimitEvent("blocked", limit.retryAfterMs);
-    return createHttpErrorResponse({
-      status: 429,
-      code: "rate_limited",
-      message: buildRateLimitErrorMessage(limit.retryAfterMs),
-      headers: {
-        "Retry-After": buildRetryAfterSeconds(limit.retryAfterMs),
-      },
-    });
-  }
-
-  let openRouterSessionLease: string | null = null;
-  try {
-    openRouterSessionLease = await acquireBulkheadSlot(
-      ctx,
-      "openrouter_chat",
-    );
-  } catch (error) {
-    if (error instanceof BulkheadSaturatedError) {
-      return createHttpErrorResponse({
-        status: 503,
-        code: "upstream_unavailable",
-        message: "AI service is temporarily busy. Please retry in a moment.",
+        message: buildRateLimitErrorMessage(limit.retryAfterMs),
         headers: {
-          "Retry-After": buildRetryAfterSeconds(error.retryAfterMs),
+          "Retry-After": buildRetryAfterSeconds(limit.retryAfterMs),
         },
       });
     }
-    throw error;
   }
 
   const encoder = new TextEncoder();
@@ -305,6 +395,19 @@ export async function chatHandler(ctx: any, request: Request) {
       const send = (data: any) => {
         if (isAborted) return;
         controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+      };
+      const emitToolBackpressure = (
+        toolName: string,
+        backpressure:
+          | { reason: string; retryable: boolean; retryAfterMs?: number }
+          | undefined,
+      ) => {
+        if (!backpressure) return;
+        send({
+          type: "tool-backpressure",
+          toolName,
+          ...backpressure,
+        });
       };
       let requestStart: number | null = null;
       let responseModel: string | null = null;
@@ -450,50 +553,53 @@ export async function chatHandler(ctx: any, request: Request) {
           lastUsage = null;
           responseModel = null;
           let response: Response;
+          let upstreamRouteId = "primary";
+          let upstreamProviderId = "openrouter";
           try {
-            await assertCircuitClosed(ctx, "openrouter_chat");
-            response = await fetch(
-              "https://openrouter.ai/api/v1/chat/completions",
-              {
-                method: "POST",
-                headers: {
-                  Authorization: `Bearer ${apiKey}`,
-                  "Content-Type": "application/json",
-                },
-                body: JSON.stringify({
-                  models: [
-                    modelId ?? "moonshotai/kimi-k2.5",
-                    "openai/gpt-5",
-                    "google/gemini-2.0-flash-exp:free",
-                  ],
-                  messages: openRouterMessages,
-                  // [AGENTIC] Filter by capability
-                  tools: getModelCapabilities(modelId).supportsTools
-                    ? TOOLS.filter(
-                        (t) => t.function.name !== "search_web" || webSearch,
-                      )
-                    : undefined,
-                  ...(getModelCapabilities(modelId).supportsTools
-                    ? {
-                        tool_choice: toolLimitsReached ? "none" : "auto",
-                        parallel_tool_calls: false,
-                      }
-                    : {}),
-                  stream: true,
-                }),
-                signal: abortController.signal,
+            const upstream = await executeChatProviderRequest({
+              ctx,
+              apiKey,
+              requestedModelId: modelId,
+              abortSignal: abortController.signal,
+              headers: {
+                "HTTP-Referer": "https://sendcat.app",
+                "X-Title": "Sendcat",
               },
-            );
-            await recordCircuitResponse(ctx, "openrouter_chat", response.status);
+              payload: {
+                messages: openRouterMessages,
+                // [AGENTIC] Filter by capability
+                tools: getModelCapabilities(modelId).supportsTools
+                  ? TOOLS.filter(
+                      (t) => t.function.name !== "search_web" || webSearch,
+                    )
+                  : undefined,
+                ...(getModelCapabilities(modelId).supportsTools
+                  ? {
+                      tool_choice: toolLimitsReached ? "none" : "auto",
+                      parallel_tool_calls: false,
+                    }
+                  : {}),
+              },
+            });
+            response = upstream.response;
+            upstreamRouteId = upstream.route.id;
+            upstreamProviderId = upstream.route.providerId;
+            send({
+              type: "provider-route",
+              providerId: upstreamProviderId,
+              routeId: upstreamRouteId,
+              modelClass: upstream.modelClass,
+            });
           } catch (error) {
-            await recordCircuitError(ctx, "openrouter_chat", error);
-            throw error;
+            throw toClientSafeUpstreamError(error);
           }
 
           // Controller is now handled by the outer listener
-
-          if (!response.ok) throw new Error(`API error: ${response.status}`);
-          if (!response.body) throw new Error("No response body");
+          if (!response.body) {
+            throw toClientSafeUpstreamError(
+              new Error("Model provider returned no response body."),
+            );
+          }
 
           const reader = response.body.getReader();
           const decoder = new TextDecoder();
@@ -832,10 +938,15 @@ export async function chatHandler(ctx: any, request: Request) {
                           );
                         }
                       } else if (jobOutcome.status === "failed") {
+                        emitToolBackpressure(
+                          "search_web",
+                          jobOutcome.backpressure,
+                        );
                         result = `Search failed: ${jobOutcome.error}`;
                       } else {
+                        emitToolBackpressure("search_web", jobOutcome.backpressure);
                         result =
-                          "Live web search is queued and still running. Continue with known information.";
+                          "Live web search is under high load and still queued. Continue with known information for now.";
                       }
                     }
                   }
@@ -998,10 +1109,18 @@ export async function chatHandler(ctx: any, request: Request) {
                             }
                           }
                         } else if (jobOutcome.status === "failed") {
+                          emitToolBackpressure(
+                            "search_products",
+                            jobOutcome.backpressure,
+                          );
                           result = `Product Search Error: ${jobOutcome.error}`;
                         } else {
+                          emitToolBackpressure(
+                            "search_products",
+                            jobOutcome.backpressure,
+                          );
                           result =
-                            "Product search is queued and still running. Continue with known information.";
+                            "Product search is under high load and still queued. Continue with known information for now.";
                         }
                       }
                     }
@@ -1066,10 +1185,18 @@ export async function chatHandler(ctx: any, request: Request) {
                           );
                         }
                       } else if (jobOutcome.status === "failed") {
+                        emitToolBackpressure(
+                          "search_global",
+                          jobOutcome.backpressure,
+                        );
                         result = `Global Search Error: ${jobOutcome.error}`;
                       } else {
+                        emitToolBackpressure(
+                          "search_global",
+                          jobOutcome.backpressure,
+                        );
                         result =
-                          "Global search is queued and still running. Continue with known information.";
+                          "Global search is under high load and still queued. Continue with known information for now.";
                       }
                     }
                   } catch (err: any) {
@@ -1184,23 +1311,33 @@ export async function chatHandler(ctx: any, request: Request) {
         }
       } catch (err: any) {
         console.error("[SSE ERROR]", err);
+        const errorCode =
+          typeof err?.code === "string" ? err.code : "internal_error";
+        const retryAfterMs =
+          typeof err?.retryAfterMs === "number" ? err.retryAfterMs : undefined;
         if (requestStart) {
           send({
             type: "usage_error",
             error: err?.message || "Unknown error",
+            code: errorCode,
             metrics: {
               latencyMs: Date.now() - requestStart,
               modelId: responseModel ?? modelId ?? null,
             },
           });
         }
-        send({ type: "error", error: err.message });
+        send({
+          type: "error",
+          error: err?.message || "Internal error",
+          code: errorCode,
+          retryAfterMs,
+        });
       } finally {
-        await releaseBulkheadSlot(
-          ctx,
-          "openrouter_chat",
-          openRouterSessionLease,
-        );
+        await releaseAdmission({
+          ticket: admissionTicket,
+          config: admissionConfig,
+        });
+        admissionTicket = null;
         controller.close();
       }
     },
@@ -1211,6 +1348,7 @@ export async function chatHandler(ctx: any, request: Request) {
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache",
       Connection: "keep-alive",
+      "X-Sendcat-Chat-Gateway-Mode": runtime.gatewayMode ?? "legacy",
     },
   });
 }
