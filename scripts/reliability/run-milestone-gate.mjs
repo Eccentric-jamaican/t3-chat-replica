@@ -287,6 +287,11 @@ async function main() {
     baseUrl,
     args,
   }));
+  if (drillRun.code !== 0) {
+    throw new Error(
+      `Load drill failed (exit=${drillRun.code}). stderr=${drillRun.stderr.slice(0, 1200)} stdout=${drillRun.stdout.slice(0, 1200)}`,
+    );
+  }
   const drillReportPath = extractReportPath(drillRun.stdout);
   if (!drillReportPath) {
     throw new Error("Milestone gate could not find load drill report path.");

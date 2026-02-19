@@ -19,8 +19,9 @@ function extractCookieHeader(response) {
   }
   const raw = response.headers.get("set-cookie");
   if (!raw) return "";
+  // Split only at cookie boundaries, not inside Expires date values.
   return raw
-    .split(",")
+    .split(/,(?=\s*[!#$%&'*+\-.^_`|~0-9A-Za-z]+=)/)
     .map((cookie) => cookie.split(";")[0])
     .filter(Boolean)
     .join("; ");
@@ -30,35 +31,48 @@ function buildEmail(prefix, seed, index) {
   return `${prefix}-${seed}-${String(index).padStart(4, "0")}@example.com`;
 }
 
-async function postJson(url, payload) {
+function normalizeOrigin(appOrigin) {
+  return appOrigin.trim().replace(/\/+$/, "");
+}
+
+async function postJson(url, payload, appOrigin) {
+  const origin = normalizeOrigin(appOrigin);
   return fetch(url, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      origin: "http://localhost:3000",
-      referer: "http://localhost:3000/",
+      origin,
+      referer: `${origin}/`,
     },
     body: JSON.stringify(payload),
   });
 }
 
 async function trySignIn({ appOrigin, email, password }) {
-  const response = await postJson(`${appOrigin}/api/auth/sign-in/email`, {
-    email,
-    password,
-    rememberMe: true,
-  });
+  const response = await postJson(
+    `${appOrigin}/api/auth/sign-in/email`,
+    {
+      email,
+      password,
+      rememberMe: true,
+    },
+    appOrigin,
+  );
   if (response.status !== 200) return null;
   const cookieHeader = extractCookieHeader(response);
   return cookieHeader || null;
 }
 
 async function signUp({ appOrigin, email, password, name }) {
-  const response = await postJson(`${appOrigin}/api/auth/sign-up/email`, {
-    name,
-    email,
-    password,
-  });
+  const response = await postJson(
+    `${appOrigin}/api/auth/sign-up/email`,
+    {
+      name,
+      email,
+      password,
+    },
+    appOrigin,
+  );
 
   if (response.status !== 200) {
     const body = await response.text();
@@ -75,12 +89,13 @@ async function signUp({ appOrigin, email, password, name }) {
 }
 
 async function fetchConvexToken({ appOrigin, cookieHeader }) {
+  const origin = normalizeOrigin(appOrigin);
   const response = await fetch(`${appOrigin}/api/auth/convex/token`, {
     method: "GET",
     headers: {
       cookie: cookieHeader,
-      origin: "http://localhost:3000",
-      referer: "http://localhost:3000/",
+      origin,
+      referer: `${origin}/`,
     },
   });
   if (response.status !== 200) {
@@ -196,4 +211,3 @@ main().catch((error) => {
   console.error("Failed to generate chat auth pool:", error);
   process.exitCode = 1;
 });
-

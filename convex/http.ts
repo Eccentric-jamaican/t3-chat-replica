@@ -858,10 +858,39 @@ export async function chatGatewayHealthGetHandler(ctx: any, request: Request) {
   return response;
 }
 
+export async function chatGatewayHealthOptionsHandler(
+  _ctx: any,
+  request: Request,
+) {
+  const origin = request.headers.get("Origin");
+  if (origin && !isAllowedOrigin(origin)) {
+    return createHttpErrorResponse({
+      status: 403,
+      code: "forbidden",
+      message: "Forbidden origin",
+    });
+  }
+
+  const headers = new Headers();
+  if (origin && isAllowedOrigin(origin)) {
+    headers.set("Access-Control-Allow-Origin", origin);
+    headers.set("Access-Control-Allow-Credentials", "true");
+    headers.set("Access-Control-Allow-Methods", "GET, OPTIONS");
+    headers.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  }
+  return new Response(null, { status: 200, headers });
+}
+
 http.route({
   path: "/api/chat/health",
   method: "GET",
   handler: httpAction(chatGatewayHealthGetHandler),
+});
+
+http.route({
+  path: "/api/chat/health",
+  method: "OPTIONS",
+  handler: httpAction(chatGatewayHealthOptionsHandler),
 });
 
 export default http;

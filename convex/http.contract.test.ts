@@ -4,6 +4,7 @@ import { chatHandler } from "./chatHttp";
 import {
   chatOptionsHandler,
   chatGatewayHealthGetHandler,
+  chatGatewayHealthOptionsHandler,
   chatPostHandler,
   gmailOAuthCallbackHandler,
   gmailPushHandler,
@@ -313,6 +314,38 @@ describe("/api/chat contract", () => {
       {} as any,
       new Request("https://example.com/api/chat/health", {
         method: "GET",
+      }),
+    );
+
+    expect(response.status).toBe(403);
+    expect(response.headers.get(HTTP_ERROR_CODE_HEADER)).toBe("forbidden");
+  });
+
+  test("chat health OPTIONS returns CORS headers for allowed origin", async () => {
+    const allowedOrigin =
+      process.env.ALLOWED_ORIGINS?.split(",")[0]?.trim() ||
+      "http://localhost:3000";
+    const response = await chatGatewayHealthOptionsHandler(
+      {} as any,
+      new Request("https://example.com/api/chat/health", {
+        method: "OPTIONS",
+        headers: { Origin: allowedOrigin },
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Access-Control-Allow-Origin")).toBe(allowedOrigin);
+    expect(response.headers.get("Access-Control-Allow-Methods")).toBe(
+      "GET, OPTIONS",
+    );
+  });
+
+  test("chat health OPTIONS rejects disallowed origin", async () => {
+    const response = await chatGatewayHealthOptionsHandler(
+      {} as any,
+      new Request("https://example.com/api/chat/health", {
+        method: "OPTIONS",
+        headers: { Origin: "https://not-allowed.invalid" },
       }),
     );
 

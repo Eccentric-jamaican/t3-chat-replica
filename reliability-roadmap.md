@@ -508,7 +508,7 @@ Delivered in 5.3:
 Delivered in 5.4:
 - Added provider routing abstraction for chat upstream calls:
   - `convex/lib/chatProviderRouter.ts`
-  - model-class aware route policy (`fast` / `agent`)
+  - model-class-aware route policy (`fast` / `agent`)
   - primary/secondary route composition gated by `FF_PROVIDER_FAILOVER_ENABLED`
 - Wired route execution into both chat paths:
   - `convex/chatHttp.ts`

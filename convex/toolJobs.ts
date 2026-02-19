@@ -141,13 +141,21 @@ async function sendSentryToolQueueAlert(input: {
     `${JSON.stringify({ type: "event" })}\n` +
     `${JSON.stringify(payload)}`;
 
-  const response = await fetch(parsed.endpoint, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/x-sentry-envelope",
+  const response = await fetchWithRetry(
+    parsed.endpoint,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-sentry-envelope",
+      },
+      body: envelope,
     },
-    body: envelope,
-  });
+    {
+      timeoutMs: 1500,
+      retries: 0,
+      retryOnNetworkError: false,
+    },
+  );
 
   return response.ok;
 }
@@ -757,6 +765,7 @@ export const requeueDeadLetter = internalMutation({
       status: "queued",
       availableAt: now,
       leaseExpiresAt: undefined,
+      attempts: 0,
       deadLetterReason: undefined,
       deadLetterAt: undefined,
       updatedAt: now,

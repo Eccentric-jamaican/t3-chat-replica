@@ -6,7 +6,7 @@
       "maxFiveXxRate": 0.05,
       "maxNetworkErrorRate": 0.05,
       "maxUnknownStatusRate": 0.1,
-      "minTwoXxRate": 0.9,
+      "minTwoXxRate": 0.95,
       "allowedStatuses": [200, 401, 429, 503]
     },
     "/api/gmail/push": {

@@ -165,6 +165,11 @@ function evaluateLoadTrigger(loadReports, policy) {
     breachCount,
     thresholdBreachesNeeded: thresholds.minBreachesToTrigger,
     evaluations,
+    recommendedTopology:
+      typeof thresholds.recommendedTopology === "string" &&
+      thresholds.recommendedTopology.trim()
+        ? thresholds.recommendedTopology
+        : "active_standby",
   };
 }
 
@@ -210,6 +215,11 @@ function evaluateSnapshotTrigger(snapshot, policy) {
       checks.queuedToolJobs.breached ||
       checks.rateLimitAlertsInWindow.breached,
     checks,
+    recommendedTopology:
+      typeof thresholds.recommendedTopology === "string" &&
+      thresholds.recommendedTopology.trim()
+        ? thresholds.recommendedTopology
+        : "active_standby",
   };
 }
 
@@ -282,7 +292,21 @@ async function main() {
   const readinessOnly = Boolean(
     snapshot?.config?.regionTopology?.readinessOnly ?? true,
   );
-  const recommendedTopology = demandTrigger.recommendedTopology;
+  let recommendedTopology = "single_region";
+  if (demandTrigger.triggered) {
+    recommendedTopology = demandTrigger.recommendedTopology;
+  } else if (loadTrigger.triggered) {
+    recommendedTopology = loadTrigger.recommendedTopology;
+  } else if (snapshotTrigger.triggered) {
+    recommendedTopology = snapshotTrigger.recommendedTopology;
+  }
+  if (
+    !demandTrigger.triggered &&
+    (loadTrigger.triggered || snapshotTrigger.triggered) &&
+    recommendedTopology === "single_region"
+  ) {
+    recommendedTopology = "active_standby";
+  }
 
   const report = {
     startedAt: new Date().toISOString(),

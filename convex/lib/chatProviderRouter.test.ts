@@ -135,4 +135,46 @@ describe("chatProviderRouter", () => {
     expect(typed.code).toBe("upstream_timeout");
     expect(typed.retryAfterMs).toBe(1000);
   });
+
+  test("does not double-count circuit failures for HTTP status errors", async () => {
+    const ctx = createCtx();
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("fail", { status: 503 })));
+
+    await expect(
+      executeChatProviderRequest({
+        ctx,
+        apiKey: "k_test",
+        requestedModelId: "openai/gpt-5",
+        payload: { messages: [{ role: "user", content: "hello" }] },
+      }),
+    ).rejects.toMatchObject({
+      code: "upstream_unavailable",
+    });
+
+    const failureCalls = ctx.runMutation.mock.calls.filter(([, args]: any[]) => {
+      return args && typeof args === "object" && "error" in args;
+    });
+    expect(failureCalls).toHaveLength(1);
+  });
+
+  test("keeps neutral HTTP statuses out of circuit failure recording", async () => {
+    const ctx = createCtx();
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("rate", { status: 429 })));
+
+    await expect(
+      executeChatProviderRequest({
+        ctx,
+        apiKey: "k_test",
+        requestedModelId: "openai/gpt-5",
+        payload: { messages: [{ role: "user", content: "hello" }] },
+      }),
+    ).rejects.toMatchObject({
+      code: "upstream_rate_limited",
+    });
+
+    const failureCalls = ctx.runMutation.mock.calls.filter(([, args]: any[]) => {
+      return args && typeof args === "object" && "error" in args;
+    });
+    expect(failureCalls).toHaveLength(0);
+  });
 });

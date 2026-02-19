@@ -538,6 +538,10 @@ function normalizePoolEntry(entry, index) {
   return {
     authToken,
     threadId,
+    email:
+      typeof entry.email === "string" && entry.email.trim()
+        ? entry.email.trim()
+        : undefined,
     userLabel:
       typeof entry.userLabel === "string" && entry.userLabel.trim()
         ? entry.userLabel.trim()

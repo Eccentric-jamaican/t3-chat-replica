@@ -27,4 +27,14 @@ describe("email template content", () => {
     expect(result.html).toContain("Reset Password");
     expect(result.html).toContain("href=\"https://www.sendcat.app/reset-password?token=abc123\"");
   });
+
+  test("buildResetPasswordEmail blocks unsafe URL protocols", () => {
+    const result = buildResetPasswordEmail({
+      name: "Alicia",
+      resetUrl: "javascript:alert(1)",
+    });
+
+    expect(result.html).toContain("href=\"#\"");
+    expect(result.text).toContain("Reset Password: #");
+  });
 });

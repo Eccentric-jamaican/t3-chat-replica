@@ -31,9 +31,12 @@ function toSafeText(value: string | null | undefined, fallback: string) {
 function toSafeUrl(value: string) {
   try {
     const parsed = new URL(value);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      return "#";
+    }
     return parsed.toString();
   } catch {
-    return value;
+    return "#";
   }
 }
 

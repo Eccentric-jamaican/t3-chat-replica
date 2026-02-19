@@ -348,7 +348,12 @@ export async function executeChatProviderRequest(input: {
             modelClass,
           };
         } catch (error) {
-          await recordCircuitError(input.ctx, route.circuitProvider, error);
+          const isHttpStatusError =
+            error instanceof ChatUpstreamError &&
+            typeof error.status === "number";
+          if (!isHttpStatusError) {
+            await recordCircuitError(input.ctx, route.circuitProvider, error);
+          }
           const classified = classifyProviderError(route, error);
           if (attempt < route.retries && classified.retryable) {
             await wait(100 + attempt * 150);

@@ -428,7 +428,7 @@ describe("reliabilityConfig", () => {
     process.env.ADMISSION_RETRY_AFTER_JITTER_PCT = "999";
     process.env.ADMISSION_ALLOWED_EVENT_SAMPLE_PCT = "-1";
     process.env.FF_CHAT_GATEWAY_ENABLED = "wat";
-    process.env.FF_CHAT_GATEWAY_SHADOW = "no";
+    process.env.FF_CHAT_GATEWAY_SHADOW = "wat";
     process.env.FF_ADMISSION_ENFORCE = "???";
     process.env.FF_TOOL_QUEUE_ENFORCE = " ";
     process.env.FF_PROVIDER_FAILOVER_ENABLED = "2";
@@ -502,7 +502,7 @@ describe("reliabilityConfig", () => {
     });
     expect(getChatGatewayFlags()).toMatchObject({
       enabled: false,
-      shadowMode: false,
+      shadowMode: true,
       admissionEnforce: false,
       toolQueueEnforce: false,
       providerFailoverEnabled: false,
@@ -514,5 +514,10 @@ describe("reliabilityConfig", () => {
       topologyMode: "single_region",
       readinessOnly: true,
     });
+  });
+
+  test("accepts explicit falsy gateway shadow override", () => {
+    process.env.FF_CHAT_GATEWAY_SHADOW = "no";
+    expect(getChatGatewayFlags().shadowMode).toBe(false);
   });
 });
