@@ -3,6 +3,7 @@ import { Sidebar } from "../components/layout/Sidebar";
 import { useEffect, useState, useMemo } from "react";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
+import type { Doc } from "../../convex/_generated/dataModel";
 import { useIsMobile } from "../hooks/useIsMobile";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -20,6 +21,7 @@ import {
   Download,
   X,
   ArrowUpDown,
+  type LucideIcon,
 } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { Card, CardContent } from "../components/ui/card";
@@ -67,21 +69,7 @@ const STATUS_CONFIG = {
   },
 } as const;
 
-type PackageStatus = keyof typeof STATUS_CONFIG;
-
-interface Package {
-  _id: string;
-  _creationTime?: number;
-  merchant: string;
-  trackingNumber: string;
-  description: string;
-  status: PackageStatus;
-  updatedAt?: number;
-  weight?: number;
-  cost?: number;
-  location?: string;
-  date?: string;
-}
+type Package = Doc<"packages">;
 
 function PackagesPage() {
   const isMobile = useIsMobile();
@@ -96,11 +84,10 @@ function PackagesPage() {
   const { data: session, isPending } = authClient.useSession();
   const isAuthenticated = !isPending && !!session;
 
-  const rawPackagesQuery = useQuery(
+  const rawPackages = useQuery(
     api.packages.list,
     isAuthenticated ? {} : "skip"
   );
-  const rawPackages = rawPackagesQuery as Package[] | undefined;
   
   const seedPackages = useMutation(api.packages.seed);
 
@@ -127,8 +114,8 @@ function PackagesPage() {
 
     // Sorting
     filtered.sort((a, b) => {
-      const tsA = Number(new Date(a.updatedAt ?? a._creationTime ?? 0));
-      const tsB = Number(new Date(b.updatedAt ?? b._creationTime ?? 0));
+      const tsA = a.updatedAt ?? a._creationTime;
+      const tsB = b.updatedAt ?? b._creationTime;
 
       switch (sortBy) {
         case "oldest":
@@ -193,7 +180,7 @@ function PackagesPage() {
     const headers = ["Merchant", "Tracking Number", "Description", "Status", "Weight (lbs)", "Cost (JMD)", "Location", "Updated At"];
     
     // Proper CSV escaping function
-    const escapeCSV = (val: any) => {
+    const escapeCSV = (val: unknown) => {
       const str = String(val ?? "");
       // If it contains quotes, commas, or newlines, wrap in quotes and escape internal quotes
       if (/[",\n\r]/.test(str)) {
@@ -208,7 +195,7 @@ function PackagesPage() {
         escapeCSV(p.merchant),
         escapeCSV(p.trackingNumber),
         escapeCSV(p.description),
-        escapeCSV(STATUS_CONFIG[p.status as keyof typeof STATUS_CONFIG]?.label || p.status),
+        escapeCSV(STATUS_CONFIG[p.status].label || p.status),
         p.weight || 0,
         p.cost || 0,
         escapeCSV(p.location),
@@ -516,9 +503,9 @@ function PackagesPage() {
                                           </td>
                                            <td className="px-6 py-5 text-right">
                                               <div className="flex items-center justify-end gap-2">
-                                                 <div className={cn("h-1.5 w-1.5 rounded-full animate-pulse", STATUS_CONFIG[pkg.status as PackageStatus].indicatorColor)} />
-                                                 <span className={cn("text-[11px] font-black uppercase tracking-widest", STATUS_CONFIG[pkg.status as PackageStatus].color)}>
-                                                    {STATUS_CONFIG[pkg.status as PackageStatus].label}
+                                                 <div className={cn("h-1.5 w-1.5 rounded-full animate-pulse", STATUS_CONFIG[pkg.status].indicatorColor)} />
+                                                 <span className={cn("text-[11px] font-black uppercase tracking-widest", STATUS_CONFIG[pkg.status].color)}>
+                                                    {STATUS_CONFIG[pkg.status].label}
                                                  </span>
                                               </div>
                                            </td>
@@ -618,7 +605,7 @@ function EmptyState({ onClear, hasFilters }: { onClear?: () => void, hasFilters?
 }
 
 
-function StatCard({ label, value, icon: Icon, variant = "default" }: { label: string, value: number, icon: any, variant?: "default" | "success" | "ghost" }) {
+function StatCard({ label, value, icon: Icon, variant = "default" }: { label: string, value: number, icon: LucideIcon, variant?: "default" | "success" | "ghost" }) {
   const styles = {
     default: "bg-black/[0.03] border-none shadow-none",
     success: "bg-green-500/10 border-green-500/20 shadow-none",
@@ -639,7 +626,7 @@ function StatCard({ label, value, icon: Icon, variant = "default" }: { label: st
 }
 
 function PackageCard({ pkg }: { pkg: Package }) {
-  const config = STATUS_CONFIG[pkg.status as keyof typeof STATUS_CONFIG];
+  const config = STATUS_CONFIG[pkg.status];
   const StatusIcon = config.icon;
 
   return (

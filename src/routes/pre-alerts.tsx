@@ -3,6 +3,7 @@ import { Sidebar } from "../components/layout/Sidebar";
 import { useEffect, useState } from "react";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
+import type { Doc } from "../../convex/_generated/dataModel";
 import { useIsMobile } from "../hooks/useIsMobile";
 import { toast } from "sonner";
 import {
@@ -55,6 +56,14 @@ const MERCHANT_LABELS: Record<string, string> = {
   shein: "SHEIN",
   ebay: "eBay",
   temu: "Temu",
+};
+
+type PurchaseDraft = Doc<"purchaseDrafts">;
+type PackagePreAlert = Doc<"packagePreAlerts">;
+type DraftUpdates = {
+  orderNumber?: string;
+  valueUsd?: number;
+  itemsSummary?: string;
 };
 
 function PreAlertsPage() {
@@ -202,7 +211,7 @@ function PreAlertsPage() {
                     </CardContent>
                   </Card>
                 ) : (
-                  drafts.map((draft: any) => (
+                  drafts.map((draft) => (
                     <DraftCard
                       key={draft._id}
                       draft={draft}
@@ -239,7 +248,7 @@ function PreAlertsPage() {
                     </CardContent>
                   </Card>
                 ) : (
-                  confirmedDrafts.map((draft: any) => (
+                  confirmedDrafts.map((draft) => (
                     <DraftCard key={draft._id} draft={draft} />
                   ))
                 )}
@@ -263,7 +272,7 @@ function PreAlertsPage() {
                     </CardContent>
                   </Card>
                 ) : (
-                  allDrafts.map((draft: any) => (
+                  allDrafts.map((draft) => (
                     <DraftCard key={draft._id} draft={draft} />
                   ))
                 )}
@@ -281,7 +290,7 @@ function DraftCard({
   onConfirm,
   onReject,
 }: {
-  draft: any;
+  draft: PurchaseDraft;
   onConfirm?: () => void;
   onReject?: () => void;
 }) {
@@ -304,7 +313,7 @@ function DraftCard({
 
   const handleSaveEdit = async () => {
     try {
-      const updates: any = {};
+      const updates: DraftUpdates = {};
       if (editValues.orderNumber) updates.orderNumber = editValues.orderNumber;
       if (editValues.valueUsd)
         updates.valueUsd = Math.round(parseFloat(editValues.valueUsd) * 100);
@@ -351,7 +360,7 @@ function DraftCard({
     draft.storeName ||
     draft.merchant ||
     "Unknown";
-  const statusColors = {
+  const statusColors: Record<PurchaseDraft["status"], string> = {
     draft: "bg-amber-100 text-amber-800",
     confirmed: "bg-green-100 text-green-800",
     rejected: "bg-red-100 text-red-800",
@@ -378,7 +387,7 @@ function DraftCard({
           <span
             className={cn(
               "rounded-full px-2 py-0.5 text-xs font-bold",
-              statusColors[draft.status as keyof typeof statusColors],
+              statusColors[draft.status],
             )}
           >
             {draft.status}
@@ -493,7 +502,7 @@ function DraftCard({
               Tracking
             </p>
             <div className="flex flex-wrap gap-2">
-              {preAlerts.map((pa: any) => (
+              {preAlerts.map((pa: PackagePreAlert) => (
                 <div
                   key={pa._id}
                   className="flex items-center gap-2 rounded-lg border border-black/5 bg-black/[0.03] px-3 py-1.5"
