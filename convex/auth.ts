@@ -249,19 +249,23 @@ export const createAuth: CreateAuth<DataModel> = (ctx) => {
       enabled: true,
       sendResetPassword: async ({ user, url }) => {
         try {
-          const accounts =
-            (await adapter.findMany({
+          const credentialAccount = (await ctx.runQuery(
+            components.betterAuth.adapter.findOne,
+            {
               model: "account",
               where: [
                 {
                   field: "userId",
                   value: user.id,
                 },
+                {
+                  field: "providerId",
+                  value: "credential",
+                },
               ],
-            })) ?? [];
-          const hasCredentialAccount = accounts.some(
-            (account) => account.providerId === "credential" && account.password,
-          );
+            },
+          )) as { password?: string | null } | null;
+          const hasCredentialAccount = !!credentialAccount?.password;
           if (!hasCredentialAccount) {
             if (isDebugMode) {
               console.log(

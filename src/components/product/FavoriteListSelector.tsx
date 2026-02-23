@@ -1,10 +1,10 @@
 import * as React from "react";
-import { Plus, Check, Loader2, Heart } from "lucide-react";
+import { Plus, Check } from "lucide-react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
+import type { Id } from "../../../convex/_generated/dataModel";
 import { type Product } from "../../data/mockProducts";
 import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover";
-import { Checkbox } from "../ui/checkbox";
 import { cn } from "../../lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
@@ -14,6 +14,17 @@ interface FavoriteListSelectorProps {
   product: Product;
   trigger: React.ReactNode;
 }
+
+type FavoriteList = {
+  _id: Id<"favoriteLists">;
+  name: string;
+};
+
+type ProductFavorite = {
+  externalId: string;
+  type: string;
+  listId?: Id<"favoriteLists">;
+};
 
 export function FavoriteListSelector({ product, trigger }: FavoriteListSelectorProps) {
   const [isOpen, setIsOpen] = React.useState(false);
@@ -25,15 +36,16 @@ export function FavoriteListSelector({ product, trigger }: FavoriteListSelectorP
   const toggleFavorite = useMutation(api.favorites.toggleFavorite);
   const createList = useMutation(api.favorites.createList);
 
-  const lists = favData?.lists || [];
-  const productFavorites =
-    userFavorites?.filter(
-      (f) => f.externalId === product.id && f.type === "product",
+  const lists: FavoriteList[] = (favData?.lists as FavoriteList[]) || [];
+  const productFavorites: ProductFavorite[] =
+    (userFavorites as ProductFavorite[] | undefined)?.filter(
+      (f: ProductFavorite) =>
+        f.externalId === product.id && f.type === "product",
     ) || [];
   
-  const handleToggle = async (listId?: any) => {
+  const handleToggle = async (listId?: Id<"favoriteLists">) => {
     const wasInList = productFavorites.some(
-      (favorite) => favorite.listId === listId,
+      (favorite: ProductFavorite) => favorite.listId === listId,
     );
     try {
       await toggleFavorite({
@@ -103,19 +115,21 @@ export function FavoriteListSelector({ product, trigger }: FavoriteListSelectorP
           >
             <div className={cn(
               "flex h-5 w-5 shrink-0 items-center justify-center rounded-md border transition-all",
-              productFavorites.some(f => f.listId === undefined)
+              productFavorites.some((f: ProductFavorite) => f.listId === undefined)
                 ? "border-[#a23b67] bg-[#a23b67]"
                 : "border-gray-300 bg-white group-hover:border-gray-400"
             )}>
-              {productFavorites.some(f => f.listId === undefined) && (
+              {productFavorites.some((f: ProductFavorite) => f.listId === undefined) && (
                 <Check className="h-3.5 w-3.5 stroke-[3] text-white" />
               )}
             </div>
             <span className="text-sm font-medium text-gray-700">All Favorites</span>
           </button>
 
-          {lists.map((list) => {
-            const isItemInList = productFavorites.some(f => f.listId === list._id);
+          {lists.map((list: FavoriteList) => {
+            const isItemInList = productFavorites.some(
+              (f: ProductFavorite) => f.listId === list._id,
+            );
             return (
               <button
                 key={list._id}

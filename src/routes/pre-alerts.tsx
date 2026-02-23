@@ -202,7 +202,7 @@ function PreAlertsPage() {
                     </CardContent>
                   </Card>
                 ) : (
-                  drafts.map((draft) => (
+                  drafts.map((draft: any) => (
                     <DraftCard
                       key={draft._id}
                       draft={draft}
@@ -239,7 +239,7 @@ function PreAlertsPage() {
                     </CardContent>
                   </Card>
                 ) : (
-                  confirmedDrafts.map((draft) => (
+                  confirmedDrafts.map((draft: any) => (
                     <DraftCard key={draft._id} draft={draft} />
                   ))
                 )}
@@ -263,7 +263,7 @@ function PreAlertsPage() {
                     </CardContent>
                   </Card>
                 ) : (
-                  allDrafts.map((draft) => (
+                  allDrafts.map((draft: any) => (
                     <DraftCard key={draft._id} draft={draft} />
                   ))
                 )}

@@ -17,8 +17,9 @@ const loggedServerFunction = createServerFn({ method: "GET" }).middleware([
 */
 
 const TODOS_FILE = 'todos.json'
+type Todo = { id: number; name: string }
 
-async function readTodos() {
+async function readTodos(): Promise<Todo[]> {
   return JSON.parse(
     await fs.promises.readFile(TODOS_FILE, 'utf-8').catch(() =>
       JSON.stringify(
@@ -30,7 +31,7 @@ async function readTodos() {
         2,
       ),
     ),
-  )
+  ) as Todo[]
 }
 
 const getTodos = createServerFn({

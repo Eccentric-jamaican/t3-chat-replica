@@ -1,5 +1,4 @@
 import { Section, Text } from "@react-email/components";
-import React from "react";
 import { EmailLayout } from "./layout";
 
 type ResetPasswordEmailProps = {

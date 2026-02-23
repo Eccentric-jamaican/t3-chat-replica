@@ -1,13 +1,9 @@
 import { internal } from "../_generated/api";
+import type { MutationCtx } from "../_generated/server";
 import { buildRateLimitErrorMessage, isRateLimitContentionError } from "./rateLimit";
 import { throwFunctionError } from "./functionErrors";
 
-type RateLimitContext = {
-  runMutation: (
-    mutation: unknown,
-    args: { key: string; max: number; windowMs: number },
-  ) => Promise<{ allowed: boolean; retryAfterMs: number }>;
-};
+type RateLimitContext = Pick<MutationCtx, "runMutation">;
 
 export async function enforceFunctionRateLimit(
   ctx: RateLimitContext,

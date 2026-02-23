@@ -12,7 +12,6 @@ import {
   Search,
   ChevronRight,
   ArrowUpRight,
-  Star,
   Loader2,
 } from "lucide-react";
 import { motion } from "framer-motion";
@@ -33,7 +32,7 @@ export const Route = createFileRoute("/explore/")({ component: ExplorePage });
 function ExplorePage() {
   const isMobile = useIsMobile();
   const getExploreItems = useAction(api.explore.getExploreItems);
-  const taxonomyCategories = useQuery(api.ebayTaxonomy.listTopCategories);
+  const taxonomyCategories = useQuery(api.ebayTaxonomy.listTopCategories, {});
   const trendingKey = getExploreItemsCacheKey({ section: "trending" });
   const newKey = getExploreItemsCacheKey({ section: "new" });
   const initialTrending = peekExploreItemsCached(trendingKey);

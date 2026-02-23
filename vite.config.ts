@@ -52,7 +52,7 @@ const config = defineConfig(({ mode }) => {
             org: sentryOrg,
             project: sentryProject,
             authToken: sentryAuthToken,
-            release: sentryRelease,
+            release: sentryRelease ? { name: sentryRelease } : undefined,
           })
         : null,
     ].filter(Boolean),

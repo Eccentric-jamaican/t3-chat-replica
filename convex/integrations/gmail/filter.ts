@@ -97,7 +97,6 @@ export function shouldProcessGmailMessage(opts: {
 }): MerchantMatchResult {
   const { message } = opts;
 
-  const labelIds = message.labelIds ?? [];
   // We used to hard-block CATEGORY_PROMOTIONS, but legitimate transactional
   // receipts can land there. Keep using merchant + intent checks below to
   // avoid most marketing noise.

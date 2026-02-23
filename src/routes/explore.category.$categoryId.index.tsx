@@ -181,7 +181,8 @@ function CategoryIndexPage() {
           ) : (
             <>
               <div className="grid grid-cols-2 gap-4 px-2 md:grid-cols-4">
-                {visibleSubcategories.map((sub, idx) => (
+                {visibleSubcategories.map(
+                  (sub: { categoryId: string; categoryName: string }, idx: number) => (
                   <Link
                     key={sub.categoryId}
                     to="/explore/category/$categoryId/$subCategoryId"
@@ -211,7 +212,8 @@ function CategoryIndexPage() {
                       </div>
                     </motion.div>
                   </Link>
-                ))}
+                  ),
+                )}
               </div>
               {subcategories.length > DEFAULT_SUBCATEGORY_LIMIT && (
                 <div className="flex justify-center">

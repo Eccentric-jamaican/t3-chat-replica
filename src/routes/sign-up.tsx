@@ -1,10 +1,9 @@
 import { createFileRoute, Link, useNavigate, useSearch } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
 import { authClient } from '../lib/auth';
-import { cn, resolveRedirect } from '../lib/utils';
+import { resolveRedirect } from '../lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Mail, Lock, User, ArrowRight, Loader2, AlertCircle, Check } from 'lucide-react';
-import { Button } from '../components/ui/button';
 import { toast } from 'sonner';
 import { z } from 'zod';
 import { trackEvent } from '../lib/analytics';

@@ -49,7 +49,9 @@ export const processWebhook = internalAction({
 
         const messages = change.value?.messages || [];
         for (const message of messages) {
-          const from: string = message.from; // E.164 phone number
+          const from = message.from; // E.164 phone number
+          const sourceMessageId = message.id;
+          if (!from || !sourceMessageId) continue;
 
           // Check if this is a linking code attempt (before user is linked)
           if (message.type === "text") {
@@ -68,7 +70,7 @@ export const processWebhook = internalAction({
           // Idempotency: check if message already processed
           const existing = await ctx.runQuery(
             internal.integrations.evidence.getBySourceMessageId,
-            { sourceMessageId: message.id },
+            { sourceMessageId },
           );
           if (existing) continue;
 

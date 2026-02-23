@@ -2,10 +2,9 @@ import { createFileRoute, Link, useNavigate, useSearch } from '@tanstack/react-r
 import { useEffect, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { authClient } from '../lib/auth'
-import { cn, resolveRedirect } from '../lib/utils'
+import { resolveRedirect } from '../lib/utils'
 import { toast } from 'sonner'
 import { Mail, Lock, ArrowRight, Loader2, AlertCircle } from 'lucide-react'
-import { Button } from '../components/ui/button'
 import { z } from 'zod'
 import { trackEvent } from '../lib/analytics'
 

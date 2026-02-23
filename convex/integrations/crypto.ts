@@ -29,6 +29,12 @@ function base64ToUint8(base64: string): Uint8Array {
   return bytes;
 }
 
+function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  const copy = new Uint8Array(bytes.length);
+  copy.set(bytes);
+  return copy.buffer;
+}
+
 async function getKey(): Promise<CryptoKey> {
   const hex = process.env.ENCRYPTION_KEY;
   if (!hex || hex.length !== 64) {
@@ -37,10 +43,13 @@ async function getKey(): Promise<CryptoKey> {
     );
   }
   const keyBytes = hexToUint8(hex);
-  return crypto.subtle.importKey("raw", keyBytes, "AES-GCM", false, [
-    "encrypt",
-    "decrypt",
-  ]);
+  return crypto.subtle.importKey(
+    "raw",
+    toArrayBuffer(keyBytes),
+    "AES-GCM",
+    false,
+    ["encrypt", "decrypt"],
+  );
 }
 
 /**
@@ -53,9 +62,9 @@ export async function encrypt(plaintext: string): Promise<string> {
   const encoded = new TextEncoder().encode(plaintext);
 
   const ciphertextWithTag = await crypto.subtle.encrypt(
-    { name: "AES-GCM", iv },
+    { name: "AES-GCM", iv: toArrayBuffer(iv) },
     key,
-    encoded,
+    toArrayBuffer(encoded),
   );
 
   // Web Crypto appends the 16-byte auth tag to the ciphertext
@@ -87,9 +96,9 @@ export async function decrypt(token: string): Promise<string> {
   combined.set(tag, ciphertext.length);
 
   const decrypted = await crypto.subtle.decrypt(
-    { name: "AES-GCM", iv },
+    { name: "AES-GCM", iv: toArrayBuffer(iv) },
     key,
-    combined,
+    toArrayBuffer(combined),
   );
 
   return new TextDecoder().decode(decrypted);

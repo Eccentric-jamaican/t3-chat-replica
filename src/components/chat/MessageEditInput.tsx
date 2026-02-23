@@ -280,7 +280,9 @@ export function MessageEditInput({
 
     try {
       // Find the message index
-      const messageIndex = messages.findIndex((m) => m._id === messageId);
+      const messageIndex = messages.findIndex(
+        (m: { _id: Id<"messages"> }) => m._id === messageId,
+      );
       if (messageIndex === -1) return;
 
       const messagesToCopy = messages.slice(0, messageIndex); // Copy all messages BEFORE this one

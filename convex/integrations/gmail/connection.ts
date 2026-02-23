@@ -96,15 +96,23 @@ export const startOAuth = action({
  */
 export const triggerSync = action({
   args: {},
-  handler: async (ctx): Promise<unknown> => {
+  handler: async (ctx): Promise<{
+    processed: number;
+    draftsCreated: number;
+    draftsUpdated: number;
+  }> => {
     const userId = await requireAuthenticatedUserId(
       ctx,
       "integrations.gmail.connection.triggerSync",
     );
 
-    return await ctx.runAction(internal.integrations.gmail.sync.syncGmail, {
+    return (await ctx.runAction(internal.integrations.gmail.sync.syncGmail, {
       userId,
       daysBack: 30,
-    });
+    })) as {
+      processed: number;
+      draftsCreated: number;
+      draftsUpdated: number;
+    };
   },
 });

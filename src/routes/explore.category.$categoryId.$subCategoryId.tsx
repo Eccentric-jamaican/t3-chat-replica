@@ -29,7 +29,7 @@ function SubcategoryPage() {
     categoryId,
   });
   const subcategory = subcategories?.find(
-    (entry) => entry.categoryId === subCategoryId,
+    (entry: { categoryId: string }) => entry.categoryId === subCategoryId,
   );
   const itemsKey = getExploreItemsCacheKey({ categoryId: subCategoryId });
   const initialItems = peekExploreItemsCached(itemsKey);

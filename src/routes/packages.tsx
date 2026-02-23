@@ -71,10 +71,12 @@ type PackageStatus = keyof typeof STATUS_CONFIG;
 
 interface Package {
   _id: string;
+  _creationTime?: number;
   merchant: string;
   trackingNumber: string;
   description: string;
   status: PackageStatus;
+  updatedAt?: number;
   weight?: number;
   cost?: number;
   location?: string;
@@ -94,10 +96,11 @@ function PackagesPage() {
   const { data: session, isPending } = authClient.useSession();
   const isAuthenticated = !isPending && !!session;
 
-  const rawPackages = useQuery(
+  const rawPackagesQuery = useQuery(
     api.packages.list,
     isAuthenticated ? {} : "skip"
   );
+  const rawPackages = rawPackagesQuery as Package[] | undefined;
   
   const seedPackages = useMutation(api.packages.seed);
 

@@ -74,11 +74,11 @@ async function mergeDuplicateDrafts(
 ) {
   if (orderNumbers.length === 0) return;
 
-  const candidates = await ctx.runQuery(
+  const candidates: PurchaseDraftDoc[] = await ctx.runQuery(
     internal.integrations.evidence.getDraftsByOrderNumbers,
     { userId, orderNumbers },
   );
-  const duplicates = candidates.filter(
+  const duplicates: PurchaseDraftDoc[] = candidates.filter(
     (draft) => draft._id !== primaryDraft._id,
   );
   if (duplicates.length === 0) return;

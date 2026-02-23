@@ -199,8 +199,7 @@ function SettingsPage() {
     try {
       const result = await triggerGmailSync({});
       const created = result?.draftsCreated ?? 0;
-      const updated =
-        (result as { draftsUpdated?: number })?.draftsUpdated ?? 0;
+      const updated = result?.draftsUpdated ?? 0;
       const parts: string[] = [];
       if (created) parts.push(`${created} drafts created`);
       if (updated) parts.push(`${updated} drafts updated`);

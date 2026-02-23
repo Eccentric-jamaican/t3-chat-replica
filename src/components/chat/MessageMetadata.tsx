@@ -24,6 +24,9 @@ export const MetadataChip = ({ label, icon, color = "text-fuchsia-900/60", class
 export const MessageMetadata = ({ modelName, toolCalls, wordCount }: { modelName: string, toolCalls?: number, wordCount?: number }) => {
   const isMobile = useIsMobile();
   const [isExpanded, setIsExpanded] = useState(false);
+  const mobileExpandTransition = isMobile
+    ? { width: 0, opacity: 0 }
+    : undefined;
   
   // Mock data for visual matching until backend sends real metrics
   const tokens = wordCount ? Math.round(wordCount * 1.3) : 0;
@@ -62,9 +65,9 @@ export const MessageMetadata = ({ modelName, toolCalls, wordCount }: { modelName
        <AnimatePresence mode="wait">
          {(!isMobile || isExpanded) ? (
             <motion.div 
-              initial={isMobile ? { width: 0, opacity: 0 } : false}
+              initial={mobileExpandTransition}
               animate={{ width: "auto", opacity: 1 }}
-              exit={isMobile ? { width: 0, opacity: 0 } : false}
+              exit={mobileExpandTransition}
               transition={{ duration: 0.2, ease: "easeOut" }}
               className="flex flex-wrap items-center gap-x-3.5 gap-y-1.5 shrink-0 overflow-visible"
             >

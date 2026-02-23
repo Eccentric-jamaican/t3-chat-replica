@@ -317,22 +317,23 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
         let currentThreadId = threadId;
 
         if (!currentThreadId) {
-          currentThreadId = await createThread({
+          const createdThreadId = await createThread({
             sessionId: currentSessionId,
             modelId: selectedModelId,
             title: fallbackTitle.slice(0, 40),
           });
+          currentThreadId = createdThreadId;
           trackEvent("thread_created", {
-            thread_id: currentThreadId,
+            thread_id: createdThreadId,
             model_id: selectedModelId,
             has_text: hasText,
             attachment_count: attachments.length,
           });
-          setThreadId(currentThreadId);
+          setThreadId(createdThreadId);
           // Navigate to the new thread page
           navigate({
             to: "/chat/$threadId",
-            params: { threadId: currentThreadId },
+            params: { threadId: createdThreadId },
           });
         }
         if (!currentThreadId) {

@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import { mutation, query, internalMutation } from "./_generated/server";
-import { getAuthUserId, safeGetAuthUser } from "./auth";
+import { getAuthUserId } from "./auth";
 
 /**
  * Get the current user's profile.
