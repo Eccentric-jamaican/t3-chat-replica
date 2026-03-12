@@ -79,6 +79,7 @@ The fix was:
 - make [src/lib/activeChatStream.ts](/C:/Users/Tellahneishe%20Callum/projects/t3-chat-replica/src/lib/activeChatStream.ts) broadcast change events
 - have [src/components/chat/ChatInput.tsx](/C:/Users/Tellahneishe%20Callum/projects/t3-chat-replica/src/components/chat/ChatInput.tsx) subscribe to those changes
 - render the stop button whenever the current thread has an active shared stream, not only when local component state says it is generating
+- make the bottom-right control visually flip to stop immediately when the shared active stream event says the current thread is live
 
 The effective abort-visible condition is now:
 
