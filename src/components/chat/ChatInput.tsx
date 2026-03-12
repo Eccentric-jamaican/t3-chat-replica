@@ -20,6 +20,17 @@ import { toast } from "sonner";
 import { trackEvent } from "../../lib/analytics";
 import { useSelectedModelId } from "../../hooks/useSelectedModelId";
 import type { ReasoningEffort } from "../../types/chat";
+import {
+  appendStreamingMessageContent,
+  appendStreamingMessageReasoning,
+} from "../../lib/streamingMessageCache";
+import {
+  ACTIVE_CHAT_STREAM_EVENT,
+  clearActiveChatStream,
+  getActiveChatStream,
+  startActiveChatStream,
+  updateActiveChatStreamMessage,
+} from "../../lib/activeChatStream";
 
 export interface ChatInputProps {
   existingThreadId?: string;
@@ -37,6 +48,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
     const isMobile = useIsMobile();
     const [content, setContent] = useState("");
     const [isGenerating, setIsGenerating] = useState(false);
+    const [hasActiveStream, setHasActiveStream] = useState(false);
     const [showBanner, setShowBanner] = useState(true);
 
     const [selectedModelId, setSelectedModelId] = useSelectedModelId();
@@ -118,6 +130,9 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
     const createThread = useMutation(api.threads.create);
     const sendMessage = useMutation(api.messages.send);
     const abortLatestInThread = useMutation(api.messages.abortLatestInThread);
+    const abortLatestStreamSession = useMutation(
+      api.streamSessions.abortLatestByThread,
+    );
     const generateUploadUrl = useMutation(api.messages.generateUploadUrl);
     const { isLoading: isConvexAuthLoading } = useConvexAuth();
     const effectiveThreadId = threadId ?? existingThreadId ?? null;
@@ -131,6 +146,23 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
     useEffect(() => {
       setThreadId(existingThreadId || null);
     }, [existingThreadId]);
+
+    useEffect(() => {
+      const syncActiveStream = () => {
+        const activeStream = getActiveChatStream();
+        setHasActiveStream(
+          !!activeStream.requestId &&
+            !!effectiveThreadId &&
+            activeStream.threadId === effectiveThreadId,
+        );
+      };
+
+      syncActiveStream();
+      window.addEventListener(ACTIVE_CHAT_STREAM_EVENT, syncActiveStream);
+      return () => {
+        window.removeEventListener(ACTIVE_CHAT_STREAM_EVENT, syncActiveStream);
+      };
+    }, [effectiveThreadId]);
 
     const [attachments, setAttachments] = useState<
       {
@@ -147,7 +179,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
     const dragDepthRef = useRef(0);
 
     const textareaRef = useRef<HTMLTextAreaElement>(null);
-    const abortControllerRef = useRef<AbortController | null>(null);
 
     const handleFiles = async (files: File[]) => {
       const supportedFiles = files.filter(
@@ -254,17 +285,69 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
 
     const handleStop = async () => {
       console.log("Stopping generation, threadId:", effectiveThreadId);
-      abortControllerRef.current?.abort();
-      abortControllerRef.current = null;
+      const activeStream = getActiveChatStream();
+      const currentMessageId = activeStream.messageId;
+      const currentStreamId = activeStream.streamId;
+      if (currentMessageId) {
+        window.dispatchEvent(
+          new CustomEvent("chat-streaming-abort", {
+            detail: { messageId: currentMessageId },
+          }),
+        );
+      }
+      activeStream.controller?.abort();
 
       if (effectiveThreadId) {
         const currentSessionId = getSessionId();
-        await abortLatestInThread({
-          threadId: effectiveThreadId as Id<"threads">,
-          sessionId: currentSessionId,
-        });
+        const convexSiteUrl = import.meta.env.VITE_CONVEX_SITE_URL;
+        if (currentMessageId && currentSessionId) {
+          const abortUrl = new URL(`${convexSiteUrl}/api/chat/abort`);
+          abortUrl.searchParams.set("threadId", effectiveThreadId);
+          abortUrl.searchParams.set("messageId", currentMessageId);
+          abortUrl.searchParams.set("sessionId", currentSessionId);
+          if (currentStreamId) {
+            abortUrl.searchParams.set("streamId", currentStreamId);
+          }
+
+          try {
+            await fetch(abortUrl.toString(), {
+              method: "POST",
+              headers: {
+                ...(activeStream.authToken
+                  ? {
+                      Authorization: `Bearer ${activeStream.authToken}`,
+                    }
+                  : {}),
+              },
+            });
+          } catch (error) {
+            console.warn("[ChatInput] Abort endpoint failed, falling back", error);
+            await Promise.all([
+              abortLatestInThread({
+                threadId: effectiveThreadId as Id<"threads">,
+                sessionId: currentSessionId,
+              }),
+              abortLatestStreamSession({
+                threadId: effectiveThreadId as Id<"threads">,
+                sessionId: currentSessionId,
+              }),
+            ]);
+          }
+        } else {
+          await Promise.all([
+            abortLatestInThread({
+              threadId: effectiveThreadId as Id<"threads">,
+              sessionId: currentSessionId,
+            }),
+            abortLatestStreamSession({
+              threadId: effectiveThreadId as Id<"threads">,
+              sessionId: currentSessionId,
+            }),
+          ]);
+        }
         console.log("Aborted latest message in thread");
       }
+      clearActiveChatStream(activeStream.requestId ?? undefined);
       setIsGenerating(false);
     };
 
@@ -281,6 +364,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
       const hasAttachments = attachments.length > 0;
       if ((!hasText && !hasAttachments) || isGenerating) return;
       setIsGenerating(true);
+      let activeRequestId: string | null = null;
 
       // Store content before clearing input
       const messageContent = hasText ? trimmedText : "";
@@ -377,7 +461,15 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
           `${convexSiteUrl}/api/chat`,
         );
         const controller = new AbortController();
-        abortControllerRef.current = controller;
+        const requestId = uuidv4();
+        activeRequestId = requestId;
+        startActiveChatStream({
+          requestId,
+          controller,
+          threadId: currentThreadId,
+          sessionId: currentSessionId,
+          authToken: effectiveToken,
+        });
 
         const response = await fetch(`${convexSiteUrl}/api/chat`, {
           method: "POST",
@@ -423,7 +515,19 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
                   if (data.type === "start") {
                     // setActiveMessageId(data.messageId);
                     currentMessageId = data.messageId;
+                    updateActiveChatStreamMessage({
+                      requestId,
+                      messageId: data.messageId,
+                      streamId:
+                        typeof data.streamId === "string"
+                          ? data.streamId
+                          : null,
+                    });
                   } else if (data.type === "content" && currentMessageId) {
+                    appendStreamingMessageContent(
+                      currentMessageId,
+                      data.content,
+                    );
                     window.dispatchEvent(
                       new CustomEvent("chat-streaming-content", {
                         detail: {
@@ -433,6 +537,10 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
                       }),
                     );
                   } else if (data.type === "reasoning" && currentMessageId) {
+                    appendStreamingMessageReasoning(
+                      currentMessageId,
+                      data.content,
+                    );
                     window.dispatchEvent(
                       new CustomEvent("chat-streaming-reasoning", {
                         detail: {
@@ -530,6 +638,11 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
                     });
                   } else if (data.type === "error") {
                     toast.error(data.error);
+                    clearActiveChatStream(requestId);
+                    activeRequestId = null;
+                  } else if (data.type === "done") {
+                    clearActiveChatStream(requestId);
+                    activeRequestId = null;
                   }
                 } catch (e) {
                   // Partial or corrupted data skip
@@ -540,15 +653,22 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
         }
 
         setIsGenerating(false);
-      } catch (error: any) {
-        toast.error(error?.message || "Failed to send message");
+      } catch (error: unknown) {
+        if (error instanceof Error && error.name === "AbortError") {
+          console.log("[ChatInput] Stream aborted by user");
+          return;
+        }
+        const errorMessage =
+          error instanceof Error ? error.message : "Failed to send message";
+        toast.error(errorMessage);
         console.error("[ChatInput] Failed to send message:", {
-          message: error.message,
-          name: error.name,
-          stack: error.stack,
-          error: error,
+          message: error instanceof Error ? error.message : String(error),
+          name: error instanceof Error ? error.name : "UnknownError",
+          stack: error instanceof Error ? error.stack : undefined,
+          error,
         });
       } finally {
+        clearActiveChatStream(activeRequestId ?? undefined);
         setIsGenerating(false);
       }
     };
@@ -782,12 +902,16 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
                 </div>
 
                 <div>
+                  {(() => {
+                    const isAbortVisible =
+                      isGenerating || isThreadStreaming || hasActiveStream;
+                    return (
                   <motion.button
                     whileTap={{ scale: 0.95 }}
                     onClick={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
-                      if (isGenerating || isThreadStreaming) {
+                      if (isAbortVisible) {
                         handleStop();
                       } else {
                         handleSend();
@@ -796,8 +920,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
                     disabled={
                       !content.trim() &&
                       attachments.length === 0 &&
-                      !isGenerating &&
-                      !isThreadStreaming
+                      !isAbortVisible
                     }
                     className={cn(
                       // Critical: Maintain min 44x44px touch target for mobile
@@ -805,15 +928,14 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
                       "min-h-[44px] min-w-[44px] p-2 md:p-2.5",
                       content.trim() ||
                         attachments.length > 0 ||
-                        isGenerating ||
-                        isThreadStreaming
-                        ? isGenerating || isThreadStreaming
+                        isAbortVisible
+                        ? isAbortVisible
                           ? "bg-red-500 text-white shadow-lg shadow-red-500/20"
                           : "bg-t3-berry text-white shadow-lg shadow-t3-berry/20"
                         : "cursor-not-allowed bg-black/5 text-black/40",
                     )}
                   >
-                    {isGenerating || isThreadStreaming ? (
+                    {isAbortVisible ? (
                       <StopCircle
                         size={isMobile ? 22 : 20}
                         className="fill-current text-white"
@@ -822,6 +944,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
                       <ArrowUp size={isMobile ? 22 : 20} strokeWidth={2.5} />
                     )}
                   </motion.button>
+                    );
+                  })()}
                 </div>
               </div>
             </div>

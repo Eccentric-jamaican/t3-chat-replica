@@ -8,7 +8,7 @@ import {
   hmacSha256Hex,
   timingSafeEqual,
 } from "./integrations/crypto";
-import { chatHandler } from "./chatHttp";
+import { chatAbortHandler, chatHandler } from "./chatHttp";
 import {
   chatGatewayHealthHandler,
   runChatGatewayRequest,
@@ -798,6 +798,12 @@ http.route({
   handler: httpAction(chatOptionsHandler),
 });
 
+http.route({
+  path: "/api/chat/abort",
+  method: "OPTIONS",
+  handler: httpAction(chatOptionsHandler),
+});
+
 export async function chatPostHandler(ctx: any, request: Request) {
   const origin = request.headers.get("Origin");
   if (origin && !isAllowedOrigin(origin)) {
@@ -838,6 +844,48 @@ http.route({
   path: "/api/chat",
   method: "POST",
   handler: httpAction(chatPostHandler),
+});
+
+export async function chatAbortPostHandler(ctx: any, request: Request) {
+  const origin = request.headers.get("Origin");
+  if (origin && !isAllowedOrigin(origin)) {
+    return createHttpErrorResponse({
+      status: 403,
+      code: "forbidden",
+      message: "Forbidden origin",
+    });
+  }
+
+  let response: Response;
+  try {
+    response = await chatAbortHandler(ctx, request);
+  } catch (error) {
+    if (isAuthTokenValidationError(error)) {
+      response = createHttpErrorResponse({
+        status: 401,
+        code: "unauthorized",
+        message: "Unauthorized",
+      });
+    } else {
+      console.error("[/api/chat/abort] Unhandled error", error);
+      response = createHttpErrorResponse({
+        status: 500,
+        code: "internal_error",
+        message: "Internal error",
+      });
+    }
+  }
+  if (origin && isAllowedOrigin(origin)) {
+    response.headers.set("Access-Control-Allow-Origin", origin);
+    response.headers.set("Access-Control-Allow-Credentials", "true");
+  }
+  return response;
+}
+
+http.route({
+  path: "/api/chat/abort",
+  method: "POST",
+  handler: httpAction(chatAbortPostHandler),
 });
 
 export async function chatGatewayHealthGetHandler(ctx: any, request: Request) {

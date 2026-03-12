@@ -7,6 +7,24 @@ export interface ModelCapability {
   promptStrategy?: "standard" | "reasoning" | "minimal"; // New strategy field
 }
 
+type OpenRouterModelCatalogEntry = {
+  id: string;
+  supportedParameters: ReadonlySet<string>;
+};
+
+const OPENROUTER_MODELS_URL = "https://openrouter.ai/api/v1/models";
+const OPENROUTER_MODEL_CATALOG_TTL_MS = 15 * 60 * 1000;
+
+let modelCatalogCache:
+  | {
+      expiresAt: number;
+      entries: Map<string, OpenRouterModelCatalogEntry>;
+    }
+  | null = null;
+let inflightModelCatalogPromise:
+  | Promise<Map<string, OpenRouterModelCatalogEntry>>
+  | null = null;
+
 export const MODEL_CAPABILITIES: Record<string, ModelCapability> = {
   // === GOOGLE ===
   "google/gemini-2.0-flash-exp:free": {
@@ -182,7 +200,17 @@ export const MODEL_CAPABILITIES: Record<string, ModelCapability> = {
   },
 };
 
-export function getModelCapabilities(
+function inferIsThinking(modelId: string, supportedParameters?: ReadonlySet<string>) {
+  const modelIdLower = modelId.toLowerCase();
+  return (
+    supportedParameters?.has("reasoning") === true ||
+    modelIdLower.includes("r1") ||
+    modelIdLower.includes("reasoning") ||
+    modelIdLower.includes("thinking")
+  );
+}
+
+function buildHeuristicModelCapability(
   modelId: string | undefined,
 ): ModelCapability {
   if (!modelId) {
@@ -199,10 +227,7 @@ export function getModelCapabilities(
   // This replaces the old "safely fail to regex" strategy.
 
   const modelIdLower = modelId.toLowerCase();
-  const isThinking =
-    modelIdLower.includes("r1") ||
-    modelIdLower.includes("reasoning") ||
-    modelIdLower.includes("thinking");
+  const isThinking = inferIsThinking(modelId);
 
   if (modelIdLower.includes("gpt-5")) {
     return {
@@ -222,4 +247,118 @@ export function getModelCapabilities(
     promptStrategy: isThinking ? "reasoning" : "standard",
     toolFallback: "regex", // Fallback to parsing text for tool blocks if they occur
   };
+}
+
+export function getModelCapabilities(
+  modelId: string | undefined,
+): ModelCapability {
+  return buildHeuristicModelCapability(modelId);
+}
+
+function toCatalogEntry(record: unknown): OpenRouterModelCatalogEntry | null {
+  if (!record || typeof record !== "object") return null;
+
+  const maybeId =
+    "id" in record && typeof record.id === "string" ? record.id : null;
+  if (!maybeId) return null;
+
+  const supportedParameters = new Set<string>();
+  if ("supported_parameters" in record && Array.isArray(record.supported_parameters)) {
+    for (const value of record.supported_parameters) {
+      if (typeof value === "string" && value.trim()) {
+        supportedParameters.add(value);
+      }
+    }
+  }
+
+  return {
+    id: maybeId,
+    supportedParameters,
+  };
+}
+
+async function fetchOpenRouterModelCatalog() {
+  const response = await fetch(OPENROUTER_MODELS_URL, {
+    headers: { Accept: "application/json" },
+  });
+  if (!response.ok) {
+    throw new Error(
+      `OpenRouter models API returned ${response.status} ${response.statusText}`,
+    );
+  }
+
+  const payload: unknown = await response.json();
+  const rawEntries =
+    payload &&
+    typeof payload === "object" &&
+    "data" in payload &&
+    Array.isArray(payload.data)
+      ? payload.data
+      : [];
+
+  const entries = new Map<string, OpenRouterModelCatalogEntry>();
+  for (const rawEntry of rawEntries) {
+    const entry = toCatalogEntry(rawEntry);
+    if (entry) {
+      entries.set(entry.id, entry);
+    }
+  }
+
+  return entries;
+}
+
+async function getOpenRouterModelCatalog() {
+  if (modelCatalogCache && modelCatalogCache.expiresAt > Date.now()) {
+    return modelCatalogCache.entries;
+  }
+
+  if (!inflightModelCatalogPromise) {
+    inflightModelCatalogPromise = fetchOpenRouterModelCatalog()
+      .then((entries) => {
+        modelCatalogCache = {
+          entries,
+          expiresAt: Date.now() + OPENROUTER_MODEL_CATALOG_TTL_MS,
+        };
+        return entries;
+      })
+      .catch((error) => {
+        console.warn("[models] Failed to refresh OpenRouter catalog", error);
+        return modelCatalogCache?.entries ?? new Map<string, OpenRouterModelCatalogEntry>();
+      })
+      .finally(() => {
+        inflightModelCatalogPromise = null;
+      });
+  }
+
+  return inflightModelCatalogPromise;
+}
+
+export async function resolveModelCapabilities(
+  modelId: string | undefined,
+): Promise<ModelCapability> {
+  const heuristic = buildHeuristicModelCapability(modelId);
+  if (!modelId) return heuristic;
+
+  const catalog = await getOpenRouterModelCatalog();
+  const entry = catalog.get(modelId);
+  if (!entry || entry.supportedParameters.size === 0) {
+    return heuristic;
+  }
+
+  const supportsTools = entry.supportedParameters.has("tools");
+  const isThinking = inferIsThinking(modelId, entry.supportedParameters);
+
+  return {
+    ...heuristic,
+    id: modelId,
+    supportsTools,
+    isThinking,
+    promptStrategy: isThinking ? "reasoning" : "standard",
+    toolFallback: supportsTools ? "none" : "regex",
+  };
+}
+
+export function resetModelCatalogCacheForTests() {
+  modelCatalogCache = null;
+  inflightModelCatalogPromise = null;
 }

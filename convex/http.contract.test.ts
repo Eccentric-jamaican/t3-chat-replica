@@ -45,6 +45,7 @@ function createCtx(input?: {
         ),
     },
     runMutation: vi.fn().mockImplementation(async () => rateLimitResult),
+    runQuery: vi.fn().mockResolvedValue({ ok: true }),
     scheduler: {
       runAfter: vi.fn().mockResolvedValue(undefined),
     },
@@ -78,6 +79,22 @@ describe("/api/chat contract", () => {
 
     expect(response.status).toBe(401);
     expect(response.headers.get(HTTP_ERROR_CODE_HEADER)).toBe("unauthorized");
+  });
+
+  test("allows anonymous chat when sessionId is present", async () => {
+    delete process.env.OPENROUTER_API_KEY;
+
+    const response = await chatHandler(
+      createCtx({ userId: null }),
+      new Request("https://example.com/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ threadId: "t_1", sessionId: "sess_1" }),
+      }),
+    );
+
+    expect(response.status).toBe(500);
+    expect(response.headers.get(HTTP_ERROR_CODE_HEADER)).toBe("misconfigured");
   });
 
   test("returns invalid_json for malformed JSON", async () => {
@@ -195,14 +212,14 @@ describe("/api/chat contract", () => {
     expect(response.headers.get("Retry-After")).toBe("1");
   });
 
-  test("maps thrown handler failures to internal_error in route wrapper", async () => {
+  test("returns unsupported_media_type for chat POST without JSON content type", async () => {
     const response = await chatPostHandler(
       {} as any,
       new Request("https://example.com/api/chat", { method: "POST" }),
     );
 
-    expect(response.status).toBe(500);
-    expect(response.headers.get(HTTP_ERROR_CODE_HEADER)).toBe("internal_error");
+    expect(response.status).toBe(415);
+    expect(response.headers.get(HTTP_ERROR_CODE_HEADER)).toBe("unsupported_media_type");
   });
 
   test("maps expired auth tokens to unauthorized in route wrapper", async () => {

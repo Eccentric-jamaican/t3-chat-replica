@@ -43,6 +43,7 @@ import { type Product } from "../data/mockProducts";
 import { trackEvent } from "../lib/analytics";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { getSelectedModelId, setSelectedModelId } from "../lib/selectedModel";
+import { getStreamingMessageCache } from "../lib/streamingMessageCache";
 import type { Id } from "../../convex/_generated/dataModel";
 
 function cn(...inputs: ClassValue[]) {
@@ -375,12 +376,18 @@ function ChatPage() {
     return (
       messages?.filter((msg: any) => {
         if (msg.role === "tool") return false;
+        const cachedStreamingState = getStreamingMessageCache(msg._id);
+        const hasCachedStreamingContent = !!(
+          cachedStreamingState?.content.trim() ||
+          cachedStreamingState?.reasoningContent.trim()
+        );
         if (
           msg.role === "assistant" &&
           msg.status === "aborted" &&
           !msg.content?.trim() &&
           !msg.toolCalls?.length &&
-          !msg.products?.length
+          !msg.products?.length &&
+          !hasCachedStreamingContent
         ) {
           return false;
         }

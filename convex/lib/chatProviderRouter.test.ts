@@ -157,7 +157,7 @@ describe("chatProviderRouter", () => {
     expect(failureCalls).toHaveLength(1);
   });
 
-  test("keeps neutral HTTP statuses out of circuit failure recording", async () => {
+  test("records provider rate limits as a single circuit failure", async () => {
     const ctx = createCtx();
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("rate", { status: 429 })));
 
@@ -175,6 +175,6 @@ describe("chatProviderRouter", () => {
     const failureCalls = ctx.runMutation.mock.calls.filter(([, args]: any[]) => {
       return args && typeof args === "object" && "error" in args;
     });
-    expect(failureCalls).toHaveLength(0);
+    expect(failureCalls).toHaveLength(1);
   });
 });

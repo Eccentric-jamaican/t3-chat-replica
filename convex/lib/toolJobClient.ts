@@ -15,7 +15,8 @@ type ToolBackpressureInfo = {
 type ToolJobClientResult<T = any> =
   | { status: "completed"; result: T }
   | { status: "failed"; error: string; backpressure?: ToolBackpressureInfo }
-  | { status: "timeout"; backpressure: ToolBackpressureInfo };
+  | { status: "timeout"; backpressure: ToolBackpressureInfo }
+  | { status: "aborted" };
 
 function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -33,6 +34,7 @@ export async function enqueueToolJobAndWait<T = any>(
     toolName: "search_web" | "search_products" | "search_global";
     args: unknown;
     waitTimeoutMs?: number;
+    shouldAbort?: () => boolean | Promise<boolean>;
   },
 ): Promise<ToolJobClientResult<T>> {
   const config = getToolJobConfig();
@@ -82,6 +84,10 @@ export async function enqueueToolJobAndWait<T = any>(
 
   const deadline = Date.now() + waitTimeoutMs;
   while (Date.now() < deadline) {
+    if ((await input.shouldAbort?.()) === true) {
+      return { status: "aborted" };
+    }
+
     const job = await ctx.runQuery(internal.toolJobs.get, { jobId });
     if (!job) {
       return { status: "failed", error: "Tool job missing" };
@@ -121,6 +127,10 @@ export async function enqueueToolJobAndWait<T = any>(
           retryAfterMs: 1500,
         },
       };
+    }
+
+    if ((await input.shouldAbort?.()) === true) {
+      return { status: "aborted" };
     }
 
     await delay(pollMs);

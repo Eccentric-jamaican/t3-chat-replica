@@ -1,6 +1,10 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 
-export function useSmoothStreaming(text: string, streaming: boolean) {
+export function useSmoothStreaming(
+  text: string,
+  streaming: boolean,
+  freeze = false,
+) {
   const [displayedText, setDisplayedText] = useState(streaming ? "" : text);
   const [isAnimating, setIsAnimating] = useState(false);
 
@@ -19,8 +23,26 @@ export function useSmoothStreaming(text: string, streaming: boolean) {
 
   textRef.current = text;
 
+  useEffect(() => {
+    if (!freeze) return;
+
+    if (animationFrameId.current) {
+      cancelAnimationFrame(animationFrameId.current);
+      animationFrameId.current = undefined;
+    }
+
+    targetLength.current = currentLength.current;
+    velocity.current = 0;
+    setDisplayedText(
+      textRef.current.slice(0, Math.floor(currentLength.current)),
+    );
+    setIsAnimating(false);
+  }, [freeze]);
+
   // Update target when text changes
   useEffect(() => {
+    if (freeze) return;
+
     targetLength.current = text.length;
 
     // Never streamed (loaded from history) — show immediately
@@ -41,9 +63,15 @@ export function useSmoothStreaming(text: string, streaming: boolean) {
       setDisplayedText(text);
       return;
     }
-  }, [text, streaming]);
+  }, [freeze, text, streaming]);
 
   const animate = useCallback(() => {
+    if (freeze) {
+      setIsAnimating(false);
+      velocity.current = 0;
+      return;
+    }
+
     const distance = targetLength.current - currentLength.current;
 
     // Animation complete — caught up to target
@@ -85,7 +113,7 @@ export function useSmoothStreaming(text: string, streaming: boolean) {
       textRef.current.slice(0, Math.floor(currentLength.current)),
     );
     animationFrameId.current = requestAnimationFrame(animate);
-  }, [stiffness, damping, minVelocity, maxVelocity, streaming]);
+  }, [freeze, stiffness, damping, minVelocity, maxVelocity, streaming]);
 
   // Run animation whenever there's a gap between current and target
   useEffect(() => {
@@ -103,7 +131,7 @@ export function useSmoothStreaming(text: string, streaming: boolean) {
       if (animationFrameId.current)
         cancelAnimationFrame(animationFrameId.current);
     };
-  }, [text, streaming, animate]);
+  }, [text, streaming, freeze, animate]);
 
   return { displayedText, isAnimating };
 }

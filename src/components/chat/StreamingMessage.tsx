@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { Markdown } from "./Markdown";
 import { useSmoothStreaming } from "../../hooks/useSmoothStreaming";
@@ -11,6 +11,12 @@ import { GlobalToolResult } from "./GlobalToolResult";
 import { type Product } from "../../data/mockProducts";
 import { ProductGrid } from "../product/ProductGrid";
 import { trackEvent } from "../../lib/analytics";
+import {
+  clearStreamingMessageCache,
+  freezeStreamingMessage,
+  getStreamingMessageCache,
+  isStreamingMessageFrozen,
+} from "../../lib/streamingMessageCache";
 
 interface StreamingMessageProps {
   messageId: string;
@@ -53,6 +59,9 @@ type StreamingToolInputUpdateDetail = {
   argsSnapshot?: string;
   argsDelta?: string;
 };
+type StreamingAbortDetail = {
+  messageId: string;
+};
 
 export const StreamingMessage = ({
   messageId,
@@ -70,29 +79,67 @@ export const StreamingMessage = ({
   const [streamingToolResults, setStreamingToolResults] = useState<
     Record<string, unknown>
   >({});
+  const [isLocallyAborted, setIsLocallyAborted] = useState(false);
+  const cachedStreamingState = getStreamingMessageCache(messageId);
+
+  const effectiveReasoning =
+    streamingReasoning.length >
+    Math.max(
+      reasoningContent?.length || 0,
+      cachedStreamingState?.reasoningContent.length || 0,
+    )
+      ? streamingReasoning
+      : (cachedStreamingState?.reasoningContent.length || 0) >
+          (reasoningContent?.length || 0)
+        ? cachedStreamingState?.reasoningContent || ""
+        : reasoningContent || "";
+
+  const effectiveContent =
+    streamingContent.length >
+    Math.max(content.length, cachedStreamingState?.content.length || 0)
+      ? streamingContent
+      : (cachedStreamingState?.content.length || 0) > content.length
+        ? cachedStreamingState?.content || ""
+        : content;
+
+  const displayedTextRef = useRef("");
+  const effectiveReasoningRef = useRef(effectiveReasoning);
+  effectiveReasoningRef.current = effectiveReasoning;
 
   useEffect(() => {
-    if (!isStreaming) {
+    if (!isStreaming && !isLocallyAborted) {
       return;
     }
 
     const handleContent: EventListener = (event) => {
       const detail = (event as CustomEvent<StreamingContentDetail>).detail;
-      if (detail.messageId === messageId) {
+      if (
+        detail.messageId === messageId &&
+        !isLocallyAborted &&
+        !isStreamingMessageFrozen(messageId)
+      ) {
         setStreamingContent((prev) => prev + detail.content);
       }
     };
 
     const handleReasoning: EventListener = (event) => {
       const detail = (event as CustomEvent<StreamingReasoningDetail>).detail;
-      if (detail.messageId === messageId) {
+      if (
+        detail.messageId === messageId &&
+        !isLocallyAborted &&
+        !isStreamingMessageFrozen(messageId)
+      ) {
         setStreamingReasoning((prev) => prev + detail.content);
       }
     };
 
     const handleToolCall: EventListener = (event) => {
       const detail = (event as CustomEvent<StreamingToolCallDetail>).detail;
-      if (detail.messageId === messageId) {
+      if (
+        detail.messageId === messageId &&
+        !isLocallyAborted &&
+        !isStreamingMessageFrozen(messageId)
+      ) {
         const newTool = {
           id: detail.toolCallId,
           function: {
@@ -111,7 +158,11 @@ export const StreamingMessage = ({
 
     const handleToolOutput: EventListener = (event) => {
       const detail = (event as CustomEvent<StreamingToolOutputDetail>).detail;
-      if (detail.messageId === messageId) {
+      if (
+        detail.messageId === messageId &&
+        !isLocallyAborted &&
+        !isStreamingMessageFrozen(messageId)
+      ) {
         setStreamingToolResults((prev) => ({
           ...prev,
           [detail.toolCallId]: detail.output,
@@ -122,7 +173,11 @@ export const StreamingMessage = ({
     const handleToolInputUpdate: EventListener = (event) => {
       const detail = (event as CustomEvent<StreamingToolInputUpdateDetail>)
         .detail;
-      if (detail.messageId === messageId) {
+      if (
+        detail.messageId === messageId &&
+        !isLocallyAborted &&
+        !isStreamingMessageFrozen(messageId)
+      ) {
         setStreamingToolCalls((prev) => {
           return prev.map((tc) => {
             if (tc.id === detail.toolCallId) {
@@ -142,11 +197,25 @@ export const StreamingMessage = ({
       }
     };
 
+    const handleAbort: EventListener = (event) => {
+      const detail = (event as CustomEvent<StreamingAbortDetail>).detail;
+      if (detail.messageId !== messageId) return;
+
+      freezeStreamingMessage(messageId, {
+        content: displayedTextRef.current,
+        reasoningContent: effectiveReasoningRef.current,
+      });
+      setStreamingContent(displayedTextRef.current);
+      setStreamingReasoning(effectiveReasoningRef.current);
+      setIsLocallyAborted(true);
+    };
+
     window.addEventListener("chat-streaming-content", handleContent);
     window.addEventListener("chat-streaming-reasoning", handleReasoning);
     window.addEventListener("chat-streaming-tool-call", handleToolCall);
     window.addEventListener("chat-streaming-tool-input-update", handleToolInputUpdate);
     window.addEventListener("chat-streaming-tool-output", handleToolOutput);
+    window.addEventListener("chat-streaming-abort", handleAbort);
 
     return () => {
       window.removeEventListener("chat-streaming-content", handleContent);
@@ -154,16 +223,20 @@ export const StreamingMessage = ({
       window.removeEventListener("chat-streaming-tool-call", handleToolCall);
       window.removeEventListener("chat-streaming-tool-input-update", handleToolInputUpdate);
       window.removeEventListener("chat-streaming-tool-output", handleToolOutput);
+      window.removeEventListener("chat-streaming-abort", handleAbort);
     };
-  }, [messageId, isStreaming]);
+  }, [messageId, isLocallyAborted, isStreaming]);
 
-  const effectiveReasoning =
-    streamingReasoning.length > (reasoningContent?.length || 0)
-      ? streamingReasoning
-      : reasoningContent || "";
-
-  const effectiveContent =
-    streamingContent.length > content.length ? streamingContent : content;
+  useEffect(() => {
+    if (
+      !isStreaming &&
+      content &&
+      cachedStreamingState?.content &&
+      content.length >= cachedStreamingState.content.length
+    ) {
+      clearStreamingMessageCache(messageId);
+    }
+  }, [cachedStreamingState?.content, content, isStreaming, messageId]);
 
   // Filter out the fallback regex pattern from display if it exists
   // Also filter out stray "|" pipes that some models output as separators
@@ -230,7 +303,12 @@ export const StreamingMessage = ({
   const { displayedText, isAnimating } = useSmoothStreaming(
     filteredContent,
     isStreaming,
+    isLocallyAborted,
   );
+
+  useEffect(() => {
+    displayedTextRef.current = displayedText;
+  }, [displayedText]);
 
   const shouldRenderContent = filteredContent.length > 0;
 

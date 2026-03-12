@@ -7,6 +7,13 @@ export const chatRequestSchema = z.object({
   sessionId: z.string().optional(),
 });
 
+export const chatAbortRequestSchema = z.object({
+  threadId: z.string().min(1),
+  messageId: z.string().min(1),
+  sessionId: z.string().optional(),
+  streamId: z.string().min(1).optional(),
+});
+
 export const gmailPushEnvelopeSchema = z.object({
   message: z.object({
     data: z.string(),

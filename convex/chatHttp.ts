@@ -1,9 +1,9 @@
 import { httpAction } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { getAuthUserId } from "./auth";
-import { getModelCapabilities } from "./lib/models";
+import { resolveModelCapabilities } from "./lib/models";
 import { normalizeEbaySearchArgs } from "./lib/ebaySearch";
-import { chatRequestSchema } from "./lib/httpContracts";
+import { chatAbortRequestSchema, chatRequestSchema } from "./lib/httpContracts";
 import {
   createHttpErrorResponse,
   formatValidationIssues,
@@ -139,6 +139,14 @@ function buildProductToolSummary(products: Array<{ source?: string }>) {
   return `Found ${summaryParts.join(" and ")}. They have been displayed to the user.`;
 }
 
+function generateStreamId() {
+  const cryptoObj = globalThis.crypto;
+  if (cryptoObj?.randomUUID) {
+    return `STREAM:${cryptoObj.randomUUID()}`;
+  }
+  return `STREAM:${Date.now()}_${Math.random().toString(36).slice(2, 12)}`;
+}
+
 function getContentLength(request: Request) {
   const value = request.headers.get("content-length");
   if (!value) return null;
@@ -182,16 +190,6 @@ export async function chatHandler(
     });
   }
 
-  // 1. Auth check
-  const userId = await getAuthUserId(ctx);
-  if (!userId) {
-    return createHttpErrorResponse({
-      status: 401,
-      code: "unauthorized",
-      message: "Unauthorized",
-    });
-  }
-
   const jsonGuard = enforceJsonBodyGuards(request, MAX_CHAT_REQUEST_BYTES);
   if (jsonGuard) {
     return jsonGuard;
@@ -216,7 +214,21 @@ export async function chatHandler(
     });
   }
 
-  const { threadId, modelId, webSearch } = parsed.data;
+  const { threadId, modelId, webSearch, sessionId } = parsed.data;
+
+  const userId = await getAuthUserId(ctx);
+  if (!userId && !sessionId) {
+    return createHttpErrorResponse({
+      status: 401,
+      code: "unauthorized",
+      message: "Unauthorized",
+    });
+  }
+
+  await ctx.runQuery(internal.threads.internalVerifyThreadAccess, {
+    threadId,
+    sessionId,
+  });
 
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) {
@@ -256,7 +268,9 @@ export async function chatHandler(
   const effectiveAdmissionMode =
     runtime.forceAdmissionMode ??
     (admissionConfig.shadowMode ? "shadow" : "enforce");
-  const admissionPrincipal = `user:${userId}`;
+  const admissionPrincipal = userId
+    ? `user:${userId}`
+    : `session:${sessionId}`;
   const admissionEventKey = `chat_admission:${admissionPrincipal}`;
   let admissionTicket: AdmissionTicket | null = null;
   let shouldFallbackToLegacyRateLimit = false;
@@ -339,7 +353,7 @@ export async function chatHandler(
   const toolCacheConfig = getToolCacheConfig();
   const toolCacheNamespaces = getToolCacheNamespaces();
   if (shouldUseLegacyRateLimit) {
-    const limitKey = `chat_stream:user:${userId}`;
+    const limitKey = `chat_stream:${admissionPrincipal}`;
     let limit;
     try {
       limit = await ctx.runMutation(internal.rateLimit.checkAndIncrement, {
@@ -384,6 +398,7 @@ export async function chatHandler(
 
   const encoder = new TextEncoder();
   let isAborted = false;
+  const streamId = generateStreamId();
 
   // Detect client abort
   request.signal.addEventListener("abort", () => {
@@ -412,6 +427,24 @@ export async function chatHandler(
       };
       let requestStart: number | null = null;
       let responseModel: string | null = null;
+      let currentAbortController: AbortController | null = null;
+
+      const syncAbortStatus = async (messageId: string) => {
+        if (isAborted) return true;
+
+        const status = await ctx.runQuery(internal.messages.internalGetStatus, {
+          messageId,
+        });
+        if (status !== "aborted") return false;
+
+        isAborted = true;
+        currentAbortController?.abort();
+        return true;
+      };
+
+      const shouldAbortToolWait = async (messageId: string) => {
+        return await syncAbortStatus(messageId);
+      };
 
       try {
         let messageId = await ctx.runMutation(
@@ -422,7 +455,7 @@ export async function chatHandler(
           },
         );
 
-        send({ type: "start", messageId });
+        send({ type: "start", messageId, streamId });
 
         let cycle = 0;
         const MAX_CYCLES = 10; // Safety ceiling, real limits are per-tool below
@@ -444,7 +477,6 @@ export async function chatHandler(
         const MAX_GLOBAL_SEARCH_PER_TURN = 2;
         const MAX_PRODUCT_SEARCH_PER_TURN = 2;
 
-        let currentAbortController: AbortController | null = null;
         request.signal.addEventListener("abort", () => {
           currentAbortController?.abort();
         });
@@ -456,7 +488,7 @@ export async function chatHandler(
           const messages = await ctx.runQuery(internal.messages.internalList, {
             threadId,
           });
-          const capabilities = getModelCapabilities(modelId);
+          const capabilities = await resolveModelCapabilities(modelId);
           const openRouterMessages = messages
             .filter((m: any) => {
               // Exclude current empty assistant message from history
@@ -535,7 +567,7 @@ export async function chatHandler(
           }
 
           // [AGENTIC] Add regex fallback for models without native tool support
-          if (capabilities.toolFallback === "regex" && webSearch) {
+          if (capabilities.toolFallback === "regex") {
             const fallbackPrompt = getRegexFallbackPrompt(capabilities);
             if (fallbackPrompt) {
               openRouterMessages.unshift({
@@ -569,12 +601,12 @@ export async function chatHandler(
               payload: {
                 messages: openRouterMessages,
                 // [AGENTIC] Filter by capability
-                tools: getModelCapabilities(modelId).supportsTools
+                tools: capabilities.supportsTools
                   ? TOOLS.filter(
                       (t) => t.function.name !== "search_web" || webSearch,
                     )
                   : undefined,
-                ...(getModelCapabilities(modelId).supportsTools
+                ...(capabilities.supportsTools
                   ? {
                       tool_choice: toolLimitsReached ? "none" : "auto",
                       parallel_tool_calls: false,
@@ -608,6 +640,13 @@ export async function chatHandler(
           let finishReason: string | null = null;
 
           readLoop: while (!isAborted) {
+            if (await syncAbortStatus(messageId)) {
+              try {
+                await reader.cancel();
+              } catch {}
+              break;
+            }
+
             const { done, value } = await reader.read();
             if (done) break;
 
@@ -617,6 +656,13 @@ export async function chatHandler(
               .filter((l) => l.trim().startsWith("data: "));
 
             for (const line of lines) {
+              if (await syncAbortStatus(messageId)) {
+                try {
+                  await reader.cancel();
+                } catch {}
+                break readLoop;
+              }
+
               const dataStr = line.replace("data: ", "");
               if (dataStr === "[DONE]") break readLoop;
 
@@ -812,6 +858,10 @@ export async function chatHandler(
             });
 
             for (const tc of accumulatedToolCalls) {
+              if (await syncAbortStatus(messageId)) {
+                break;
+              }
+
               let argsObj: any = {};
               try {
                 argsObj = JSON.parse(tc.function.arguments || "{}");
@@ -904,9 +954,13 @@ export async function chatHandler(
                         source: "chat_http",
                         toolName: "search_web",
                         args: { query: searchQuery },
+                        shouldAbort: () => shouldAbortToolWait(messageId),
                       });
 
-                      if (jobOutcome.status === "completed") {
+                      if (jobOutcome.status === "aborted") {
+                        isAborted = true;
+                        break;
+                      } else if (jobOutcome.status === "completed") {
                         const searchResults = Array.isArray(
                           jobOutcome.result?.searchResults,
                         )
@@ -1065,9 +1119,13 @@ export async function chatHandler(
                             includeGlobal: !globalSkipped,
                             globalLimit,
                           },
+                          shouldAbort: () => shouldAbortToolWait(messageId),
                         });
 
-                        if (jobOutcome.status === "completed") {
+                        if (jobOutcome.status === "aborted") {
+                          isAborted = true;
+                          break;
+                        } else if (jobOutcome.status === "completed") {
                           const combined = Array.isArray(jobOutcome.result?.products)
                             ? dedupeProducts(jobOutcome.result.products)
                             : [];
@@ -1160,9 +1218,13 @@ export async function chatHandler(
                           limit,
                           location,
                         },
+                        shouldAbort: () => shouldAbortToolWait(messageId),
                       });
 
-                      if (jobOutcome.status === "completed") {
+                      if (jobOutcome.status === "aborted") {
+                        isAborted = true;
+                        break;
+                      } else if (jobOutcome.status === "completed") {
                         const items = Array.isArray(jobOutcome.result?.products)
                           ? dedupeProducts(jobOutcome.result.products)
                           : [];
@@ -1204,6 +1266,10 @@ export async function chatHandler(
                     result = `Global Search Error: ${err.message}`;
                   }
                 }
+              }
+
+              if (await syncAbortStatus(messageId)) {
+                break;
               }
 
               // Update the persistent database
@@ -1266,7 +1332,7 @@ export async function chatHandler(
             contentBuffer = "";
 
             // Notify client to start listening to the new message
-            send({ type: "start", messageId: newMessageId });
+            send({ type: "start", messageId: newMessageId, streamId });
 
             shouldContinue = true;
             accumulatedToolCalls = [];
@@ -1305,6 +1371,19 @@ export async function chatHandler(
           ]);
           send({ type: "done" });
         } else {
+          if (fullContent) {
+            await ctx.runMutation(internal.messages.internalAppendContent, {
+              messageId,
+              content: fullContent,
+              allowAborted: true,
+            });
+          }
+          if (fullReasoning) {
+            await ctx.runMutation(internal.messages.internalSaveReasoningContent, {
+              messageId,
+              reasoningContent: fullReasoning,
+            });
+          }
           await ctx.runMutation(internal.messages.internalUpdateStatus, {
             messageId,
             status: "aborted",
@@ -1352,6 +1431,59 @@ export async function chatHandler(
       "X-Sendcat-Chat-Gateway-Mode": runtime.gatewayMode ?? "legacy",
     },
   });
+}
+
+export async function chatAbortHandler(ctx: any, request: Request) {
+  if (request.method !== "POST") {
+    return createHttpErrorResponse({
+      status: 405,
+      code: "method_not_allowed",
+      message: "Method not allowed",
+    });
+  }
+
+  const url = new URL(request.url);
+  const parsed = chatAbortRequestSchema.safeParse({
+    threadId: url.searchParams.get("threadId"),
+    messageId: url.searchParams.get("messageId"),
+    sessionId: url.searchParams.get("sessionId") ?? undefined,
+    streamId: url.searchParams.get("streamId") ?? undefined,
+  });
+
+  if (!parsed.success) {
+    return createHttpErrorResponse({
+      status: 400,
+      code: "invalid_request",
+      message: `Invalid abort request: ${formatValidationIssues(parsed.error)}`,
+    });
+  }
+
+  const { threadId, messageId, sessionId } = parsed.data;
+  const userId = await getAuthUserId(ctx);
+  if (!userId && !sessionId) {
+    return createHttpErrorResponse({
+      status: 401,
+      code: "unauthorized",
+      message: "Unauthorized",
+    });
+  }
+
+  await ctx.runQuery(internal.threads.internalVerifyThreadAccess, {
+    threadId,
+    sessionId,
+  });
+
+  await Promise.all([
+    ctx.runMutation(internal.messages.internalUpdateStatus, {
+      messageId,
+      status: "aborted",
+    }),
+    ctx.runMutation(internal.streamSessions.internalAbortLatestByThread, {
+      threadId,
+    }),
+  ]);
+
+  return new Response(null, { status: 204 });
 }
 
 export const chat = httpAction(chatHandler);
