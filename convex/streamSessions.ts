@@ -197,7 +197,7 @@ export const internalAbortByMessageId = internalMutation({
   handler: async (ctx, args) => {
     const session = await ctx.db
       .query("streamSessions")
-      .filter((q) => q.eq(q.field("messageId"), args.messageId))
+      .withIndex("by_message", (q) => q.eq("messageId", args.messageId))
       .filter((q) => q.eq(q.field("status"), "streaming"))
       .order("desc")
       .first();

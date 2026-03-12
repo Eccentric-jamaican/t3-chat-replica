@@ -523,6 +523,13 @@ export const internalGetStatus = internalQuery({
   },
 });
 
+export const internalGetMessage = internalQuery({
+  args: { messageId: v.id("messages") },
+  handler: async (ctx, args) => {
+    return await ctx.db.get(args.messageId);
+  },
+});
+
 export const internalUpdateStatus = internalMutation({
   args: {
     messageId: v.id("messages"),

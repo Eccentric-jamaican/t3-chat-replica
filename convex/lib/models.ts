@@ -12,9 +12,14 @@ type OpenRouterModelCatalogEntry = {
   supportedParameters: ReadonlySet<string>;
 };
 
+type OpenRouterResponse = {
+  data: unknown[];
+};
+
 const OPENROUTER_MODELS_URL = "https://openrouter.ai/api/v1/models";
 const OPENROUTER_MODEL_CATALOG_TTL_MS = 15 * 60 * 1000;
 const OPENROUTER_MODEL_CATALOG_TIMEOUT_MS = 5_000;
+const OPENROUTER_MODEL_CATALOG_RETRY_MS = 15 * 1000;
 
 let modelCatalogCache:
   | {
@@ -278,6 +283,15 @@ function toCatalogEntry(record: unknown): OpenRouterModelCatalogEntry | null {
   };
 }
 
+function isOpenRouterResponse(value: unknown): value is OpenRouterResponse {
+  return (
+    !!value &&
+    typeof value === "object" &&
+    "data" in value &&
+    Array.isArray(value.data)
+  );
+}
+
 async function fetchOpenRouterModelCatalog() {
   const controller = new AbortController();
   const timeoutId = setTimeout(
@@ -307,13 +321,7 @@ async function fetchOpenRouterModelCatalog() {
   }
 
   const payload: unknown = await response.json();
-  const rawEntries =
-    payload &&
-    typeof payload === "object" &&
-    "data" in payload &&
-    Array.isArray(payload.data)
-      ? payload.data
-      : [];
+  const rawEntries = isOpenRouterResponse(payload) ? payload.data : [];
 
   const entries = new Map<string, OpenRouterModelCatalogEntry>();
   for (const rawEntry of rawEntries) {
@@ -347,7 +355,11 @@ async function getOpenRouterModelCatalog() {
           new Map<string, OpenRouterModelCatalogEntry>();
         modelCatalogCache = {
           entries: fallback,
-          expiresAt: Date.now() + OPENROUTER_MODEL_CATALOG_TTL_MS,
+          expiresAt:
+            Date.now() +
+            (fallback.size > 0
+              ? OPENROUTER_MODEL_CATALOG_TTL_MS
+              : OPENROUTER_MODEL_CATALOG_RETRY_MS),
         };
         return fallback;
       })
@@ -372,15 +384,26 @@ export async function resolveModelCapabilities(
   }
 
   const supportsTools = entry.supportedParameters.has("tools");
-  const isThinking = inferIsThinking(modelId, entry.supportedParameters);
+  const inferredIsThinking = inferIsThinking(modelId, entry.supportedParameters);
+  const isThinking = heuristic.isThinking || inferredIsThinking;
+  const hasCuratedCapability = !!(modelId && MODEL_CAPABILITIES[modelId]);
 
   return {
     ...heuristic,
     id: modelId,
     supportsTools,
     isThinking,
-    promptStrategy: isThinking ? "reasoning" : "standard",
-    toolFallback: supportsTools ? "none" : "regex",
+    promptStrategy: isThinking
+      ? inferredIsThinking && !heuristic.isThinking
+        ? "reasoning"
+        : heuristic.promptStrategy || "reasoning"
+      : heuristic.promptStrategy || "standard",
+    toolFallback:
+      hasCuratedCapability && heuristic.toolFallback
+        ? heuristic.toolFallback
+        : supportsTools
+          ? "none"
+          : heuristic.toolFallback || "regex",
   };
 }
 

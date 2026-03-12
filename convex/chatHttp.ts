@@ -140,6 +140,13 @@ type OpenRouterUsage = {
   cost?: number;
 };
 
+type ActiveHttpStreamState = {
+  abortController: AbortController | null;
+  currentMessageId: Id<"messages">;
+};
+
+const activeHttpStreams = new Map<string, ActiveHttpStreamState>();
+
 function toOptionalNumber(value: unknown) {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
@@ -495,6 +502,10 @@ export async function chatHandler(
             modelId,
           },
         );
+        activeHttpStreams.set(streamId, {
+          abortController: null,
+          currentMessageId: messageId,
+        });
 
         send({ type: "start", messageId, streamId });
 
@@ -622,6 +633,10 @@ export async function chatHandler(
 
           const abortController = new AbortController();
           currentAbortController = abortController;
+          activeHttpStreams.set(streamId, {
+            abortController,
+            currentMessageId: messageId,
+          });
           requestStart = Date.now();
           firstTokenAt = null;
           lastUsage = null;
@@ -1333,6 +1348,11 @@ export async function chatHandler(
                 (fullReasoning || "") + "\n" + thinkMatch[1].trim();
             }
 
+            if (isAborted || (await syncAbortStatus(messageId, true))) {
+              shouldContinue = false;
+              continue;
+            }
+
             // [LATENCY FIX] Run independent mutations in parallel
             // Start creating the next message immediately while other mutations run
             const [, , , newMessageId] = await Promise.all([
@@ -1365,9 +1385,17 @@ export async function chatHandler(
                 },
               ),
             ]);
+            if (isAborted) {
+              shouldContinue = false;
+              continue;
+            }
 
             // Switch context to the new message
             messageId = newMessageId;
+            activeHttpStreams.set(streamId, {
+              abortController: currentAbortController,
+              currentMessageId: newMessageId,
+            });
             fullContent = "";
             fullReasoning = "";
             contentBuffer = "";
@@ -1454,6 +1482,7 @@ export async function chatHandler(
           retryAfterMs,
         });
       } finally {
+        activeHttpStreams.delete(streamId);
         await releaseAdmission({
           ticket: admissionTicket,
           config: admissionConfig,
@@ -1515,15 +1544,33 @@ export async function chatAbortHandler(ctx: ActionCtx, request: Request) {
     threadId,
     sessionId,
   });
+  const message = await ctx.runQuery(internal.messages.internalGetMessage, {
+    messageId,
+  });
+  if (!message || message.threadId !== threadId) {
+    return createHttpErrorResponse({
+      status: 400,
+      code: "invalid_request",
+      message: "Message does not belong to thread",
+    });
+  }
+
+  const activeStream =
+    streamId != null ? activeHttpStreams.get(streamId) ?? null : null;
+  const effectiveMessageId = activeStream?.currentMessageId ?? messageId;
+  activeStream?.abortController?.abort();
+  if (streamId) {
+    activeHttpStreams.delete(streamId);
+  }
 
   await Promise.all([
     ctx.runMutation(internal.messages.internalUpdateStatus, {
-      messageId,
+      messageId: effectiveMessageId,
       status: "aborted",
     }),
-    streamId
+    activeStream
       ? ctx.runMutation(internal.streamSessions.internalAbortByMessageId, {
-          messageId,
+          messageId: effectiveMessageId,
         })
       : ctx.runMutation(internal.streamSessions.internalAbortLatestByThread, {
           threadId,

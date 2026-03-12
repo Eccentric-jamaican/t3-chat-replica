@@ -21,8 +21,18 @@ import { trackEvent } from "../../lib/analytics";
 import { useSelectedModelId } from "../../hooks/useSelectedModelId";
 import type { ReasoningEffort } from "../../types/chat";
 import {
+  CHAT_STREAMING_CONTENT,
+  CHAT_STREAMING_REASONING,
+  CHAT_STREAMING_TOOL_CALL,
+  CHAT_STREAMING_TOOL_INPUT_UPDATE,
+  CHAT_STREAMING_TOOL_OUTPUT,
   CHAT_STREAMING_ABORT,
   type ChatStreamingAbortDetail,
+  type ChatStreamingContentDetail,
+  type ChatStreamingReasoningDetail,
+  type ChatStreamingToolCallDetail,
+  type ChatStreamingToolInputUpdateDetail,
+  type ChatStreamingToolOutputDetail,
 } from "../../lib/chatStreamingEvents";
 import {
   appendStreamingMessageContent,
@@ -575,12 +585,15 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
                       localContent,
                     );
                     window.dispatchEvent(
-                      new CustomEvent("chat-streaming-content", {
+                      new CustomEvent<ChatStreamingContentDetail>(
+                        CHAT_STREAMING_CONTENT,
+                        {
                         detail: {
                           messageId: currentMessageId,
                           content: localContent,
                         },
-                      }),
+                        },
+                      ),
                     );
                   } else if (
                     dataType === "reasoning" &&
@@ -592,19 +605,24 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
                       localContent,
                     );
                     window.dispatchEvent(
-                      new CustomEvent("chat-streaming-reasoning", {
+                      new CustomEvent<ChatStreamingReasoningDetail>(
+                        CHAT_STREAMING_REASONING,
+                        {
                         detail: {
                           messageId: currentMessageId,
                           content: localContent,
                         },
-                      }),
+                        },
+                      ),
                     );
                   } else if (
                     dataType === "tool-input-start" &&
                     currentMessageId
                   ) {
                     window.dispatchEvent(
-                      new CustomEvent("chat-streaming-tool-call", {
+                      new CustomEvent<ChatStreamingToolCallDetail>(
+                        CHAT_STREAMING_TOOL_CALL,
+                        {
                         detail: {
                           messageId: currentMessageId,
                           toolCallId: data.toolCallId,
@@ -612,21 +630,25 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
                           args: "",
                           state: "streaming",
                         },
-                      }),
+                        },
+                      ),
                     );
                   } else if (
                     dataType === "tool-input-delta" &&
                     currentMessageId
                   ) {
                     window.dispatchEvent(
-                      new CustomEvent("chat-streaming-tool-input-update", {
+                      new CustomEvent<ChatStreamingToolInputUpdateDetail>(
+                        CHAT_STREAMING_TOOL_INPUT_UPDATE,
+                        {
                         detail: {
                           messageId: currentMessageId,
                           toolCallId: data.toolCallId,
                           argsSnapshot: data.argsSnapshot,
                           argsDelta: data.inputTextDelta,
                         },
-                      }),
+                        },
+                      ),
                     );
                   } else if (
                     dataType === "tool-input-available" &&
@@ -635,7 +657,9 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
                     // Can either finish tool call or keep it streaming until "tool-call" event comes
                     // for now we just make sure we save the final args
                     window.dispatchEvent(
-                      new CustomEvent("chat-streaming-tool-input-update", {
+                      new CustomEvent<ChatStreamingToolInputUpdateDetail>(
+                        CHAT_STREAMING_TOOL_INPUT_UPDATE,
+                        {
                         detail: {
                           messageId: currentMessageId,
                           toolCallId: data.toolCallId,
@@ -645,20 +669,24 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
                               : JSON.stringify(data.input),
                           argsDelta: "",
                         },
-                      }),
+                        },
+                      ),
                     );
                   } else if (
                     dataType === "tool-output-partially-available" &&
                     currentMessageId
                   ) {
                     window.dispatchEvent(
-                      new CustomEvent("chat-streaming-tool-output", {
+                      new CustomEvent<ChatStreamingToolOutputDetail>(
+                        CHAT_STREAMING_TOOL_OUTPUT,
+                        {
                         detail: {
                           messageId: currentMessageId,
                           toolCallId: data.toolCallId,
                           output: data.output,
                         },
-                      }),
+                        },
+                      ),
                     );
                   } else if (dataType === "usage" && currentMessageId) {
                     const usage = data.usage || {};
