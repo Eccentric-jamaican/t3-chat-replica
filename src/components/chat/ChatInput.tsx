@@ -309,10 +309,34 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
         activeStream.controller?.abort();
       }
 
-      if (effectiveThreadId) {
+      const fallbackAbort = async (currentSessionId: string) => {
+        if (!effectiveThreadId) return;
+        await Promise.all([
+          abortLatestInThread({
+            threadId: effectiveThreadId as Id<"threads">,
+            sessionId: currentSessionId,
+          }),
+          abortLatestStreamSession({
+            threadId: effectiveThreadId as Id<"threads">,
+            sessionId: currentSessionId,
+          }),
+        ]);
+      };
+
+      try {
+        if (!effectiveThreadId) {
+          throw new Error("Missing thread id for stop");
+        }
         const currentSessionId = getSessionId();
+        if (!currentSessionId) {
+          throw new Error("Missing session id for stop");
+        }
         const convexSiteUrl = import.meta.env.VITE_CONVEX_SITE_URL;
-        if (currentMessageId && currentSessionId) {
+        if (!convexSiteUrl) {
+          throw new Error("Missing VITE_CONVEX_SITE_URL for stop");
+        }
+
+        if (currentMessageId) {
           const abortUrl = new URL(`${convexSiteUrl}/api/chat/abort`);
           abortUrl.searchParams.set("threadId", effectiveThreadId);
           abortUrl.searchParams.set("messageId", currentMessageId);
@@ -321,53 +345,37 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
             abortUrl.searchParams.set("streamId", currentStreamId);
           }
 
-          try {
-            const response = await fetch(abortUrl.toString(), {
-              method: "POST",
-              headers: {
-                ...(activeStream.authToken
-                  ? {
-                      Authorization: `Bearer ${activeStream.authToken}`,
-                    }
-                  : {}),
-              },
-            });
-            if (!response.ok) {
-              throw new Error(
-                `Abort endpoint failed: ${response.status} ${response.statusText}`,
-              );
-            }
-          } catch (error) {
-            console.warn("[ChatInput] Abort endpoint failed, falling back", error);
-            await Promise.all([
-              abortLatestInThread({
-                threadId: effectiveThreadId as Id<"threads">,
-                sessionId: currentSessionId,
-              }),
-              abortLatestStreamSession({
-                threadId: effectiveThreadId as Id<"threads">,
-                sessionId: currentSessionId,
-              }),
-            ]);
+          const response = await fetch(abortUrl.toString(), {
+            method: "POST",
+            headers: {
+              ...(activeStream.authToken
+                ? {
+                    Authorization: `Bearer ${activeStream.authToken}`,
+                  }
+                : {}),
+            },
+          });
+          if (!response.ok) {
+            throw new Error(
+              `Abort endpoint failed: ${response.status} ${response.statusText}`,
+            );
           }
         } else {
-          await Promise.all([
-            abortLatestInThread({
-              threadId: effectiveThreadId as Id<"threads">,
-              sessionId: currentSessionId,
-            }),
-            abortLatestStreamSession({
-              threadId: effectiveThreadId as Id<"threads">,
-              sessionId: currentSessionId,
-            }),
-          ]);
+          await fallbackAbort(currentSessionId);
         }
-        console.log("Aborted latest message in thread");
+      } catch (error) {
+        console.warn("[ChatInput] Abort endpoint failed, falling back", error);
+        const currentSessionId = getSessionId();
+        if (currentSessionId) {
+          await fallbackAbort(currentSessionId);
+        }
+      } finally {
+        if (activeStreamMatchesThread) {
+          clearActiveChatStream(activeStream.requestId ?? undefined);
+        }
+        setIsGenerating(false);
       }
-      if (activeStreamMatchesThread) {
-        clearActiveChatStream(activeStream.requestId ?? undefined);
-      }
-      setIsGenerating(false);
+      console.log("Aborted latest message in thread");
     };
 
     useImperativeHandle(ref, () => ({
@@ -517,8 +525,17 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
         let currentMessageId: string | null = null;
         let buffer = "";
 
+        const terminateStream = async () => {
+          try {
+            await reader?.cancel();
+          } catch {
+            // Ignore reader cancellation failures during local teardown.
+          }
+          controller.abort();
+        };
+
         if (reader) {
-          while (true) {
+          readLoop: while (true) {
             const { done, value } = await reader.read();
             if (done) break;
 
@@ -531,45 +548,59 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
               if (trimmedLine.startsWith("data: ")) {
                 try {
                   const data = JSON.parse(trimmedLine.slice(6));
-                  if (data.type === "start") {
+                  const dataType =
+                    typeof data?.type === "string" ? data.type : null;
+                  const localMessageId =
+                    typeof data?.messageId === "string" ? data.messageId : null;
+                  const localStreamId =
+                    typeof data?.streamId === "string" ? data.streamId : null;
+                  const localContent =
+                    typeof data?.content === "string" ? data.content : null;
+
+                  if (dataType === "start" && localMessageId) {
                     // setActiveMessageId(data.messageId);
-                    currentMessageId = data.messageId;
+                    currentMessageId = localMessageId;
                     updateActiveChatStreamMessage({
                       requestId,
-                      messageId: data.messageId,
-                      streamId:
-                        typeof data.streamId === "string"
-                          ? data.streamId
-                          : null,
+                      messageId: localMessageId,
+                      streamId: localStreamId,
                     });
-                  } else if (data.type === "content" && currentMessageId) {
+                  } else if (
+                    dataType === "content" &&
+                    currentMessageId &&
+                    localContent
+                  ) {
                     appendStreamingMessageContent(
                       currentMessageId,
-                      data.content,
+                      localContent,
                     );
                     window.dispatchEvent(
                       new CustomEvent("chat-streaming-content", {
                         detail: {
                           messageId: currentMessageId,
-                          content: data.content,
+                          content: localContent,
                         },
                       }),
                     );
-                  } else if (data.type === "reasoning" && currentMessageId) {
+                  } else if (
+                    dataType === "reasoning" &&
+                    currentMessageId &&
+                    localContent
+                  ) {
                     appendStreamingMessageReasoning(
                       currentMessageId,
-                      data.content,
+                      localContent,
                     );
                     window.dispatchEvent(
                       new CustomEvent("chat-streaming-reasoning", {
                         detail: {
                           messageId: currentMessageId,
-                          content: data.content,
+                          content: localContent,
                         },
                       }),
                     );
                   } else if (
-                    data.type === "tool-input-start" &&
+                    dataType === "tool-input-start" &&
                     currentMessageId
                   ) {
                     window.dispatchEvent(
@@ -584,7 +615,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
                       }),
                     );
                   } else if (
-                    data.type === "tool-input-delta" &&
+                    dataType === "tool-input-delta" &&
                     currentMessageId
                   ) {
                     window.dispatchEvent(
@@ -598,7 +629,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
                       }),
                     );
                   } else if (
-                    data.type === "tool-input-available" &&
+                    dataType === "tool-input-available" &&
                     currentMessageId
                   ) {
                     // Can either finish tool call or keep it streaming until "tool-call" event comes
@@ -617,7 +648,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
                       }),
                     );
                   } else if (
-                    data.type === "tool-output-partially-available" &&
+                    dataType === "tool-output-partially-available" &&
                     currentMessageId
                   ) {
                     window.dispatchEvent(
@@ -629,7 +660,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
                         },
                       }),
                     );
-                  } else if (data.type === "usage" && currentMessageId) {
+                  } else if (dataType === "usage" && currentMessageId) {
                     const usage = data.usage || {};
                     const metrics = data.metrics || {};
                     trackEvent("llm_usage", {
@@ -646,7 +677,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
                       reasoning_tokens: usage.reasoning_tokens ?? null,
                       cost: usage.cost ?? null,
                     });
-                  } else if (data.type === "usage_error") {
+                  } else if (dataType === "usage_error") {
                     const metrics = data.metrics || {};
                     trackEvent("llm_error", {
                       thread_id: currentThreadId,
@@ -655,9 +686,17 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
                       latency_ms: metrics.latencyMs ?? null,
                       error: data.error || "Unknown error",
                     });
-                  } else if (data.type === "error") {
-                    toast.error(data.error);
-                  } else if (data.type === "done") {
+                  } else if (dataType === "error") {
+                    toast.error(
+                      typeof data?.error === "string"
+                        ? data.error
+                        : "Stream error",
+                    );
+                    await terminateStream();
+                    break readLoop;
+                  } else if (dataType === "done") {
+                    await terminateStream();
+                    break readLoop;
                   }
                 } catch (e) {
                   // Partial or corrupted data skip

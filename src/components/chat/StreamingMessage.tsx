@@ -81,6 +81,66 @@ function isChatStreamingAbortDetail(
   );
 }
 
+function isStreamingContentDetail(
+  value: unknown,
+): value is StreamingContentDetail {
+  return (
+    !!value &&
+    typeof value === "object" &&
+    "messageId" in value &&
+    "content" in value &&
+    typeof value.messageId === "string" &&
+    typeof value.content === "string"
+  );
+}
+
+function isStreamingReasoningDetail(
+  value: unknown,
+): value is StreamingReasoningDetail {
+  return isStreamingContentDetail(value);
+}
+
+function isStreamingToolCallDetail(
+  value: unknown,
+): value is StreamingToolCallDetail {
+  return (
+    !!value &&
+    typeof value === "object" &&
+    "messageId" in value &&
+    "toolCallId" in value &&
+    "toolName" in value &&
+    typeof value.messageId === "string" &&
+    typeof value.toolCallId === "string" &&
+    typeof value.toolName === "string"
+  );
+}
+
+function isStreamingToolOutputDetail(
+  value: unknown,
+): value is StreamingToolOutputDetail {
+  return (
+    !!value &&
+    typeof value === "object" &&
+    "messageId" in value &&
+    "toolCallId" in value &&
+    typeof value.messageId === "string" &&
+    typeof value.toolCallId === "string"
+  );
+}
+
+function isStreamingToolInputUpdateDetail(
+  value: unknown,
+): value is StreamingToolInputUpdateDetail {
+  return (
+    !!value &&
+    typeof value === "object" &&
+    "messageId" in value &&
+    "toolCallId" in value &&
+    typeof value.messageId === "string" &&
+    typeof value.toolCallId === "string"
+  );
+}
+
 export const StreamingMessage = ({
   messageId,
   content,
@@ -115,14 +175,17 @@ export const StreamingMessage = ({
   const displayedTextRef = useRef("");
   const effectiveReasoningRef = useRef(effectiveReasoning);
   effectiveReasoningRef.current = effectiveReasoning;
+  const effectiveIsStreaming = isStreaming && !isLocallyAborted;
 
   useEffect(() => {
-    if (!isStreaming && !isLocallyAborted) {
+    if (!effectiveIsStreaming && !isLocallyAborted) {
       return;
     }
 
     const handleContent: EventListener = (event) => {
-      const detail = (event as CustomEvent<StreamingContentDetail>).detail;
+      if (!(event instanceof CustomEvent)) return;
+      if (!isStreamingContentDetail(event.detail)) return;
+      const detail = event.detail;
       if (
         detail.messageId === messageId &&
         !isLocallyAborted &&
@@ -133,7 +196,9 @@ export const StreamingMessage = ({
     };
 
     const handleReasoning: EventListener = (event) => {
-      const detail = (event as CustomEvent<StreamingReasoningDetail>).detail;
+      if (!(event instanceof CustomEvent)) return;
+      if (!isStreamingReasoningDetail(event.detail)) return;
+      const detail = event.detail;
       if (
         detail.messageId === messageId &&
         !isLocallyAborted &&
@@ -144,7 +209,9 @@ export const StreamingMessage = ({
     };
 
     const handleToolCall: EventListener = (event) => {
-      const detail = (event as CustomEvent<StreamingToolCallDetail>).detail;
+      if (!(event instanceof CustomEvent)) return;
+      if (!isStreamingToolCallDetail(event.detail)) return;
+      const detail = event.detail;
       if (
         detail.messageId === messageId &&
         !isLocallyAborted &&
@@ -167,7 +234,9 @@ export const StreamingMessage = ({
     };
 
     const handleToolOutput: EventListener = (event) => {
-      const detail = (event as CustomEvent<StreamingToolOutputDetail>).detail;
+      if (!(event instanceof CustomEvent)) return;
+      if (!isStreamingToolOutputDetail(event.detail)) return;
+      const detail = event.detail;
       if (
         detail.messageId === messageId &&
         !isLocallyAborted &&
@@ -181,8 +250,9 @@ export const StreamingMessage = ({
     };
 
     const handleToolInputUpdate: EventListener = (event) => {
-      const detail = (event as CustomEvent<StreamingToolInputUpdateDetail>)
-        .detail;
+      if (!(event instanceof CustomEvent)) return;
+      if (!isStreamingToolInputUpdateDetail(event.detail)) return;
+      const detail = event.detail;
       if (
         detail.messageId === messageId &&
         !isLocallyAborted &&
@@ -244,18 +314,18 @@ export const StreamingMessage = ({
         handleAbort,
       );
     };
-  }, [messageId, isLocallyAborted, isStreaming]);
+  }, [effectiveIsStreaming, isLocallyAborted, messageId]);
 
   useEffect(() => {
     if (
-      !isStreaming &&
+      !effectiveIsStreaming &&
       content &&
       cachedStreamingState?.content &&
       content.length >= cachedStreamingState.content.length
     ) {
       clearStreamingMessageCache(messageId);
     }
-  }, [cachedStreamingState?.content, content, isStreaming, messageId]);
+  }, [cachedStreamingState?.content, content, effectiveIsStreaming, messageId]);
 
   // Filter out the fallback regex pattern from display if it exists
   // Also filter out stray "|" pipes that some models output as separators
@@ -293,7 +363,7 @@ export const StreamingMessage = ({
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    if (isStreaming || surveyAnswered || showSurvey) return;
+    if (effectiveIsStreaming || surveyAnswered || showSurvey) return;
     const hasResponse =
       filteredContent.length > 0 ||
       products.length > 0 ||
@@ -311,7 +381,7 @@ export const StreamingMessage = ({
     trackEvent("llm_quality_prompt_shown", { message_id: messageId });
   }, [
     filteredContent.length,
-    isStreaming,
+    effectiveIsStreaming,
     mergedToolCalls.length,
     messageId,
     products.length,
@@ -321,7 +391,7 @@ export const StreamingMessage = ({
 
   const { displayedText, isAnimating } = useSmoothStreaming(
     filteredContent,
-    isStreaming,
+    effectiveIsStreaming,
     isLocallyAborted,
   );
 
@@ -333,11 +403,11 @@ export const StreamingMessage = ({
     () => (
       <Markdown
         content={displayedText}
-        enableHighlight={!isStreaming && !isAnimating}
-        isStreaming={isStreaming || isAnimating}
+        enableHighlight={!effectiveIsStreaming && !isAnimating}
+        isStreaming={effectiveIsStreaming || isAnimating}
       />
     ),
-    [displayedText, isStreaming, isAnimating],
+    [displayedText, effectiveIsStreaming, isAnimating],
   );
 
   return (
@@ -349,7 +419,7 @@ export const StreamingMessage = ({
       {effectiveReasoning && (
         <ReasoningBlock
           content={effectiveReasoning}
-          isStreaming={isStreaming && !reasoningContent}
+          isStreaming={effectiveIsStreaming && !reasoningContent}
         />
       )}
 
@@ -426,7 +496,7 @@ export const StreamingMessage = ({
       )}
 
       {/* [AGENTIC] Thinking Indicator - Moved here to respect streaming state */}
-      {isStreaming &&
+      {effectiveIsStreaming &&
         !effectiveContent.trim() &&
         !effectiveReasoning.trim() &&
         mergedToolCalls.length === 0 && (

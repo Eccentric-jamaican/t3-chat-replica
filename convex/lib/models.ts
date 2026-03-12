@@ -342,7 +342,14 @@ async function getOpenRouterModelCatalog() {
       })
       .catch((error) => {
         console.warn("[models] Failed to refresh OpenRouter catalog", error);
-        return modelCatalogCache?.entries ?? new Map<string, OpenRouterModelCatalogEntry>();
+        const fallback =
+          modelCatalogCache?.entries ??
+          new Map<string, OpenRouterModelCatalogEntry>();
+        modelCatalogCache = {
+          entries: fallback,
+          expiresAt: Date.now() + OPENROUTER_MODEL_CATALOG_TTL_MS,
+        };
+        return fallback;
       })
       .finally(() => {
         inflightModelCatalogPromise = null;

@@ -123,6 +123,7 @@ const TOOLS = [
 ];
 
 const MAX_CHAT_REQUEST_BYTES = 64 * 1024;
+const ABORT_STATUS_THROTTLE_MS = 100;
 
 type ChatHandlerRuntimeOptions = {
   gatewayMode?: "legacy" | "shadow" | "authoritative";
@@ -457,14 +458,25 @@ export async function chatHandler(
       let requestStart: number | null = null;
       let responseModel: string | null = null;
       let currentAbortController: AbortController | null = null;
+      let lastAbortStatusCheckAt = 0;
+      let lastAbortStatusResult = false;
 
-      const syncAbortStatus = async (messageId: Id<"messages">) => {
-        if (isAborted) return true;
+      const syncAbortStatus = async (
+        messageId: Id<"messages">,
+        force = false,
+      ) => {
+        if (isAborted || lastAbortStatusResult) return true;
+        const now = Date.now();
+        if (!force && now - lastAbortStatusCheckAt < ABORT_STATUS_THROTTLE_MS) {
+          return lastAbortStatusResult;
+        }
+        lastAbortStatusCheckAt = now;
 
         const status = await ctx.runQuery(internal.messages.internalGetStatus, {
           messageId,
         });
-        if (status !== "aborted") return false;
+        lastAbortStatusResult = status === "aborted";
+        if (!lastAbortStatusResult) return false;
 
         isAborted = true;
         currentAbortController?.abort();
@@ -472,7 +484,7 @@ export async function chatHandler(
       };
 
       const shouldAbortToolWait = async (messageId: Id<"messages">) => {
-        return await syncAbortStatus(messageId);
+        return await syncAbortStatus(messageId, true);
       };
 
       try {
@@ -1489,7 +1501,7 @@ export async function chatAbortHandler(ctx: ActionCtx, request: Request) {
 
   const threadId = parsed.data.threadId as Id<"threads">;
   const messageId = parsed.data.messageId as Id<"messages">;
-  const { sessionId } = parsed.data;
+  const { sessionId, streamId } = parsed.data;
   const userId = await getAuthUserId(ctx);
   if (!userId && !sessionId) {
     return createHttpErrorResponse({
@@ -1509,9 +1521,13 @@ export async function chatAbortHandler(ctx: ActionCtx, request: Request) {
       messageId,
       status: "aborted",
     }),
-    ctx.runMutation(internal.streamSessions.internalAbortLatestByThread, {
-      threadId,
-    }),
+    streamId
+      ? ctx.runMutation(internal.streamSessions.internalAbortByMessageId, {
+          messageId,
+        })
+      : ctx.runMutation(internal.streamSessions.internalAbortLatestByThread, {
+          threadId,
+        }),
   ]);
 
   return new Response(null, { status: 204 });

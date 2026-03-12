@@ -192,6 +192,25 @@ export const internalAbortLatestByThread = internalMutation({
   },
 });
 
+export const internalAbortByMessageId = internalMutation({
+  args: { messageId: v.id("messages") },
+  handler: async (ctx, args) => {
+    const session = await ctx.db
+      .query("streamSessions")
+      .filter((q) => q.eq(q.field("messageId"), args.messageId))
+      .filter((q) => q.eq(q.field("status"), "streaming"))
+      .order("desc")
+      .first();
+
+    if (!session) return;
+
+    await ctx.db.patch(session._id, {
+      status: "aborted",
+      endedAt: Date.now(),
+    });
+  },
+});
+
 export const internalError = internalMutation({
   args: { sessionId: v.id("streamSessions") },
   handler: async (ctx, args) => {
