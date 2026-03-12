@@ -386,8 +386,6 @@ export async function resolveModelCapabilities(
   const supportsTools = entry.supportedParameters.has("tools");
   const inferredIsThinking = inferIsThinking(modelId, entry.supportedParameters);
   const isThinking = heuristic.isThinking || inferredIsThinking;
-  const hasCuratedCapability = !!(modelId && MODEL_CAPABILITIES[modelId]);
-
   return {
     ...heuristic,
     id: modelId,
@@ -398,12 +396,7 @@ export async function resolveModelCapabilities(
         ? "reasoning"
         : heuristic.promptStrategy || "reasoning"
       : heuristic.promptStrategy || "standard",
-    toolFallback:
-      hasCuratedCapability && heuristic.toolFallback
-        ? heuristic.toolFallback
-        : supportsTools
-          ? "none"
-          : heuristic.toolFallback || "regex",
+    toolFallback: supportsTools ? "none" : heuristic.toolFallback || "regex",
   };
 }
 

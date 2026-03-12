@@ -348,22 +348,22 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
 
         if (currentMessageId) {
           const abortUrl = new URL(`${convexSiteUrl}/api/chat/abort`);
-          abortUrl.searchParams.set("threadId", effectiveThreadId);
-          abortUrl.searchParams.set("messageId", currentMessageId);
-          abortUrl.searchParams.set("sessionId", currentSessionId);
-          if (currentStreamId) {
-            abortUrl.searchParams.set("streamId", currentStreamId);
-          }
-
           const response = await fetch(abortUrl.toString(), {
             method: "POST",
             headers: {
+              "Content-Type": "application/json",
               ...(activeStream.authToken
                 ? {
                     Authorization: `Bearer ${activeStream.authToken}`,
                   }
                 : {}),
             },
+            body: JSON.stringify({
+              threadId: effectiveThreadId,
+              messageId: currentMessageId,
+              sessionId: currentSessionId,
+              streamId: currentStreamId ?? undefined,
+            }),
           });
           if (!response.ok) {
             throw new Error(
@@ -566,6 +566,21 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
                     typeof data?.streamId === "string" ? data.streamId : null;
                   const localContent =
                     typeof data?.content === "string" ? data.content : null;
+                  const localToolCallId =
+                    typeof data?.toolCallId === "string" &&
+                    data.toolCallId.length > 0
+                      ? data.toolCallId
+                      : null;
+                  const localToolName =
+                    typeof data?.toolName === "string" ? data.toolName : null;
+                  const localArgsSnapshot =
+                    typeof data?.argsSnapshot === "string"
+                      ? data.argsSnapshot
+                      : null;
+                  const localInputTextDelta =
+                    typeof data?.inputTextDelta === "string"
+                      ? data.inputTextDelta
+                      : null;
 
                   if (dataType === "start" && localMessageId) {
                     // setActiveMessageId(data.messageId);
@@ -617,7 +632,9 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
                     );
                   } else if (
                     dataType === "tool-input-start" &&
-                    currentMessageId
+                    currentMessageId &&
+                    localToolCallId &&
+                    localToolName
                   ) {
                     window.dispatchEvent(
                       new CustomEvent<ChatStreamingToolCallDetail>(
@@ -625,8 +642,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
                         {
                         detail: {
                           messageId: currentMessageId,
-                          toolCallId: data.toolCallId,
-                          toolName: data.toolName,
+                          toolCallId: localToolCallId,
+                          toolName: localToolName,
                           args: "",
                           state: "streaming",
                         },
@@ -635,7 +652,9 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
                     );
                   } else if (
                     dataType === "tool-input-delta" &&
-                    currentMessageId
+                    currentMessageId &&
+                    localToolCallId &&
+                    (localArgsSnapshot !== null || localInputTextDelta !== null)
                   ) {
                     window.dispatchEvent(
                       new CustomEvent<ChatStreamingToolInputUpdateDetail>(
@@ -643,16 +662,17 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
                         {
                         detail: {
                           messageId: currentMessageId,
-                          toolCallId: data.toolCallId,
-                          argsSnapshot: data.argsSnapshot,
-                          argsDelta: data.inputTextDelta,
+                          toolCallId: localToolCallId,
+                          argsSnapshot: localArgsSnapshot ?? undefined,
+                          argsDelta: localInputTextDelta ?? undefined,
                         },
                         },
                       ),
                     );
                   } else if (
                     dataType === "tool-input-available" &&
-                    currentMessageId
+                    currentMessageId &&
+                    localToolCallId
                   ) {
                     // Can either finish tool call or keep it streaming until "tool-call" event comes
                     // for now we just make sure we save the final args
@@ -662,7 +682,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
                         {
                         detail: {
                           messageId: currentMessageId,
-                          toolCallId: data.toolCallId,
+                          toolCallId: localToolCallId,
                           argsSnapshot:
                             typeof data.input === "string"
                               ? data.input
@@ -674,7 +694,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
                     );
                   } else if (
                     dataType === "tool-output-partially-available" &&
-                    currentMessageId
+                    currentMessageId &&
+                    localToolCallId
                   ) {
                     window.dispatchEvent(
                       new CustomEvent<ChatStreamingToolOutputDetail>(
@@ -682,7 +703,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
                         {
                         detail: {
                           messageId: currentMessageId,
-                          toolCallId: data.toolCallId,
+                          toolCallId: localToolCallId,
                           output: data.output,
                         },
                         },

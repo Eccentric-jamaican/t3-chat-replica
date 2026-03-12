@@ -1393,12 +1393,17 @@ export async function chatHandler(
             // Switch context to the new message
             messageId = newMessageId;
             activeHttpStreams.set(streamId, {
-              abortController: currentAbortController,
+              abortController: null,
               currentMessageId: newMessageId,
             });
             fullContent = "";
             fullReasoning = "";
             contentBuffer = "";
+
+            if (await syncAbortStatus(newMessageId, true)) {
+              shouldContinue = false;
+              continue;
+            }
 
             // Notify client to start listening to the new message
             send({ type: "start", messageId: newMessageId, streamId });
@@ -1512,13 +1517,23 @@ export async function chatAbortHandler(ctx: ActionCtx, request: Request) {
     });
   }
 
-  const url = new URL(request.url);
-  const parsed = chatAbortRequestSchema.safeParse({
-    threadId: url.searchParams.get("threadId"),
-    messageId: url.searchParams.get("messageId"),
-    sessionId: url.searchParams.get("sessionId") ?? undefined,
-    streamId: url.searchParams.get("streamId") ?? undefined,
-  });
+  const jsonGuard = enforceJsonBodyGuards(request, MAX_CHAT_REQUEST_BYTES);
+  if (jsonGuard) {
+    return jsonGuard;
+  }
+
+  let rawBody: unknown;
+  try {
+    rawBody = await request.json();
+  } catch {
+    return createHttpErrorResponse({
+      status: 400,
+      code: "invalid_json",
+      message: "Invalid JSON body",
+    });
+  }
+
+  const parsed = chatAbortRequestSchema.safeParse(rawBody);
 
   if (!parsed.success) {
     return createHttpErrorResponse({
