@@ -35,8 +35,8 @@ The app now has a dedicated HTTP abort route:
 
 It is handled by:
 
-- [convex/http.ts](/C:/Users/Tellahneishe%20Callum/projects/t3-chat-replica/convex/http.ts)
-- [convex/chatHttp.ts](/C:/Users/Tellahneishe%20Callum/projects/t3-chat-replica/convex/chatHttp.ts)
+- [convex/http.ts](../convex/http.ts)
+- [convex/chatHttp.ts](../convex/chatHttp.ts)
 
 The client sends:
 
@@ -51,7 +51,7 @@ This aborts the live HTTP stream on the server side instead of relying only on b
 
 The currently active stream is tracked in:
 
-- [src/lib/activeChatStream.ts](/C:/Users/Tellahneishe%20Callum/projects/t3-chat-replica/src/lib/activeChatStream.ts)
+- [src/lib/activeChatStream.ts](../src/lib/activeChatStream.ts)
 
 This exists because the stream may start in one `ChatInput` instance and the user may click stop in another after navigation. The shared state stores:
 
@@ -76,8 +76,8 @@ There was a follow-up regression after moving abort logic into shared state:
 
 The fix was:
 
-- make [src/lib/activeChatStream.ts](/C:/Users/Tellahneishe%20Callum/projects/t3-chat-replica/src/lib/activeChatStream.ts) broadcast change events
-- have [src/components/chat/ChatInput.tsx](/C:/Users/Tellahneishe%20Callum/projects/t3-chat-replica/src/components/chat/ChatInput.tsx) subscribe to those changes
+- make [src/lib/activeChatStream.ts](../src/lib/activeChatStream.ts) broadcast change events
+- have [src/components/chat/ChatInput.tsx](../src/components/chat/ChatInput.tsx) subscribe to those changes
 - render the stop button whenever the current thread has an active shared stream, not only when local component state says it is generating
 - make the bottom-right control visually flip to stop immediately when the shared active stream event says the current thread is live
 
@@ -93,10 +93,10 @@ The UI now freezes the currently visible text at abort time.
 
 Relevant files:
 
-- [src/components/chat/ChatInput.tsx](/C:/Users/Tellahneishe%20Callum/projects/t3-chat-replica/src/components/chat/ChatInput.tsx)
-- [src/components/chat/StreamingMessage.tsx](/C:/Users/Tellahneishe%20Callum/projects/t3-chat-replica/src/components/chat/StreamingMessage.tsx)
-- [src/hooks/useSmoothStreaming.ts](/C:/Users/Tellahneishe%20Callum/projects/t3-chat-replica/src/hooks/useSmoothStreaming.ts)
-- [src/lib/streamingMessageCache.ts](/C:/Users/Tellahneishe%20Callum/projects/t3-chat-replica/src/lib/streamingMessageCache.ts)
+- [src/components/chat/ChatInput.tsx](../src/components/chat/ChatInput.tsx)
+- [src/components/chat/StreamingMessage.tsx](../src/components/chat/StreamingMessage.tsx)
+- [src/hooks/useSmoothStreaming.ts](../src/hooks/useSmoothStreaming.ts)
+- [src/lib/streamingMessageCache.ts](../src/lib/streamingMessageCache.ts)
 
 Flow:
 
@@ -114,9 +114,9 @@ The server now allows the final abort-time partial content flush to persist even
 
 Relevant files:
 
-- [convex/messages.ts](/C:/Users/Tellahneishe%20Callum/projects/t3-chat-replica/convex/messages.ts)
-- [convex/chatHttp.ts](/C:/Users/Tellahneishe%20Callum/projects/t3-chat-replica/convex/chatHttp.ts)
-- [convex/chat.ts](/C:/Users/Tellahneishe%20Callum/projects/t3-chat-replica/convex/chat.ts)
+- [convex/messages.ts](../convex/messages.ts)
+- [convex/chatHttp.ts](../convex/chatHttp.ts)
+- [convex/chat.ts](../convex/chat.ts)
 
 `internalAppendContent` now supports an abort-safe final flush path via `allowAborted`.
 
@@ -131,9 +131,9 @@ Queued tool waits are also abort-aware now.
 
 Relevant files:
 
-- [convex/lib/toolJobClient.ts](/C:/Users/Tellahneishe%20Callum/projects/t3-chat-replica/convex/lib/toolJobClient.ts)
-- [convex/chat.ts](/C:/Users/Tellahneishe%20Callum/projects/t3-chat-replica/convex/chat.ts)
-- [convex/chatHttp.ts](/C:/Users/Tellahneishe%20Callum/projects/t3-chat-replica/convex/chatHttp.ts)
+- [convex/lib/toolJobClient.ts](../convex/lib/toolJobClient.ts)
+- [convex/chat.ts](../convex/chat.ts)
+- [convex/chatHttp.ts](../convex/chatHttp.ts)
 
 This does not hard-kill an already running worker action, but it does stop the chat stream from continuing to wait on queued tool work once the user has cancelled.
 
@@ -143,7 +143,7 @@ The `/api/chat` HTTP path must support anonymous session-owned threads, not only
 
 Relevant file:
 
-- [convex/chatHttp.ts](/C:/Users/Tellahneishe%20Callum/projects/t3-chat-replica/convex/chatHttp.ts)
+- [convex/chatHttp.ts](../convex/chatHttp.ts)
 
 The handler now accepts either:
 

@@ -4,13 +4,13 @@ export const chatRequestSchema = z.object({
   threadId: z.string().min(1),
   modelId: z.string().min(1).optional(),
   webSearch: z.boolean().optional(),
-  sessionId: z.string().optional(),
+  sessionId: z.string().min(1).optional(),
 });
 
 export const chatAbortRequestSchema = z.object({
   threadId: z.string().min(1),
   messageId: z.string().min(1),
-  sessionId: z.string().optional(),
+  sessionId: z.string().min(1).optional(),
   streamId: z.string().min(1).optional(),
 });
 

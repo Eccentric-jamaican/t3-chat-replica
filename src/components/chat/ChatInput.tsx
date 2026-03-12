@@ -21,6 +21,10 @@ import { trackEvent } from "../../lib/analytics";
 import { useSelectedModelId } from "../../hooks/useSelectedModelId";
 import type { ReasoningEffort } from "../../types/chat";
 import {
+  CHAT_STREAMING_ABORT,
+  type ChatStreamingAbortDetail,
+} from "../../lib/chatStreamingEvents";
+import {
   appendStreamingMessageContent,
   appendStreamingMessageReasoning,
 } from "../../lib/streamingMessageCache";
@@ -286,16 +290,24 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
     const handleStop = async () => {
       console.log("Stopping generation, threadId:", effectiveThreadId);
       const activeStream = getActiveChatStream();
-      const currentMessageId = activeStream.messageId;
-      const currentStreamId = activeStream.streamId;
+      const activeStreamMatchesThread =
+        !!effectiveThreadId && activeStream.threadId === effectiveThreadId;
+      const currentMessageId = activeStreamMatchesThread
+        ? activeStream.messageId
+        : null;
+      const currentStreamId = activeStreamMatchesThread
+        ? activeStream.streamId
+        : null;
       if (currentMessageId) {
         window.dispatchEvent(
-          new CustomEvent("chat-streaming-abort", {
+          new CustomEvent<ChatStreamingAbortDetail>(CHAT_STREAMING_ABORT, {
             detail: { messageId: currentMessageId },
           }),
         );
       }
-      activeStream.controller?.abort();
+      if (activeStreamMatchesThread) {
+        activeStream.controller?.abort();
+      }
 
       if (effectiveThreadId) {
         const currentSessionId = getSessionId();
@@ -310,7 +322,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
           }
 
           try {
-            await fetch(abortUrl.toString(), {
+            const response = await fetch(abortUrl.toString(), {
               method: "POST",
               headers: {
                 ...(activeStream.authToken
@@ -320,6 +332,11 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
                   : {}),
               },
             });
+            if (!response.ok) {
+              throw new Error(
+                `Abort endpoint failed: ${response.status} ${response.statusText}`,
+              );
+            }
           } catch (error) {
             console.warn("[ChatInput] Abort endpoint failed, falling back", error);
             await Promise.all([
@@ -347,7 +364,9 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
         }
         console.log("Aborted latest message in thread");
       }
-      clearActiveChatStream(activeStream.requestId ?? undefined);
+      if (activeStreamMatchesThread) {
+        clearActiveChatStream(activeStream.requestId ?? undefined);
+      }
       setIsGenerating(false);
     };
 
@@ -638,11 +657,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
                     });
                   } else if (data.type === "error") {
                     toast.error(data.error);
-                    clearActiveChatStream(requestId);
-                    activeRequestId = null;
                   } else if (data.type === "done") {
-                    clearActiveChatStream(requestId);
-                    activeRequestId = null;
                   }
                 } catch (e) {
                   // Partial or corrupted data skip
@@ -668,7 +683,9 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
           error,
         });
       } finally {
-        clearActiveChatStream(activeRequestId ?? undefined);
+        if (activeRequestId) {
+          clearActiveChatStream(activeRequestId);
+        }
         setIsGenerating(false);
       }
     };

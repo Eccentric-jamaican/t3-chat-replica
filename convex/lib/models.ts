@@ -14,6 +14,7 @@ type OpenRouterModelCatalogEntry = {
 
 const OPENROUTER_MODELS_URL = "https://openrouter.ai/api/v1/models";
 const OPENROUTER_MODEL_CATALOG_TTL_MS = 15 * 60 * 1000;
+const OPENROUTER_MODEL_CATALOG_TIMEOUT_MS = 5_000;
 
 let modelCatalogCache:
   | {
@@ -278,9 +279,27 @@ function toCatalogEntry(record: unknown): OpenRouterModelCatalogEntry | null {
 }
 
 async function fetchOpenRouterModelCatalog() {
-  const response = await fetch(OPENROUTER_MODELS_URL, {
-    headers: { Accept: "application/json" },
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(
+    () => controller.abort(),
+    OPENROUTER_MODEL_CATALOG_TIMEOUT_MS,
+  );
+  let response: Response;
+  try {
+    response = await fetch(OPENROUTER_MODELS_URL, {
+      headers: { Accept: "application/json" },
+      signal: controller.signal,
+    });
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new Error(
+        `OpenRouter models API timed out after ${OPENROUTER_MODEL_CATALOG_TIMEOUT_MS}ms`,
+      );
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+  }
   if (!response.ok) {
     throw new Error(
       `OpenRouter models API returned ${response.status} ${response.statusText}`,

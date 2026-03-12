@@ -823,7 +823,7 @@ export const streamAnswer = action({
             // Flush failed (buffer wasn't cleared) — content is incomplete,
             // don't mark the message as completed
             console.error(
-              "Final content flush failed, marking message as error",
+              "Final content flush failed, marking message as aborted/incomplete",
             );
             isAborted = true;
           }

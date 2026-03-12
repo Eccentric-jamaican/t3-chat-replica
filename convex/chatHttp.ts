@@ -1,6 +1,7 @@
-import { httpAction } from "./_generated/server";
+import { httpAction, type ActionCtx } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { getAuthUserId } from "./auth";
+import type { Id } from "./_generated/dataModel";
 import { resolveModelCapabilities } from "./lib/models";
 import { normalizeEbaySearchArgs } from "./lib/ebaySearch";
 import { chatAbortRequestSchema, chatRequestSchema } from "./lib/httpContracts";
@@ -129,6 +130,33 @@ type ChatHandlerRuntimeOptions = {
   failClosedOnRedisError?: boolean;
 };
 
+type OpenRouterUsage = {
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  total_tokens?: number;
+  cached_tokens?: number;
+  reasoning_tokens?: number;
+  cost?: number;
+};
+
+function toOptionalNumber(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function parseOpenRouterUsage(value: unknown): OpenRouterUsage | null {
+  if (!value || typeof value !== "object") return null;
+  const usage = value as Record<string, unknown>;
+
+  return {
+    prompt_tokens: toOptionalNumber(usage.prompt_tokens),
+    completion_tokens: toOptionalNumber(usage.completion_tokens),
+    total_tokens: toOptionalNumber(usage.total_tokens),
+    cached_tokens: toOptionalNumber(usage.cached_tokens),
+    reasoning_tokens: toOptionalNumber(usage.reasoning_tokens),
+    cost: toOptionalNumber(usage.cost),
+  };
+}
+
 function buildProductToolSummary(products: Array<{ source?: string }>) {
   const ebayCount = products.filter((item) => item.source === "ebay").length;
   const globalCount = products.filter((item) => item.source === "global").length;
@@ -178,7 +206,7 @@ function enforceJsonBodyGuards(request: Request, maxBytes: number) {
 }
 
 export async function chatHandler(
-  ctx: any,
+  ctx: ActionCtx,
   request: Request,
   runtime: ChatHandlerRuntimeOptions = {},
 ) {
@@ -214,7 +242,8 @@ export async function chatHandler(
     });
   }
 
-  const { threadId, modelId, webSearch, sessionId } = parsed.data;
+  const { modelId, webSearch, sessionId } = parsed.data;
+  const threadId = parsed.data.threadId as Id<"threads">;
 
   const userId = await getAuthUserId(ctx);
   if (!userId && !sessionId) {
@@ -429,7 +458,7 @@ export async function chatHandler(
       let responseModel: string | null = null;
       let currentAbortController: AbortController | null = null;
 
-      const syncAbortStatus = async (messageId: string) => {
+      const syncAbortStatus = async (messageId: Id<"messages">) => {
         if (isAborted) return true;
 
         const status = await ctx.runQuery(internal.messages.internalGetStatus, {
@@ -442,7 +471,7 @@ export async function chatHandler(
         return true;
       };
 
-      const shouldAbortToolWait = async (messageId: string) => {
+      const shouldAbortToolWait = async (messageId: Id<"messages">) => {
         return await syncAbortStatus(messageId);
       };
 
@@ -464,7 +493,7 @@ export async function chatHandler(
         let contentBuffer = "";
         let fullReasoning = "";
         let firstTokenAt: number | null = null;
-        let lastUsage: any = null;
+        let lastUsage: OpenRouterUsage | null = null;
 
         // [COST CONTROL] Per-turn tool usage counters
         let webSearchCount = 0;
@@ -676,8 +705,8 @@ export async function chatHandler(
               if (data.model && !responseModel) {
                 responseModel = data.model;
               }
-              if (data.usage) {
-                lastUsage = data.usage;
+              if ("usage" in data) {
+                lastUsage = parseOpenRouterUsage(data.usage);
               }
 
               // Handle mid-stream errors from OpenRouter
@@ -1433,7 +1462,7 @@ export async function chatHandler(
   });
 }
 
-export async function chatAbortHandler(ctx: any, request: Request) {
+export async function chatAbortHandler(ctx: ActionCtx, request: Request) {
   if (request.method !== "POST") {
     return createHttpErrorResponse({
       status: 405,
@@ -1458,7 +1487,9 @@ export async function chatAbortHandler(ctx: any, request: Request) {
     });
   }
 
-  const { threadId, messageId, sessionId } = parsed.data;
+  const threadId = parsed.data.threadId as Id<"threads">;
+  const messageId = parsed.data.messageId as Id<"messages">;
+  const { sessionId } = parsed.data;
   const userId = await getAuthUserId(ctx);
   if (!userId && !sessionId) {
     return createHttpErrorResponse({

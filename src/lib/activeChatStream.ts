@@ -21,7 +21,7 @@ const activeChatStream: ActiveChatStream = {
 };
 
 export function getActiveChatStream() {
-  return activeChatStream;
+  return { ...activeChatStream };
 }
 
 function notifyActiveChatStreamChanged() {

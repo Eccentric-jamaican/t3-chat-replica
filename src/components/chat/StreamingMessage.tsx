@@ -12,6 +12,10 @@ import { type Product } from "../../data/mockProducts";
 import { ProductGrid } from "../product/ProductGrid";
 import { trackEvent } from "../../lib/analytics";
 import {
+  CHAT_STREAMING_ABORT,
+  type ChatStreamingAbortDetail,
+} from "../../lib/chatStreamingEvents";
+import {
   clearStreamingMessageCache,
   freezeStreamingMessage,
   getStreamingMessageCache,
@@ -59,9 +63,23 @@ type StreamingToolInputUpdateDetail = {
   argsSnapshot?: string;
   argsDelta?: string;
 };
-type StreamingAbortDetail = {
-  messageId: string;
-};
+function pickLongest(...values: Array<string | null | undefined>) {
+  return values.reduce<string>((longest, current) => {
+    const next = current ?? "";
+    return next.length > longest.length ? next : longest;
+  }, "");
+}
+
+function isChatStreamingAbortDetail(
+  value: unknown,
+): value is ChatStreamingAbortDetail {
+  return (
+    !!value &&
+    typeof value === "object" &&
+    "messageId" in value &&
+    typeof value.messageId === "string"
+  );
+}
 
 export const StreamingMessage = ({
   messageId,
@@ -82,25 +100,17 @@ export const StreamingMessage = ({
   const [isLocallyAborted, setIsLocallyAborted] = useState(false);
   const cachedStreamingState = getStreamingMessageCache(messageId);
 
-  const effectiveReasoning =
-    streamingReasoning.length >
-    Math.max(
-      reasoningContent?.length || 0,
-      cachedStreamingState?.reasoningContent.length || 0,
-    )
-      ? streamingReasoning
-      : (cachedStreamingState?.reasoningContent.length || 0) >
-          (reasoningContent?.length || 0)
-        ? cachedStreamingState?.reasoningContent || ""
-        : reasoningContent || "";
+  const effectiveReasoning = pickLongest(
+    streamingReasoning,
+    cachedStreamingState?.reasoningContent,
+    reasoningContent,
+  );
 
-  const effectiveContent =
-    streamingContent.length >
-    Math.max(content.length, cachedStreamingState?.content.length || 0)
-      ? streamingContent
-      : (cachedStreamingState?.content.length || 0) > content.length
-        ? cachedStreamingState?.content || ""
-        : content;
+  const effectiveContent = pickLongest(
+    streamingContent,
+    cachedStreamingState?.content,
+    content,
+  );
 
   const displayedTextRef = useRef("");
   const effectiveReasoningRef = useRef(effectiveReasoning);
@@ -198,7 +208,10 @@ export const StreamingMessage = ({
     };
 
     const handleAbort: EventListener = (event) => {
-      const detail = (event as CustomEvent<StreamingAbortDetail>).detail;
+      if (!(event instanceof CustomEvent)) return;
+      if (!isChatStreamingAbortDetail(event.detail)) return;
+
+      const detail = event.detail;
       if (detail.messageId !== messageId) return;
 
       freezeStreamingMessage(messageId, {
@@ -206,7 +219,7 @@ export const StreamingMessage = ({
         reasoningContent: effectiveReasoningRef.current,
       });
       setStreamingContent(displayedTextRef.current);
-      setStreamingReasoning(effectiveReasoningRef.current);
+      setStreamingReasoning(effectiveReasoningRef.current ?? "");
       setIsLocallyAborted(true);
     };
 
@@ -215,7 +228,10 @@ export const StreamingMessage = ({
     window.addEventListener("chat-streaming-tool-call", handleToolCall);
     window.addEventListener("chat-streaming-tool-input-update", handleToolInputUpdate);
     window.addEventListener("chat-streaming-tool-output", handleToolOutput);
-    window.addEventListener("chat-streaming-abort", handleAbort);
+    window.addEventListener(
+      CHAT_STREAMING_ABORT,
+      handleAbort,
+    );
 
     return () => {
       window.removeEventListener("chat-streaming-content", handleContent);
@@ -223,7 +239,10 @@ export const StreamingMessage = ({
       window.removeEventListener("chat-streaming-tool-call", handleToolCall);
       window.removeEventListener("chat-streaming-tool-input-update", handleToolInputUpdate);
       window.removeEventListener("chat-streaming-tool-output", handleToolOutput);
-      window.removeEventListener("chat-streaming-abort", handleAbort);
+      window.removeEventListener(
+        CHAT_STREAMING_ABORT,
+        handleAbort,
+      );
     };
   }, [messageId, isLocallyAborted, isStreaming]);
 
@@ -306,9 +325,7 @@ export const StreamingMessage = ({
     isLocallyAborted,
   );
 
-  useEffect(() => {
-    displayedTextRef.current = displayedText;
-  }, [displayedText]);
+  displayedTextRef.current = displayedText;
 
   const shouldRenderContent = filteredContent.length > 0;
 

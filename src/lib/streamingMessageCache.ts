@@ -6,9 +6,16 @@ type StreamingMessageCacheEntry = {
 };
 
 const STREAMING_MESSAGE_CACHE_TTL_MS = 30 * 60 * 1000;
+const STREAMING_MESSAGE_CACHE_CLEANUP_THROTTLE_MS = 60 * 1000;
 const streamingMessageCache = new Map<string, StreamingMessageCacheEntry>();
+let lastCleanupAt = 0;
 
 function cleanupExpiredEntries(now = Date.now()) {
+  if (now - lastCleanupAt < STREAMING_MESSAGE_CACHE_CLEANUP_THROTTLE_MS) {
+    return;
+  }
+
+  lastCleanupAt = now;
   for (const [messageId, entry] of streamingMessageCache.entries()) {
     if (now - entry.updatedAt > STREAMING_MESSAGE_CACHE_TTL_MS) {
       streamingMessageCache.delete(messageId);
