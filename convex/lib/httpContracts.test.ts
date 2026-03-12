@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import {
+  chatAbortRequestSchema,
   chatRequestSchema,
   gmailHistoryPayloadSchema,
   gmailPushEnvelopeSchema,
@@ -21,6 +22,16 @@ describe("httpContracts", () => {
     const parsed = chatRequestSchema.safeParse({
       threadId: "",
       webSearch: "yes",
+    });
+
+    expect(parsed.success).toBe(false);
+  });
+
+  test("rejects empty sessionId for abort requests", () => {
+    const parsed = chatAbortRequestSchema.safeParse({
+      threadId: "thread_123",
+      messageId: "message_123",
+      sessionId: "",
     });
 
     expect(parsed.success).toBe(false);

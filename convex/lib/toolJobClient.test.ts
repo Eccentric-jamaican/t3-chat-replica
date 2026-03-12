@@ -73,4 +73,21 @@ describe("toolJobClient", () => {
       expect(outcome.backpressure.retryAfterMs).toBeGreaterThanOrEqual(1000);
     }
   });
+
+  test("returns aborted when caller cancels while waiting", async () => {
+    const ctx = createCtx();
+    ctx.runMutation.mockResolvedValueOnce("job_3");
+    ctx.runQuery.mockResolvedValue({
+      status: "queued",
+    });
+
+    const outcome = await enqueueToolJobAndWait(ctx, {
+      source: "chat_http",
+      toolName: "search_web",
+      args: { query: "abort me" },
+      shouldAbort: () => true,
+    });
+
+    expect(outcome.status).toBe("aborted");
+  });
 });

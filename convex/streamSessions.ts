@@ -158,13 +158,56 @@ export const internalComplete = internalMutation({
   handler: async (ctx, args) => {
     const session = await ctx.db.get(args.sessionId);
     if (!session) return;
+    if (session.status === "aborted") return;
 
     await ctx.db.patch(args.sessionId, {
       status: "completed",
       endedAt: Date.now(),
     });
 
+    const message = await ctx.db.get(session.messageId);
+    if (!message || message.status === "aborted") return;
+
     await ctx.db.patch(session.messageId, { status: "completed" });
+  },
+});
+
+export const internalAbortLatestByThread = internalMutation({
+  args: { threadId: v.id("threads") },
+  handler: async (ctx, args) => {
+    const latest = await ctx.db
+      .query("streamSessions")
+      .withIndex("by_thread_status", (q) =>
+        q.eq("threadId", args.threadId).eq("status", "streaming"),
+      )
+      .order("desc")
+      .first();
+
+    if (!latest) return;
+
+    await ctx.db.patch(latest._id, {
+      status: "aborted",
+      endedAt: Date.now(),
+    });
+  },
+});
+
+export const internalAbortByMessageId = internalMutation({
+  args: { messageId: v.id("messages") },
+  handler: async (ctx, args) => {
+    const session = await ctx.db
+      .query("streamSessions")
+      .withIndex("by_message", (q) => q.eq("messageId", args.messageId))
+      .filter((q) => q.eq(q.field("status"), "streaming"))
+      .order("desc")
+      .first();
+
+    if (!session) return;
+
+    await ctx.db.patch(session._id, {
+      status: "aborted",
+      endedAt: Date.now(),
+    });
   },
 });
 
@@ -173,11 +216,15 @@ export const internalError = internalMutation({
   handler: async (ctx, args) => {
     const session = await ctx.db.get(args.sessionId);
     if (!session) return;
+    if (session.status === "aborted") return;
 
     await ctx.db.patch(args.sessionId, {
       status: "error",
       endedAt: Date.now(),
     });
+
+    const message = await ctx.db.get(session.messageId);
+    if (!message || message.status === "aborted") return;
 
     await ctx.db.patch(session.messageId, { status: "error" });
   },

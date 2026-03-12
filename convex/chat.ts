@@ -4,7 +4,7 @@ import { internal } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
 import { getAuthUserId } from "./auth";
 import { getEbayItemDetails as fetchEbayDetails } from "./ebay";
-import { getModelCapabilities } from "./lib/models";
+import { resolveModelCapabilities } from "./lib/models";
 import { normalizeEbaySearchArgs } from "./lib/ebaySearch";
 import { getBasePrompt, getRegexFallbackPrompt } from "./lib/prompts";
 import {
@@ -357,7 +357,9 @@ export const streamAnswer = action({
     let lastFlushTime = Date.now();
 
     // Flush buffered content to database
-    const flushContentBuffer = async (): Promise<boolean> => {
+    const flushContentBuffer = async (
+      allowAborted = false,
+    ): Promise<boolean> => {
       if (!contentBuffer || !currentMessageId) return false;
       const contentToFlush = contentBuffer;
 
@@ -367,6 +369,7 @@ export const streamAnswer = action({
           {
             messageId: currentMessageId,
             content: contentToFlush,
+            allowAborted,
           },
         );
         // Only clear buffer after successful write
@@ -382,14 +385,17 @@ export const streamAnswer = action({
 
     const checkAbortStatus = async () => {
       if (!currentMessageId || isAborted) return;
-      const status = currentSessionId
-        ? await ctx.runQuery(internal.streamSessions.internalGetStatus, {
-            sessionId: currentSessionId,
-          })
-        : await ctx.runQuery(internal.messages.internalGetStatus, {
-            messageId: currentMessageId,
-          });
-      if (status === "aborted") {
+      const [sessionStatus, messageStatus] = await Promise.all([
+        currentSessionId
+          ? ctx.runQuery(internal.streamSessions.internalGetStatus, {
+              sessionId: currentSessionId,
+            })
+          : Promise.resolve(undefined),
+        ctx.runQuery(internal.messages.internalGetStatus, {
+          messageId: currentMessageId,
+        }),
+      ]);
+      if (sessionStatus === "aborted" || messageStatus === "aborted") {
         console.log("Abort detected for message/session", {
           messageId: currentMessageId,
           sessionId: currentSessionId,
@@ -402,8 +408,13 @@ export const streamAnswer = action({
       }
     };
 
+    const shouldAbortToolWait = async () => {
+      await checkAbortStatus();
+      return isAborted;
+    };
+
     // Detect Model Capabilities
-    const capabilities = getModelCapabilities(args.modelId);
+    const capabilities = await resolveModelCapabilities(args.modelId);
 
     // Filter tools based on user preference AND model capability
     const activeTools = TOOLS.filter((t) => {
@@ -579,7 +590,7 @@ export const streamAnswer = action({
         });
 
         // [AGENTIC LOGIC] Inject Regex Fallback Prompt for models without native tool support
-        if (capabilities.toolFallback === "regex" && args.webSearch) {
+        if (capabilities.toolFallback === "regex") {
           const fallbackPrompt = getRegexFallbackPrompt(capabilities);
           if (fallbackPrompt) {
             openRouterMessages.unshift({
@@ -804,15 +815,15 @@ export const streamAnswer = action({
         }
 
         // Flush any remaining buffered content before post-processing
-        if (contentBuffer && !isAborted) {
-          const wasAborted = await flushContentBuffer();
-          if (wasAborted) {
+        if (contentBuffer) {
+          const wasAborted = await flushContentBuffer(isAborted);
+          if (wasAborted && !isAborted) {
             isAborted = true;
           } else if (contentBuffer) {
             // Flush failed (buffer wasn't cleared) — content is incomplete,
             // don't mark the message as completed
             console.error(
-              "Final content flush failed, marking message as error",
+              "Final content flush failed, marking message as aborted/incomplete",
             );
             isAborted = true;
           }
@@ -868,6 +879,9 @@ export const streamAnswer = action({
           // Execute Tools with Deduplication and Caching
 
           for (const tc of accumulatedToolCalls) {
+            await checkAbortStatus();
+            if (isAborted) break;
+
             const name = tc.function.name;
             const argsStr = tc.function.arguments;
             let result = "Error executing tool";
@@ -935,9 +949,13 @@ export const streamAnswer = action({
                           source: "chat_action",
                           toolName: "search_web",
                           args: { query: searchQuery },
+                          shouldAbort: shouldAbortToolWait,
                         });
 
-                        if (jobOutcome.status === "completed") {
+                        if (jobOutcome.status === "aborted") {
+                          isAborted = true;
+                          break;
+                        } else if (jobOutcome.status === "completed") {
                           result =
                             jobOutcome.result?.textResult ||
                             `Search completed for "${searchQuery}".`;
@@ -1077,9 +1095,13 @@ export const streamAnswer = action({
                             includeGlobal: !globalSkipped,
                             globalLimit,
                           },
+                          shouldAbort: shouldAbortToolWait,
                         });
 
-                        if (jobOutcome.status === "completed") {
+                        if (jobOutcome.status === "aborted") {
+                          isAborted = true;
+                          break;
+                        } else if (jobOutcome.status === "completed") {
                           const combined = Array.isArray(jobOutcome.result?.products)
                             ? dedupeProducts(jobOutcome.result.products)
                             : [];
@@ -1157,9 +1179,13 @@ export const streamAnswer = action({
                           limit,
                           location,
                         },
+                        shouldAbort: shouldAbortToolWait,
                       });
 
-                      if (jobOutcome.status === "completed") {
+                      if (jobOutcome.status === "aborted") {
+                        isAborted = true;
+                        break;
+                      } else if (jobOutcome.status === "completed") {
                         const items = Array.isArray(jobOutcome.result?.products)
                           ? dedupeProducts(jobOutcome.result.products)
                           : [];
@@ -1194,6 +1220,9 @@ export const streamAnswer = action({
                 result = `Error: ${err.message}`;
               }
             }
+
+            await checkAbortStatus();
+            if (isAborted) break;
 
             // Create Tool Result Message
             await ctx.runMutation(internal.messages.internalSend, {

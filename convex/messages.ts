@@ -304,6 +304,12 @@ export const updateStatus = mutation({
       "messages.updateStatus",
     );
 
+    const message = await ctx.db.get(args.messageId);
+    if (!message) return;
+    if (message.status === "aborted" && args.status !== "aborted") {
+      return;
+    }
+
     await ctx.db.patch(args.messageId, { status: args.status });
   },
 });
@@ -488,6 +494,7 @@ export const internalAppendContent = internalMutation({
   args: {
     messageId: v.id("messages"),
     content: v.string(),
+    allowAborted: v.optional(v.boolean()),
   },
   handler: async (ctx, args): Promise<{ aborted: boolean }> => {
     const message = await ctx.db.get(args.messageId);
@@ -498,7 +505,9 @@ export const internalAppendContent = internalMutation({
       );
       return { aborted: true };
     }
-    if (message.status === "aborted") return { aborted: true };
+    if (message.status === "aborted" && !args.allowAborted) {
+      return { aborted: true };
+    }
     await ctx.db.patch(args.messageId, {
       content: message.content + args.content,
     });
@@ -511,6 +520,13 @@ export const internalGetStatus = internalQuery({
   handler: async (ctx, args) => {
     const msg = await ctx.db.get(args.messageId);
     return msg?.status;
+  },
+});
+
+export const internalGetMessage = internalQuery({
+  args: { messageId: v.id("messages") },
+  handler: async (ctx, args) => {
+    return await ctx.db.get(args.messageId);
   },
 });
 
@@ -531,6 +547,9 @@ export const internalUpdateStatus = internalMutation({
       console.log(
         `[internalUpdateStatus] Message ${args.messageId} not found, skipping status update`,
       );
+      return;
+    }
+    if (message.status === "aborted" && args.status !== "aborted") {
       return;
     }
     await ctx.db.patch(args.messageId, { status: args.status });

@@ -63,6 +63,7 @@ import type * as lib_httpContracts from "../lib/httpContracts.js";
 import type * as lib_httpErrors from "../lib/httpErrors.js";
 import type * as lib_models from "../lib/models.js";
 import type * as lib_network from "../lib/network.js";
+import type * as lib_openRouterTypes from "../lib/openRouterTypes.js";
 import type * as lib_prompts from "../lib/prompts.js";
 import type * as lib_rateLimit from "../lib/rateLimit.js";
 import type * as lib_reliabilityConfig from "../lib/reliabilityConfig.js";
@@ -142,6 +143,7 @@ declare const fullApi: ApiFromModules<{
   "lib/httpErrors": typeof lib_httpErrors;
   "lib/models": typeof lib_models;
   "lib/network": typeof lib_network;
+  "lib/openRouterTypes": typeof lib_openRouterTypes;
   "lib/prompts": typeof lib_prompts;
   "lib/rateLimit": typeof lib_rateLimit;
   "lib/reliabilityConfig": typeof lib_reliabilityConfig;

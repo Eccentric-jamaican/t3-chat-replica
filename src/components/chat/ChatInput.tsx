@@ -20,6 +20,31 @@ import { toast } from "sonner";
 import { trackEvent } from "../../lib/analytics";
 import { useSelectedModelId } from "../../hooks/useSelectedModelId";
 import type { ReasoningEffort } from "../../types/chat";
+import {
+  CHAT_STREAMING_CONTENT,
+  CHAT_STREAMING_REASONING,
+  CHAT_STREAMING_TOOL_CALL,
+  CHAT_STREAMING_TOOL_INPUT_UPDATE,
+  CHAT_STREAMING_TOOL_OUTPUT,
+  CHAT_STREAMING_ABORT,
+  type ChatStreamingAbortDetail,
+  type ChatStreamingContentDetail,
+  type ChatStreamingReasoningDetail,
+  type ChatStreamingToolCallDetail,
+  type ChatStreamingToolInputUpdateDetail,
+  type ChatStreamingToolOutputDetail,
+} from "../../lib/chatStreamingEvents";
+import {
+  appendStreamingMessageContent,
+  appendStreamingMessageReasoning,
+} from "../../lib/streamingMessageCache";
+import {
+  ACTIVE_CHAT_STREAM_EVENT,
+  clearActiveChatStream,
+  getActiveChatStream,
+  startActiveChatStream,
+  updateActiveChatStreamMessage,
+} from "../../lib/activeChatStream";
 
 export interface ChatInputProps {
   existingThreadId?: string;
@@ -37,6 +62,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
     const isMobile = useIsMobile();
     const [content, setContent] = useState("");
     const [isGenerating, setIsGenerating] = useState(false);
+    const [hasActiveStream, setHasActiveStream] = useState(false);
     const [showBanner, setShowBanner] = useState(true);
 
     const [selectedModelId, setSelectedModelId] = useSelectedModelId();
@@ -118,6 +144,9 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
     const createThread = useMutation(api.threads.create);
     const sendMessage = useMutation(api.messages.send);
     const abortLatestInThread = useMutation(api.messages.abortLatestInThread);
+    const abortLatestStreamSession = useMutation(
+      api.streamSessions.abortLatestByThread,
+    );
     const generateUploadUrl = useMutation(api.messages.generateUploadUrl);
     const { isLoading: isConvexAuthLoading } = useConvexAuth();
     const effectiveThreadId = threadId ?? existingThreadId ?? null;
@@ -131,6 +160,23 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
     useEffect(() => {
       setThreadId(existingThreadId || null);
     }, [existingThreadId]);
+
+    useEffect(() => {
+      const syncActiveStream = () => {
+        const activeStream = getActiveChatStream();
+        setHasActiveStream(
+          !!activeStream.requestId &&
+            !!effectiveThreadId &&
+            activeStream.threadId === effectiveThreadId,
+        );
+      };
+
+      syncActiveStream();
+      window.addEventListener(ACTIVE_CHAT_STREAM_EVENT, syncActiveStream);
+      return () => {
+        window.removeEventListener(ACTIVE_CHAT_STREAM_EVENT, syncActiveStream);
+      };
+    }, [effectiveThreadId]);
 
     const [attachments, setAttachments] = useState<
       {
@@ -147,7 +193,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
     const dragDepthRef = useRef(0);
 
     const textareaRef = useRef<HTMLTextAreaElement>(null);
-    const abortControllerRef = useRef<AbortController | null>(null);
 
     const handleFiles = async (files: File[]) => {
       const supportedFiles = files.filter(
@@ -254,18 +299,93 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
 
     const handleStop = async () => {
       console.log("Stopping generation, threadId:", effectiveThreadId);
-      abortControllerRef.current?.abort();
-      abortControllerRef.current = null;
-
-      if (effectiveThreadId) {
-        const currentSessionId = getSessionId();
-        await abortLatestInThread({
-          threadId: effectiveThreadId as Id<"threads">,
-          sessionId: currentSessionId,
-        });
-        console.log("Aborted latest message in thread");
+      const activeStream = getActiveChatStream();
+      const activeStreamMatchesThread =
+        !!effectiveThreadId && activeStream.threadId === effectiveThreadId;
+      const currentMessageId = activeStreamMatchesThread
+        ? activeStream.messageId
+        : null;
+      const currentStreamId = activeStreamMatchesThread
+        ? activeStream.streamId
+        : null;
+      if (currentMessageId) {
+        window.dispatchEvent(
+          new CustomEvent<ChatStreamingAbortDetail>(CHAT_STREAMING_ABORT, {
+            detail: { messageId: currentMessageId },
+          }),
+        );
       }
-      setIsGenerating(false);
+      if (activeStreamMatchesThread) {
+        activeStream.controller?.abort();
+      }
+
+      const fallbackAbort = async (currentSessionId: string) => {
+        if (!effectiveThreadId) return;
+        await Promise.all([
+          abortLatestInThread({
+            threadId: effectiveThreadId as Id<"threads">,
+            sessionId: currentSessionId,
+          }),
+          abortLatestStreamSession({
+            threadId: effectiveThreadId as Id<"threads">,
+            sessionId: currentSessionId,
+          }),
+        ]);
+      };
+
+      try {
+        if (!effectiveThreadId) {
+          throw new Error("Missing thread id for stop");
+        }
+        const currentSessionId = getSessionId();
+        if (!currentSessionId) {
+          throw new Error("Missing session id for stop");
+        }
+        const convexSiteUrl = import.meta.env.VITE_CONVEX_SITE_URL;
+        if (!convexSiteUrl) {
+          throw new Error("Missing VITE_CONVEX_SITE_URL for stop");
+        }
+
+        if (currentMessageId) {
+          const abortUrl = new URL(`${convexSiteUrl}/api/chat/abort`);
+          const response = await fetch(abortUrl.toString(), {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              ...(activeStream.authToken
+                ? {
+                    Authorization: `Bearer ${activeStream.authToken}`,
+                  }
+                : {}),
+            },
+            body: JSON.stringify({
+              threadId: effectiveThreadId,
+              messageId: currentMessageId,
+              sessionId: currentSessionId,
+              streamId: currentStreamId ?? undefined,
+            }),
+          });
+          if (!response.ok) {
+            throw new Error(
+              `Abort endpoint failed: ${response.status} ${response.statusText}`,
+            );
+          }
+        } else {
+          await fallbackAbort(currentSessionId);
+        }
+      } catch (error) {
+        console.warn("[ChatInput] Abort endpoint failed, falling back", error);
+        const currentSessionId = getSessionId();
+        if (currentSessionId) {
+          await fallbackAbort(currentSessionId);
+        }
+      } finally {
+        if (activeStreamMatchesThread) {
+          clearActiveChatStream(activeStream.requestId ?? undefined);
+        }
+        setIsGenerating(false);
+      }
+      console.log("Aborted latest message in thread");
     };
 
     useImperativeHandle(ref, () => ({
@@ -281,6 +401,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
       const hasAttachments = attachments.length > 0;
       if ((!hasText && !hasAttachments) || isGenerating) return;
       setIsGenerating(true);
+      let activeRequestId: string | null = null;
 
       // Store content before clearing input
       const messageContent = hasText ? trimmedText : "";
@@ -377,7 +498,15 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
           `${convexSiteUrl}/api/chat`,
         );
         const controller = new AbortController();
-        abortControllerRef.current = controller;
+        const requestId = uuidv4();
+        activeRequestId = requestId;
+        startActiveChatStream({
+          requestId,
+          controller,
+          threadId: currentThreadId,
+          sessionId: currentSessionId,
+          authToken: effectiveToken,
+        });
 
         const response = await fetch(`${convexSiteUrl}/api/chat`, {
           method: "POST",
@@ -406,8 +535,17 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
         let currentMessageId: string | null = null;
         let buffer = "";
 
+        const terminateStream = async () => {
+          try {
+            await reader?.cancel();
+          } catch {
+            // Ignore reader cancellation failures during local teardown.
+          }
+          controller.abort();
+        };
+
         if (reader) {
-          while (true) {
+          readLoop: while (true) {
             const { done, value } = await reader.read();
             if (done) break;
 
@@ -420,89 +558,158 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
               if (trimmedLine.startsWith("data: ")) {
                 try {
                   const data = JSON.parse(trimmedLine.slice(6));
-                  if (data.type === "start") {
+                  const dataType =
+                    typeof data?.type === "string" ? data.type : null;
+                  const localMessageId =
+                    typeof data?.messageId === "string" ? data.messageId : null;
+                  const localStreamId =
+                    typeof data?.streamId === "string" ? data.streamId : null;
+                  const localContent =
+                    typeof data?.content === "string" ? data.content : null;
+                  const localToolCallId =
+                    typeof data?.toolCallId === "string" &&
+                    data.toolCallId.length > 0
+                      ? data.toolCallId
+                      : null;
+                  const localToolName =
+                    typeof data?.toolName === "string" ? data.toolName : null;
+                  const localArgsSnapshot =
+                    typeof data?.argsSnapshot === "string"
+                      ? data.argsSnapshot
+                      : null;
+                  const localInputTextDelta =
+                    typeof data?.inputTextDelta === "string"
+                      ? data.inputTextDelta
+                      : null;
+
+                  if (dataType === "start" && localMessageId) {
                     // setActiveMessageId(data.messageId);
-                    currentMessageId = data.messageId;
-                  } else if (data.type === "content" && currentMessageId) {
-                    window.dispatchEvent(
-                      new CustomEvent("chat-streaming-content", {
-                        detail: {
-                          messageId: currentMessageId,
-                          content: data.content,
-                        },
-                      }),
+                    currentMessageId = localMessageId;
+                    updateActiveChatStreamMessage({
+                      requestId,
+                      messageId: localMessageId,
+                      streamId: localStreamId,
+                    });
+                  } else if (
+                    dataType === "content" &&
+                    currentMessageId &&
+                    localContent
+                  ) {
+                    appendStreamingMessageContent(
+                      currentMessageId,
+                      localContent,
                     );
-                  } else if (data.type === "reasoning" && currentMessageId) {
                     window.dispatchEvent(
-                      new CustomEvent("chat-streaming-reasoning", {
+                      new CustomEvent<ChatStreamingContentDetail>(
+                        CHAT_STREAMING_CONTENT,
+                        {
                         detail: {
                           messageId: currentMessageId,
-                          content: data.content,
+                          content: localContent,
                         },
-                      }),
+                        },
+                      ),
                     );
                   } else if (
-                    data.type === "tool-input-start" &&
-                    currentMessageId
+                    dataType === "reasoning" &&
+                    currentMessageId &&
+                    localContent
                   ) {
+                    appendStreamingMessageReasoning(
+                      currentMessageId,
+                      localContent,
+                    );
                     window.dispatchEvent(
-                      new CustomEvent("chat-streaming-tool-call", {
+                      new CustomEvent<ChatStreamingReasoningDetail>(
+                        CHAT_STREAMING_REASONING,
+                        {
                         detail: {
                           messageId: currentMessageId,
-                          toolCallId: data.toolCallId,
-                          toolName: data.toolName,
+                          content: localContent,
+                        },
+                        },
+                      ),
+                    );
+                  } else if (
+                    dataType === "tool-input-start" &&
+                    currentMessageId &&
+                    localToolCallId &&
+                    localToolName
+                  ) {
+                    window.dispatchEvent(
+                      new CustomEvent<ChatStreamingToolCallDetail>(
+                        CHAT_STREAMING_TOOL_CALL,
+                        {
+                        detail: {
+                          messageId: currentMessageId,
+                          toolCallId: localToolCallId,
+                          toolName: localToolName,
                           args: "",
                           state: "streaming",
                         },
-                      }),
+                        },
+                      ),
                     );
                   } else if (
-                    data.type === "tool-input-delta" &&
-                    currentMessageId
+                    dataType === "tool-input-delta" &&
+                    currentMessageId &&
+                    localToolCallId &&
+                    (localArgsSnapshot !== null || localInputTextDelta !== null)
                   ) {
                     window.dispatchEvent(
-                      new CustomEvent("chat-streaming-tool-input-update", {
+                      new CustomEvent<ChatStreamingToolInputUpdateDetail>(
+                        CHAT_STREAMING_TOOL_INPUT_UPDATE,
+                        {
                         detail: {
                           messageId: currentMessageId,
-                          toolCallId: data.toolCallId,
-                          argsSnapshot: data.argsSnapshot,
-                          argsDelta: data.inputTextDelta,
+                          toolCallId: localToolCallId,
+                          argsSnapshot: localArgsSnapshot ?? undefined,
+                          argsDelta: localInputTextDelta ?? undefined,
                         },
-                      }),
+                        },
+                      ),
                     );
                   } else if (
-                    data.type === "tool-input-available" &&
-                    currentMessageId
+                    dataType === "tool-input-available" &&
+                    currentMessageId &&
+                    localToolCallId
                   ) {
                     // Can either finish tool call or keep it streaming until "tool-call" event comes
                     // for now we just make sure we save the final args
                     window.dispatchEvent(
-                      new CustomEvent("chat-streaming-tool-input-update", {
+                      new CustomEvent<ChatStreamingToolInputUpdateDetail>(
+                        CHAT_STREAMING_TOOL_INPUT_UPDATE,
+                        {
                         detail: {
                           messageId: currentMessageId,
-                          toolCallId: data.toolCallId,
+                          toolCallId: localToolCallId,
                           argsSnapshot:
                             typeof data.input === "string"
                               ? data.input
                               : JSON.stringify(data.input),
                           argsDelta: "",
                         },
-                      }),
+                        },
+                      ),
                     );
                   } else if (
-                    data.type === "tool-output-partially-available" &&
-                    currentMessageId
+                    dataType === "tool-output-partially-available" &&
+                    currentMessageId &&
+                    localToolCallId
                   ) {
                     window.dispatchEvent(
-                      new CustomEvent("chat-streaming-tool-output", {
+                      new CustomEvent<ChatStreamingToolOutputDetail>(
+                        CHAT_STREAMING_TOOL_OUTPUT,
+                        {
                         detail: {
                           messageId: currentMessageId,
-                          toolCallId: data.toolCallId,
+                          toolCallId: localToolCallId,
                           output: data.output,
                         },
-                      }),
+                        },
+                      ),
                     );
-                  } else if (data.type === "usage" && currentMessageId) {
+                  } else if (dataType === "usage" && currentMessageId) {
                     const usage = data.usage || {};
                     const metrics = data.metrics || {};
                     trackEvent("llm_usage", {
@@ -519,7 +726,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
                       reasoning_tokens: usage.reasoning_tokens ?? null,
                       cost: usage.cost ?? null,
                     });
-                  } else if (data.type === "usage_error") {
+                  } else if (dataType === "usage_error") {
                     const metrics = data.metrics || {};
                     trackEvent("llm_error", {
                       thread_id: currentThreadId,
@@ -528,8 +735,17 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
                       latency_ms: metrics.latencyMs ?? null,
                       error: data.error || "Unknown error",
                     });
-                  } else if (data.type === "error") {
-                    toast.error(data.error);
+                  } else if (dataType === "error") {
+                    toast.error(
+                      typeof data?.error === "string"
+                        ? data.error
+                        : "Stream error",
+                    );
+                    await terminateStream();
+                    break readLoop;
+                  } else if (dataType === "done") {
+                    await terminateStream();
+                    break readLoop;
                   }
                 } catch (e) {
                   // Partial or corrupted data skip
@@ -540,15 +756,24 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
         }
 
         setIsGenerating(false);
-      } catch (error: any) {
-        toast.error(error?.message || "Failed to send message");
+      } catch (error: unknown) {
+        if (error instanceof Error && error.name === "AbortError") {
+          console.log("[ChatInput] Stream aborted by user");
+          return;
+        }
+        const errorMessage =
+          error instanceof Error ? error.message : "Failed to send message";
+        toast.error(errorMessage);
         console.error("[ChatInput] Failed to send message:", {
-          message: error.message,
-          name: error.name,
-          stack: error.stack,
-          error: error,
+          message: error instanceof Error ? error.message : String(error),
+          name: error instanceof Error ? error.name : "UnknownError",
+          stack: error instanceof Error ? error.stack : undefined,
+          error,
         });
       } finally {
+        if (activeRequestId) {
+          clearActiveChatStream(activeRequestId);
+        }
         setIsGenerating(false);
       }
     };
@@ -782,12 +1007,16 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
                 </div>
 
                 <div>
+                  {(() => {
+                    const isAbortVisible =
+                      isGenerating || isThreadStreaming || hasActiveStream;
+                    return (
                   <motion.button
                     whileTap={{ scale: 0.95 }}
                     onClick={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
-                      if (isGenerating || isThreadStreaming) {
+                      if (isAbortVisible) {
                         handleStop();
                       } else {
                         handleSend();
@@ -796,8 +1025,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
                     disabled={
                       !content.trim() &&
                       attachments.length === 0 &&
-                      !isGenerating &&
-                      !isThreadStreaming
+                      !isAbortVisible
                     }
                     className={cn(
                       // Critical: Maintain min 44x44px touch target for mobile
@@ -805,15 +1033,14 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
                       "min-h-[44px] min-w-[44px] p-2 md:p-2.5",
                       content.trim() ||
                         attachments.length > 0 ||
-                        isGenerating ||
-                        isThreadStreaming
-                        ? isGenerating || isThreadStreaming
+                        isAbortVisible
+                        ? isAbortVisible
                           ? "bg-red-500 text-white shadow-lg shadow-red-500/20"
                           : "bg-t3-berry text-white shadow-lg shadow-t3-berry/20"
                         : "cursor-not-allowed bg-black/5 text-black/40",
                     )}
                   >
-                    {isGenerating || isThreadStreaming ? (
+                    {isAbortVisible ? (
                       <StopCircle
                         size={isMobile ? 22 : 20}
                         className="fill-current text-white"
@@ -822,6 +1049,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
                       <ArrowUp size={isMobile ? 22 : 20} strokeWidth={2.5} />
                     )}
                   </motion.button>
+                    );
+                  })()}
                 </div>
               </div>
             </div>

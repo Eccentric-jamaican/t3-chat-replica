@@ -27,8 +27,7 @@ export class CircuitOpenError extends Error {
 
 export function classifyResponseStatus(status: number) {
   if (status >= 200 && status < 400) return "success" as const;
-  if (status === 429) return "neutral" as const;
-  if (status === 408 || status === 425 || status >= 500) {
+  if (status === 408 || status === 425 || status === 429 || status >= 500) {
     return "failure" as const;
   }
   return "neutral" as const;

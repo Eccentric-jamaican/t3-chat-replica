@@ -253,22 +253,29 @@ Remember: The thinking block is for transparency, not for delaying action.`;
  * Uses regex pattern matching to detect tool intentions.
  */
 export const REGEX_FALLBACK_PROMPT = `TOOL FALLBACK MODE:
-You don't have native tool support in this model. To help the user, you MUST use this EXACT format:
+You don't have native tool support in this model. To help the user, you MUST use one of these EXACT formats:
 
 [[SEARCH: your search query here]]
+[search_web: "your search query here"]
+[search_products: "product name or shopping query here"]
 
-The system will detect this pattern and execute the search for you.
+The system will detect these patterns and execute the right tool for you.
 
 EXAMPLE:
 User: What's the price of Bitcoin?
 Assistant: [[SEARCH: Bitcoin price today]]
 
+User: Find me AirPods Pro
+Assistant: [search_products: "AirPods Pro 2"]
+
 IMPORTANT:
-- Use [[SEARCH: ...]] and NOTHING else when you need to search
+- Use ONLY one tool command when you need a tool
+- Use [[SEARCH: ...]] or [search_web: "..."] for web research
+- Use [search_products: "..."] for shopping/product lookup
 - Output ONLY the search command - no conversational filler
 - When search results come back, answer based on those results
-- DO NOT repeat [[SEARCH:...]] once you've received results
-- If the user is just chatting, respond normally without [[SEARCH:...]]`;
+- DO NOT repeat tool commands once you've received results
+- If the user is just chatting, respond normally without tool commands`;
 
 /**
  * Legacy web search prompt for backwards compatibility.
