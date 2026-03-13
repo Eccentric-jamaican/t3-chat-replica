@@ -38,35 +38,71 @@ async function verifyMessageAccess(
   await requireMessageAccess(ctx, { messageId, sessionId, functionName });
 }
 
+async function listMessagesForThread(
+  ctx: QueryCtx,
+  threadId: Id<"threads">,
+  sessionId?: string,
+) {
+  await verifyThreadAccess(ctx, threadId, sessionId, "messages.list");
+
+  const messages = await ctx.db
+    .query("messages")
+    .withIndex("by_thread", (q) => q.eq("threadId", threadId))
+    .order("asc")
+    .collect();
+
+  return Promise.all(
+    messages.map(async (msg) => {
+      if (!msg.attachments || msg.attachments.length === 0) return msg;
+      const attachments = await Promise.all(
+        msg.attachments.map(async (att) => ({
+          ...att,
+          url: await ctx.storage.getUrl(att.storageId).catch(() => null),
+        })),
+      );
+      return { ...msg, attachments };
+    }),
+  );
+}
+
+async function getThreadStreamingStatus(
+  ctx: QueryCtx,
+  threadId: Id<"threads"> | undefined,
+  sessionId?: string,
+) {
+  if (!threadId) return false;
+
+  await verifyThreadAccess(ctx, threadId, sessionId, "messages.isThreadStreaming");
+
+  const latest = await ctx.db
+    .query("messages")
+    .withIndex("by_thread_status", (q) =>
+      q.eq("threadId", threadId).eq("status", "streaming"),
+    )
+    .order("desc")
+    .first();
+  return !!latest;
+}
+
 export const list = query({
   args: { threadId: v.id("threads"), sessionId: v.optional(v.string()) },
   handler: async (ctx, args) => {
-    // Verify ownership before returning messages
-    await verifyThreadAccess(
-      ctx,
-      args.threadId,
-      args.sessionId,
-      "messages.list",
-    );
+    return await listMessagesForThread(ctx, args.threadId, args.sessionId);
+  },
+});
 
-    const messages = await ctx.db
-      .query("messages")
-      .withIndex("by_thread", (q) => q.eq("threadId", args.threadId))
-      .order("asc")
-      .collect();
-
-    return Promise.all(
-      messages.map(async (msg) => {
-        if (!msg.attachments || msg.attachments.length === 0) return msg;
-        const attachments = await Promise.all(
-          msg.attachments.map(async (att) => ({
-            ...att,
-            url: await ctx.storage.getUrl(att.storageId).catch(() => null),
-          })),
-        );
-        return { ...msg, attachments };
-      }),
-    );
+export const listIfAccessible = query({
+  args: { threadId: v.id("threads"), sessionId: v.optional(v.string()) },
+  handler: async (ctx, args) => {
+    try {
+      return await listMessagesForThread(ctx, args.threadId, args.sessionId);
+    } catch (error) {
+      const parsed = parseFunctionError(error);
+      if (parsed?.code === "not_found" || parsed?.code === "forbidden") {
+        return [];
+      }
+      throw error;
+    }
   },
 });
 
@@ -382,15 +418,11 @@ export const isThreadStreaming = query({
     sessionId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    if (!args.threadId) return false;
-
-    // Verify ownership before checking streaming status
     try {
-      await verifyThreadAccess(
+      return await getThreadStreamingStatus(
         ctx,
         args.threadId,
         args.sessionId,
-        "messages.isThreadStreaming",
       );
     } catch (error) {
       const parsed = parseFunctionError(error);
@@ -399,15 +431,28 @@ export const isThreadStreaming = query({
       }
       throw error;
     }
+  },
+});
 
-    const latest = await ctx.db
-      .query("messages")
-      .withIndex("by_thread_status", (q) =>
-        q.eq("threadId", args.threadId!).eq("status", "streaming"),
-      )
-      .order("desc")
-      .first();
-    return !!latest;
+export const isThreadStreamingIfAccessible = query({
+  args: {
+    threadId: v.optional(v.id("threads")),
+    sessionId: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    try {
+      return await getThreadStreamingStatus(
+        ctx,
+        args.threadId,
+        args.sessionId,
+      );
+    } catch (error) {
+      const parsed = parseFunctionError(error);
+      if (parsed?.code === "not_found" || parsed?.code === "forbidden") {
+        return false;
+      }
+      throw error;
+    }
   },
 });
 

@@ -19,6 +19,7 @@ import {
 } from "../ui/dialog";
 import { Button } from "../ui/button";
 import { Checkbox } from "../ui/checkbox";
+import { getMarkdownCompatibilityMode } from "../../lib/browserCompatibility";
 
 interface MarkdownProps {
   content: string;
@@ -234,6 +235,7 @@ export const Markdown = ({
   enableHighlight = true,
   isStreaming = false,
 }: MarkdownProps) => {
+  const markdownCompatibilityMode = getMarkdownCompatibilityMode();
   const [wrapEnabled, setWrapEnabled] = useState(false);
   const [pendingUrl, setPendingUrl] = useState<string | null>(null);
   const [isExternalDialogOpen, setIsExternalDialogOpen] = useState(false);
@@ -316,7 +318,11 @@ export const Markdown = ({
     <TooltipProvider delayDuration={150}>
       <div className="prose dark:prose-invert max-w-none">
         <ReactMarkdown
-          remarkPlugins={[remarkGfm]}
+          // Legacy Safari 15 crashes inside the GFM footnote parser, so we
+          // disable remark-gfm there to preserve message rendering.
+          remarkPlugins={
+            markdownCompatibilityMode === "full" ? [remarkGfm] : []
+          }
           rehypePlugins={
             enableHighlight
               ? [rehypeSanitize, rehypeHighlight]

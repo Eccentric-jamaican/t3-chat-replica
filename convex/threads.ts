@@ -108,7 +108,7 @@ export const get = query({
       return thread;
     } catch (error) {
       const parsed = parseFunctionError(error);
-      if (parsed?.code === "not_found") {
+      if (parsed?.code === "not_found" || parsed?.code === "forbidden") {
         return null;
       }
       throw error;

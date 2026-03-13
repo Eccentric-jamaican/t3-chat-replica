@@ -20,6 +20,7 @@ import { toast } from "sonner";
 import { trackEvent } from "../../lib/analytics";
 import { useSelectedModelId } from "../../hooks/useSelectedModelId";
 import type { ReasoningEffort } from "../../types/chat";
+import { authClient } from "../../lib/auth";
 import {
   CHAT_STREAMING_CONTENT,
   CHAT_STREAMING_REASONING,
@@ -149,10 +150,13 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
     );
     const generateUploadUrl = useMutation(api.messages.generateUploadUrl);
     const { isLoading: isConvexAuthLoading } = useConvexAuth();
+    const { isPending: isAuthPending } = authClient.useSession();
     const effectiveThreadId = threadId ?? existingThreadId ?? null;
+    const isThreadQueryReady =
+      !isAuthPending && !isConvexAuthLoading && sessionReady;
     const isThreadStreaming = useQuery(
-      api.messages.isThreadStreaming,
-      effectiveThreadId && !isConvexAuthLoading && sessionReady
+      api.messages.isThreadStreamingIfAccessible,
+      effectiveThreadId && isThreadQueryReady
         ? { threadId: effectiveThreadId as Id<"threads">, sessionId }
         : "skip",
     );

@@ -44,6 +44,7 @@ import { trackEvent } from "../lib/analytics";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { getSelectedModelId, setSelectedModelId } from "../lib/selectedModel";
 import { getStreamingMessageCache } from "../lib/streamingMessageCache";
+import { authClient } from "../lib/auth";
 import type { Id } from "../../convex/_generated/dataModel";
 
 function cn(...inputs: ClassValue[]) {
@@ -151,6 +152,7 @@ function ChatPage() {
 
   // Wait for Convex auth to be ready before querying messages
   const { isLoading: isConvexAuthLoading } = useConvexAuth();
+  const { isPending: isAuthPending } = authClient.useSession();
 
   const [sessionId, setSessionId] = useState<string | undefined>(undefined);
   const [sessionReady, setSessionReady] = useState(false);
@@ -162,16 +164,18 @@ function ChatPage() {
     setSessionReady(true);
   }, []);
 
+  const isRouteIdentityReady =
+    !isAuthPending && !isConvexAuthLoading && sessionReady;
+
   const thread = useQuery(
     api.threads.get,
-    isConvexAuthLoading || !sessionReady
+    !isRouteIdentityReady
       ? "skip"
       : { id: convexThreadId, sessionId },
   );
   const messages = useQuery(
-    api.messages.list,
-    isConvexAuthLoading ||
-      !sessionReady ||
+    api.messages.listIfAccessible,
+    !isRouteIdentityReady ||
       thread === undefined ||
       thread === null
       ? "skip"
